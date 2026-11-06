@@ -22,8 +22,6 @@ unsafe extern "system" {
 }
 #[link(name = "kernel32", kind = "raw-dylib")]
 unsafe extern "system" {
-    fn OpenMutexW(access: u32, inherit: i32, name: *const u16) -> *mut u8;
-    fn CloseHandle(h: *mut u8) -> i32;
     fn GetUserDefaultUILanguage() -> u16;
 }
 
@@ -37,13 +35,6 @@ fn alert(text: &str, icon: u32) {
     }
 }
 
-/// Un Plume est ouvert (il garde ce mutex nommé tant qu'il tourne).
-fn plume_running() -> bool {
-    unsafe {
-        let h = OpenMutexW(0x0010_0000, 0, wide(r"Local\PlumeBrowser").as_ptr());
-        !h.is_null() && CloseHandle(h) != 0
-    }
-}
 
 fn local_appdata() -> PathBuf {
     env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(env::temp_dir)
@@ -60,18 +51,20 @@ fn french() -> bool {
 
 /// Écrit un fichier même s'il est en cours d'utilisation : un exe ou une DLL chargés ne peuvent pas être
 /// remplacés, mais peuvent être renommés. L'ancien est mis de côté (*.old), Plume l'efface au démarrage suivant.
-fn put(path: &Path, bytes: &[u8]) -> io::Result<()> {
+/// Renvoie vrai si l'ancien fichier était encore utilisé (donc Plume ouvert).
+fn put(path: &Path, bytes: &[u8]) -> io::Result<bool> {
     if fs::metadata(path).is_ok_and(|m| m.len() == bytes.len() as u64) && fs::read(path).is_ok_and(|b| b == bytes) {
-        return Ok(());
+        return Ok(false);
     }
     let new = path.with_extension("new");
     fs::write(&new, bytes)?;
+    let mut in_use = false;
     if path.exists() {
         let moved = (0..10).any(|n| {
             let old = path.with_extension(if n == 0 { "old".into() } else { format!("old{n}") });
             let _ = fs::remove_file(&old);
             if fs::rename(path, &old).is_ok() {
-                let _ = fs::remove_file(&old); // réussit si ce fichier n'était pas utilisé
+                in_use = fs::remove_file(&old).is_err(); // impossible à effacer : il tourne encore
                 true
             } else {
                 false
@@ -82,7 +75,7 @@ fn put(path: &Path, bytes: &[u8]) -> io::Result<()> {
             return Err(io::Error::other("file in use"));
         }
     }
-    fs::rename(&new, path)
+    fs::rename(&new, path).map(|_| in_use)
 }
 
 fn main() {
@@ -91,11 +84,11 @@ fn main() {
     let update = has("--update");
     let quiet = update || has("--quiet") || has("/s");
     let fr = french();
-    let was_running = plume_running();
 
     let dir = local_appdata().join(r"Programs\Plume");
     let exe = dir.join("plume.exe");
     let written = fs::create_dir_all(&dir).and_then(|_| put(&dir.join("WebView2Loader.dll"), DLL)).and_then(|_| put(&exe, CORE));
+    let was_running = matches!(written, Ok(true));
     if let Err(e) = written {
         if !quiet {
             let msg = if fr { format!("Impossible d'installer Plume :\n{e}") } else { format!("Plume could not be installed:\n{e}") };

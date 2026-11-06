@@ -2,6 +2,12 @@
 
 All notable changes to Plume. Each `## x.y.z` section becomes the release notes when you run `.\release.ps1 x.y.z`.
 
+## 0.6.1
+
+- **Fix**: Windows Defender wrongly flagged `PlumeSetup.exe` 0.6.0 as `Trojan:Win32/Bearfoos.A!ml` (a machine-learning false positive) and deleted it. The installer no longer checks for a running Plume through a named mutex, the pattern that triggered it.
+- `PlumeSetup.exe` and `plume.exe` now show their name, publisher and version in Properties › Details, and declare that they run without admin rights.
+- Plume 0.6.0 installs this update by itself: accept the bar, then *Restart now*.
+
 ## 0.6.0
 
 - **Installer**: `PlumeSetup.exe` replaces the single-file `Plume.exe`. Plume installs for your account in `%LOCALAPPDATA%\Programs\Plume` without admin rights, adds Start menu and desktop shortcuts, and appears in Windows Settings › Apps, where you can uninstall it (keeping your data or not).
