@@ -2,6 +2,12 @@
 
 All notable changes to Plume. Each `## x.y.z` section becomes the release notes when you run `.\release.ps1 x.y.z`.
 
+## 0.6.0
+
+- **Installer**: `PlumeSetup.exe` replaces the single-file `Plume.exe`. Plume installs for your account in `%LOCALAPPDATA%\Programs\Plume` without admin rights, adds Start menu and desktop shortcuts, and appears in Windows Settings › Apps, where you can uninstall it (keeping your data or not).
+- **Updates in one click**: when a new version is out, a bar tells you. Plume downloads the installer from GitHub, checks its SHA-256, installs it in the background, and *Restart now* reopens your tabs in the new version.
+- Your profile, favorites and passwords carry over from 0.5 automatically.
+
 ## 0.5.0 - 2026-11-06
 
 First public release.

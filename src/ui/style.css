@@ -531,3 +531,7 @@ table.nt tr.bad td{color:var(--red)}
 /* Mise à jour disponible */
 #menuBtn.upd::after{content:"";position:absolute;top:5px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 2px var(--hdr1)}
 .row.updrow{color:var(--green);font-weight:600}
+#info .ii.up{background:var(--green)}
+.upbar{display:block;flex:none;width:120px;height:6px;border-radius:3px;background:var(--fill);overflow:hidden}
+.upbar i{display:block;height:100%;border-radius:3px;background:var(--green);transition:width .25s var(--ease)}
+#menuBtn.updready::after{background:var(--green)}

@@ -8,7 +8,9 @@ mod devtools;
 mod ext;
 mod import;
 mod media;
+mod setup;
 mod sqlite;
+mod update;
 mod vault;
 
 use serde_json::{Value, json};
@@ -160,6 +162,7 @@ pub(crate) enum Ev {
     ExtList(Vec<Value>),
     ExtAdded(Res<(String, String, PathBuf)>),
     Dev(devtools::Msg),
+    Upd(Value),
 }
 
 thread_local! {
@@ -269,11 +272,26 @@ struct App {
     ui_ready: bool,
     was_max: bool,
     dev: devtools::DevTools,
+    /// Dernier état de la mise à jour (rejoué aux fenêtres qui s'ouvrent)
+    upd: Value,
+    upd_busy: bool,
     _ctx: WebContext,
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let flag = |f: &str| args.iter().any(|a| a == f);
+    // Lancé par PlumeSetup.exe ou par Paramètres › Applications : rien d'autre à faire
+    if flag("--register") {
+        std::process::exit(if setup::register(flag("--desktop")) { 0 } else { 1 });
+    }
+    if flag("--uninstall") {
+        std::process::exit(setup::uninstall(flag("--quiet")));
+    }
+    setup::mark_running();
+    if setup::installed() {
+        std::thread::spawn(setup::cleanup);
+    }
     if args.iter().any(|a| a == "--restarted") {
         std::thread::sleep(Duration::from_millis(1500)); // laisse l'ancienne instance libérer le profil
     }
@@ -370,6 +388,8 @@ AutofillServerCommunication,InterestFeedContentSuggestions \
         ui_ready: false,
         was_max: false,
         dev: devtools::DevTools::default(),
+        upd: Value::Null,
+        upd_busy: false,
         cfg,
         _ctx: ctx,
     };
@@ -588,6 +608,14 @@ impl App {
     fn js(&self, code: &str) {
         if self.ui_ready {
             let _ = self.ui.evaluate_script(code);
+        }
+    }
+
+    /// Même chose dans toutes les fenêtres.
+    fn js_all(&self, code: &str) {
+        self.js(code);
+        for w in self.others.iter().filter(|w| w.ui_ready) {
+            let _ = w.ui.evaluate_script(code);
         }
     }
 
@@ -1073,7 +1101,7 @@ impl App {
             "vault": {"exists": self.vault.exists(), "unlocked": self.vault.unlocked(), "n": self.vault.items.len()},
             "dl": self.downloads.iter().filter(|d| d["state"] == "run").count(), "dlAny": !self.downloads.is_empty(),
             "exts": exts, "extOn": self.ext_on, "restart": self.needs_restart(), "adlist": adblock::count(),
-            "dev": self.dev.height() > 0.0, "lang": self.lang(), "version": VERSION, "repo": REPO, "sidep": self.sidep_ext, "sideR": self.side_r, "popup": self.popup.is_some(),
+            "dev": self.dev.height() > 0.0, "lang": self.lang(), "version": VERSION, "repo": REPO, "installed": setup::installed(), "sidep": self.sidep_ext, "sideR": self.side_r, "popup": self.popup.is_some(),
         });
         self.js(&format!("U({state})"));
     }
@@ -1332,12 +1360,65 @@ impl App {
 
     fn restart(&mut self) {
         self.save();
-        if let Ok(exe) = std::env::current_exe() {
+        // version installée : toujours le plume.exe du dossier (une mise à jour a pu le remplacer)
+        if let Ok(exe) = if setup::installed() { Ok(setup::exe()) } else { std::env::current_exe() } {
             let mut a: Vec<String> = std::env::args().skip(1).filter(|a| a != "--restarted" && a != "--eco").collect();
             a.push("--restarted".into());
             if std::process::Command::new(exe).args(a).spawn().is_ok() {
                 self.quit = true;
             }
+        }
+    }
+
+    /* ---------- Mises à jour (GitHub Releases) ---------- */
+
+    fn update_check(&mut self) {
+        let p = self.proxy.clone();
+        std::thread::spawn(move || {
+            let v = match update::latest() {
+                Ok(r) if update::newer(&r.tag, VERSION) => json!({"state": "available", "tag": r.tag, "page": r.page, "auto": r.asset.is_some()}),
+                Ok(r) => json!({"state": "latest", "tag": r.tag, "page": r.page}),
+                Err(e) => json!({"state": "error", "err": e}),
+            };
+            let _ = p.send_event(Ev::Upd(v));
+        });
+    }
+
+    /// Télécharge PlumeSetup.exe, vérifie son SHA-256 et l'installe ; il ne reste qu'à redémarrer.
+    fn update_install(&mut self) {
+        if self.upd_busy || !setup::installed() {
+            return;
+        }
+        self.upd_busy = true;
+        let p = self.proxy.clone();
+        let dir = setup::data_dir().join("updates");
+        std::thread::spawn(move || {
+            let send = |v: Value| {
+                let _ = p.send_event(Ev::Upd(v));
+            };
+            let res = (|| -> Res<String> {
+                let r = update::latest()?;
+                if !update::newer(&r.tag, VERSION) {
+                    return Err("Plume is already up to date".into());
+                }
+                let a = r.asset.ok_or("this release has no installer")?;
+                send(json!({"state": "downloading", "tag": r.tag, "pct": 0, "page": r.page}));
+                let file = update::download(&a, &r.tag, &dir, &mut |pct| send(json!({"state": "downloading", "tag": r.tag, "pct": pct, "page": r.page})))?;
+                send(json!({"state": "installing", "tag": r.tag, "page": r.page}));
+                update::install(&file)?;
+                let _ = std::fs::remove_file(&file);
+                Ok(r.tag)
+            })();
+            send(match res {
+                Ok(tag) => json!({"state": "ready", "tag": tag}),
+                Err(e) => json!({"state": "failed", "err": e}),
+            });
+        });
+    }
+
+    fn update_restart(&mut self) {
+        if self.upd["state"] == "ready" {
+            self.restart();
         }
     }
 
@@ -1587,6 +1668,13 @@ impl App {
         match ev {
             Ev::Ui(_, msg) => self.on_ui(&msg),
             Ev::Media(v) => self.js(&format!("MEDIA({v})")),
+            Ev::Upd(v) => {
+                if !matches!(v["state"].as_str(), Some("downloading" | "installing")) {
+                    self.upd_busy = false;
+                }
+                self.js_all(&format!("UPDS({v})"));
+                self.upd = v;
+            }
             Ev::PopupSize(_, w, h) => {
                 if let Some(p) = &self.popup {
                     let k = self.ui_scale() * self.scale();
@@ -1842,10 +1930,16 @@ impl App {
                 self.push();
                 self.push_lists();
                 self.push_exts();
+                if !self.upd.is_null() {
+                    self.js(&format!("UPDS({})", self.upd));
+                }
                 if self.blank() {
                     self.js("focusBar()");
                 }
             }
+            "update-check" => self.update_check(),
+            "update-install" => self.update_install(),
+            "update-restart" => self.update_restart(),
             "go" => self.go(&s("u")),
             "new" => self.cmd(Cmd::NewTab),
             "private" => self.cmd(Cmd::Private),

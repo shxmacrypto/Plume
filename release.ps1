@@ -7,9 +7,9 @@
 #   .\release.ps1 0.6.0 -Notes "Fixes ..."     # custom release notes (default: the CHANGELOG section)
 #   .\release.ps1 0.6.0 -DryRun              # show what would happen, change nothing
 #
-# The download link https://github.com/<owner>/<repo>/releases/latest/download/Plume.exe
+# The download link https://github.com/<owner>/<repo>/releases/latest/download/PlumeSetup.exe
 # always points to the newest release, so the website never needs to change.
-# Plume itself checks this release (at most once a day) and tells users an update is available.
+# Plume itself checks this release (at most once a day) and installs it in one click.
 param(
     [Parameter(Mandatory = $true, Position = 0)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
     [string]$Notes = "",
@@ -61,7 +61,7 @@ Step "3/5 Build"
 if (-not $DryRun) {
     & "$PSScriptRoot\build.ps1"
     if ($LASTEXITCODE) { Write-Host "Build failed, nothing published." -ForegroundColor Red; exit 1 }
-} else { Write-Host "(skipped) .\build.ps1 -> dist\Plume.exe + dist\Plume.exe.sha256" }
+} else { Write-Host "(skipped) .\build.ps1 -> dist\PlumeSetup.exe + dist\PlumeSetup.exe.sha256" }
 
 Step "4/5 Commit, tag, push"
 if (-not $isGit) {
@@ -79,7 +79,7 @@ if (-not $isGit) {
 }
 
 Step "5/5 Publish on GitHub Releases"
-$assets = "dist\Plume.exe", "dist\Plume.exe.sha256"
+$assets = "dist\PlumeSetup.exe", "dist\PlumeSetup.exe.sha256"
 if ($DryRun) {
     Write-Host "(skipped) gh release create $tag $($assets -join ' ') --title 'Plume $Version'"
 } elseif (Get-Command gh -ErrorAction SilentlyContinue) {
@@ -90,5 +90,5 @@ if ($DryRun) {
     $url = "https://github.com/$repo/releases/new?tag=$tag&title=" + [uri]::EscapeDataString("Plume $Version") + "&body=" + [uri]::EscapeDataString($Notes)
     Start-Process $url
     Start-Process explorer.exe (Join-Path $PSScriptRoot "dist")
-    Write-Host "GitHub CLI (gh) not installed: the release page is open - drag Plume.exe and Plume.exe.sha256 from the dist folder, then click 'Publish release'." -ForegroundColor Yellow
+    Write-Host "GitHub CLI (gh) not installed: the release page is open - drag PlumeSetup.exe and PlumeSetup.exe.sha256 from the dist folder, then click 'Publish release'." -ForegroundColor Yellow
 }

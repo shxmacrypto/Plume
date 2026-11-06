@@ -77,8 +77,24 @@ const SECTION = {
       + selx('sleep', t('f.sleep'), [[0, t('pw.never')], [3, t('pw.min', { n: 3 })], [5, t('pw.min', { n: 5 })], [10, t('pw.min', { n: 10 })], [30, t('pw.min', { n: 30 })], [60, t('pw.min', { n: 60 })]], t('f.stats', { t: S.tabs.length, s: S.asleep || 0 }))
       + sw('eco', t('f.eco'), t('f.ecoSub')) + sw('ext', t('f.ext'), t('f.extSub'))),
   about: () => `<div style="text-align:center;padding:40px 0">${logo().replace('class="logo"', 'class="logo" style="width:84px;height:84px"')}<h3 style="margin-top:14px">Plume</h3><p class="lead" style="margin:6px auto">${t('ab.version', { v: S.version || '' })}</p><p class="lead" style="margin:0 auto 22px">${t('ab.made')}</p><button class="pill" data-sa="onb-again">${t('ab.onb')}</button></div>`
-    + box(`<div class="opt"><div class="lbl"><b>${t('u.title')}</b><span>${UPD.tag ? t('u.avail', { v: UPD.tag }) : UPD.state === 'latest' ? t('u.latest') : UPD.state === 'checking' ? t('u.checking') : UPD.state === 'error' ? t('u.error') : t('u.sub')}</span></div>${UPD.tag ? `<button class="pill pri" data-sa="update">${t('u.get')}</button>` : `<button class="pill" data-sa="check-upd">${t('u.check')}</button>`}</div>` + sw('updates', t('u.auto'), t('u.autoSub'))),
+    + updBox(),
 };
+
+function updBox() {
+  const st = UPD.state;
+  let sub, btn;
+  if (UPD.tag && ['available', 'downloading', 'installing', 'ready', 'failed'].includes(st)) {
+    sub = updLabel();
+    btn = st === 'ready' ? `<button class="pill pri" data-sa="update-restart">${t('u.restart')}</button>`
+      : st === 'failed' ? `<button class="pill pri" data-sa="update">${t('u.retry')}</button>`
+      : updBusy() ? `<span class="upbar" aria-hidden="true"><i style="width:${UPD.pct || 0}%"></i></span>`
+      : `<button class="pill pri" data-sa="update">${t(S.installed ? 'u.install' : 'u.get')}</button>`;
+  } else {
+    sub = st === 'latest' ? t('u.latest') : st === 'checking' ? t('u.checking') : st === 'error' ? t('u.error') : t('u.sub');
+    btn = `<button class="pill" data-sa="check-upd"${st === 'checking' ? ' disabled' : ''}>${t('u.check')}</button>`;
+  }
+  return box(`<div class="opt"><div class="lbl"><b>${t('u.title')}</b><span>${sub}</span></div>${btn}</div>` + sw('updates', t('u.auto'), t('u.autoSub')));
+}
 
 function chipsBox(k, title) {
   const l = C()[k] || [];
@@ -201,7 +217,8 @@ $('ov').addEventListener('click', (e) => {
   switch (d.sa) {
     case 'restart': return send('restart');
     case 'check-upd': return checkUpdate(true);
-    case 'update': setMode(null); return send('open', { u: UPD.url });
+    case 'update': return updInstall();
+    case 'update-restart': return send('update-restart');
     case 'onb-again': setMode(null); send('ov', { v: true }); Object.assign(ONB, { on: true, step: 0, name: C().name || '', mode: C().mode || 'full' }); $('onb').classList.add('on'); return renderOnb();
     case 'clear': if (!SET.clear) { SET.clear = true; return renderSettings(); } SET.clear = false; send('clear'); return renderSettings();
     case 'private': return send('private');

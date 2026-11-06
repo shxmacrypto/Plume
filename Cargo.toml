@@ -1,6 +1,6 @@
 [package]
 name = "plume"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 build = "build.rs"
 
@@ -12,6 +12,7 @@ serde_json = "1"
 aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc", "getrandom"] }
 argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
 miniz_oxide = "0.8"
+sha2 = "0.10"
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
@@ -24,6 +25,10 @@ windows = { version = "0.61", features = [
     "Win32_System_LibraryLoader",
     "Win32_System_Com",
     "Win32_System_Com_Urlmon",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_Security",
+    "Win32_Networking_WinInet",
 ] }
 
 [profile.release]

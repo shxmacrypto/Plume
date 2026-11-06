@@ -1,11 +1,11 @@
 [package]
 name = "plume-launcher"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 build = "build.rs"
 
 [[bin]]
-name = "Plume"
+name = "PlumeSetup"
 path = "src/main.rs"
 
 [dependencies]

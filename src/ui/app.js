@@ -7,6 +7,7 @@ const store = { get(k, d) { try { const v = localStorage.getItem('plume.' + k); 
 const svg = (p, vb = 16) => `<svg viewBox="0 0 ${vb} ${vb}" aria-hidden="true">${p}</svg>`;
 const I = {
   x: svg('<path d="M2 2l6 6M8 2 2 8"/>', 10),
+  upd: svg('<path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/>'),
   reload: svg('<path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v3h-3"/>'),
   stop: svg('<path d="M4 4l8 8M12 4l-8 8"/>'),
   search: svg('<circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/>'),
@@ -171,6 +172,7 @@ function render() {
   renderDlBtn();
   document.title = x.t || 'Plume';
   $('menuBtn').classList.toggle('upd', !!UPD.tag);
+  $('menuBtn').classList.toggle('updready', UPD.state === 'ready');
   $('maxBtn').innerHTML = S.max ? '&#xE923;' : '&#xE922;';
   $('maxBtn').title = t(S.max ? 't.restore' : 't.max');
   if (mode === 'set' && window.renderSettings) return renderSettings(true);
@@ -257,8 +259,9 @@ function renderSide() {
 /* ---------- Barre d'information ---------- */
 function renderInfo() {
   const el = $('info'), i = S.info;
-  el.classList.toggle('on', !!i);
-  if (!i) { el.innerHTML = ''; return; }
+  const ub = i ? '' : updBar();
+  el.classList.toggle('on', !!i || !!ub);
+  if (!i) { el.innerHTML = ub; return; }
   const close = `<button class="icb" data-info="dismiss" aria-label="${esc(t('b.close'))}">${I.x}</button>`;
   let ic = I.key, msg = '', btns = '';
   const v = { u: esc(i.u || '—'), h: esc(i.host || '') };
@@ -360,7 +363,7 @@ const row = (c, label, kb, dis, cls, extra) => `<button class="row${cls ? ' ' + 
 function menuHtml() {
   const x = act(), web = x.u && x.u.startsWith('http'), z = Math.round((S.z || 1) * 100);
   return `<div class="card" role="menu" style="right:10px;top:6px;width:300px;max-height:calc(100% - 12px);overflow:auto">`
-    + (UPD.tag ? row('update', t('u.menu', { v: UPD.tag }), '', false, 'updrow') + '<div class="hr"></div>' : '')
+    + updRow()
     + row('new', t('m.new'), 'Ctrl+T') + row('window', t('m.win'), 'Ctrl+N') + row('private', t('m.privWin'), 'Ctrl+Shift+N') + row('reopen', t('m.reopen'), 'Ctrl+Shift+T', !S.closed)
     + '<div class="hr"></div>'
     + row('media', t('m.media'), '', !web) + row('reader', t('m.reader'), 'F9', !web) + row('speak', t(S.speaking ? 'm.stopSpeak' : 'm.speak'), '', !web) + row('translate', t('m.translate'), '', !web)
@@ -576,7 +579,7 @@ document.addEventListener('click', (e) => {
   if (xs) { setMode(null); send('ext-open', { id: xs.dataset.xside, page: xs.dataset.page, how: 'side' }); return; }
   const xp = e.target.closest('[data-xpin]');
   if (xp) { const l = C().pinExt || [], id = xp.dataset.xpin; send('set', { k: 'pinExt', v: l.includes(id) ? l.filter((x) => x !== id) : [...l, id] }); return; }
-  const el = e.target.closest('[data-c],[data-x],[data-del],[data-hrm],[data-u],[data-i],[data-m],[data-z],[data-g],[data-gcol],[data-info],[data-dl],[data-xo],#new,#vnew,#vcol,#back,#fwd,#reload,#star,#menuBtn,#shield,#readerBtn,#extBtn,#dlBtn,#mediaBtn');
+  const el = e.target.closest('[data-c],[data-x],[data-del],[data-hrm],[data-u],[data-i],[data-m],[data-z],[data-g],[data-gcol],[data-info],[data-upd],[data-dl],[data-xo],#new,#vnew,#vcol,#back,#fwd,#reload,#star,#menuBtn,#shield,#readerBtn,#extBtn,#dlBtn,#mediaBtn');
   if (!el) { if (e.target === $('ov') && mode) setMode(null, true); return; }
   if (el.closest('.set') && !el.dataset.m) return; // les réglages gèrent leurs propres clics
   const d = el.dataset;
@@ -585,6 +588,7 @@ document.addEventListener('click', (e) => {
   if (d.del) { e.stopPropagation(); return send('bmdel', { u: d.del }); }
   if (d.hrm) return send('histrm', { u: d.hrm });
   if (d.info) return send('info', { a: d.info, i: +(d.i || 0) });
+  if (d.upd) return updAct(d.upd);
   if (d.dl) return send('dl-' + d.dl, { id: +d.id });
   if (d.xo) {
     const anchor = el.classList.contains('xpin') ? el : $('extBtn');
@@ -619,7 +623,8 @@ function menuAction(m, d) {
     case 'hist': return setMode('hist');
     case 'dl': return setMode('dl');
     case 'settings': return setMode('set');
-    case 'update': setMode(null); return send('open', { u: UPD.url });
+    case 'update': setMode(null); return updInstall();
+    case 'update-restart': setMode(null); return send('update-restart');
     case 'media': mode = null; return openMedia();
     case 'pw': SET.sec = 'pw'; return setMode('set');
     case 'exts': SET.sec = 'ext'; return setMode('set');
@@ -864,24 +869,65 @@ document.addEventListener('dragend', () => {
   document.querySelectorAll('[data-bi].over,[data-bi].dragging').forEach((x) => x.classList.remove('over', 'dragging'));
 });
 
-/* ---------- Mises à jour : Plume vérifie GitHub au plus une fois par jour (désactivable) ---------- */
-const UPD = { tag: '', url: '', state: '' };
+/* ---------- Mises à jour : Plume vérifie GitHub au plus une fois par jour (désactivable),
+   puis télécharge, vérifie (SHA-256) et installe la nouvelle version en un clic ---------- */
+const UPD = { tag: '', page: '', state: '', pct: 0, err: '', hide: false };
 const verNum = (v) => String(v || '').replace(/^v/, '').split(/[.-]/).slice(0, 3).map((x) => parseInt(x, 10) || 0);
 const newer = (a, b) => { const x = verNum(a), y = verNum(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; };
-async function checkUpdate(force) {
-  if (!S.repo || !S.version || (!force && C().updates === false)) return;
-  const last = store.get('updChecked', 0);
-  if (!force && Date.now() - last < 864e5) { const c = store.get('updLatest', null); if (c && newer(c.tag, S.version)) Object.assign(UPD, c); return; }
+const updBusy = () => UPD.state === 'downloading' || UPD.state === 'installing';
+function checkUpdate(force) {
+  if (!S.version || updBusy() || UPD.state === 'ready' || (!force && C().updates === false)) return;
+  if (!force && Date.now() - store.get('updChecked', 0) < 864e5) {
+    const c = store.get('updLatest', null);
+    if (c && newer(c.tag, S.version)) { Object.assign(UPD, { tag: String(c.tag).replace(/^v/i, '').replace(/[^\w.+-]/g, ''), page: c.page || c.url || '', state: 'available' }); render(); }
+    return;
+  }
   UPD.state = 'checking'; if (mode === 'set') renderSettings(true);
-  try {
-    const r = await fetch(`https://api.github.com/repos/${S.repo}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' } });
-    if (!r.ok) throw new Error(r.status);
-    const j = await r.json();
-    const asset = (j.assets || []).find((a) => /\.exe$/i.test(a.name));
-    const info = { tag: j.tag_name, url: asset ? asset.browser_download_url : j.html_url };
-    store.set('updChecked', Date.now()); store.set('updLatest', info);
-    UPD.tag = newer(info.tag, S.version) ? info.tag : ''; UPD.url = info.url; UPD.state = UPD.tag ? 'available' : 'latest';
-  } catch { UPD.state = 'error'; }
-  render();
+  send('update-check');
+}
+window.UPDS = (o) => {
+  o.tag = String(o.tag || '').replace(/^v/i, '').replace(/[^\w.+-]/g, ''); // affiché tel quel : « Plume 0.6.1 »
+  if (o.state === 'available' || o.state === 'latest') { store.set('updChecked', Date.now()); store.set('updLatest', { tag: o.tag, page: o.page }); }
+  if (o.state === 'latest') o.tag = '';
+  if (o.state === 'ready' && UPD.state !== 'ready') { UPD.hide = false; toast('upd-ready', { v: o.tag }); }
+  Object.assign(UPD, o);
+  render(); if (mode === 'set') renderSettings(true);
+};
+function updInstall() {
+  if (!S.installed) return send('open', { u: UPD.page || `https://github.com/${S.repo}/releases/latest` });
+  Object.assign(UPD, { state: 'downloading', pct: 0, err: '' }); render(); if (mode === 'set') renderSettings(true);
+  send('update-install');
+}
+function updAct(a) {
+  if (a === 'install') return updInstall();
+  if (a === 'restart') return send('update-restart');
+  if (a === 'page') return send('open', { u: UPD.page || `https://github.com/${S.repo}/releases/latest` });
+  if (a === 'later') {
+    if (UPD.state === 'available') store.set('updLater', UPD.tag);
+    else UPD.hide = true;
+    if (UPD.state === 'failed') UPD.state = 'available';
+    render();
+  }
+}
+const updLabel = () => updBusy() ? t(UPD.state === 'installing' ? 'u.installing' : 'u.downloading', { v: UPD.tag, p: UPD.pct || 0 })
+  : UPD.state === 'ready' ? t('u.ready', { v: UPD.tag }) : UPD.state === 'failed' ? t('u.failed', { e: esc(UPD.err || '') }) : t('u.avail', { v: UPD.tag });
+// barre sous la barre d'adresse : nouvelle version, progression, redémarrage
+function updBar() {
+  const s = UPD.state;
+  if (!UPD.tag || UPD.hide) return '';
+  if (s === 'available' && store.get('updLater', '') === UPD.tag) return '';
+  if (!['available', 'downloading', 'installing', 'ready', 'failed'].includes(s)) return '';
+  const btns = s === 'ready' ? `<button class="pill pri" data-upd="restart">${t('u.restart')}</button>`
+    : s === 'failed' ? `<button class="pill pri" data-upd="install">${t('u.retry')}</button><button class="pill" data-upd="page">${t('u.manual')}</button>`
+    : s === 'available' ? `<button class="pill pri" data-upd="install">${t(S.installed ? 'u.install' : 'u.get')}</button><button class="pill" data-upd="page">${t('u.notes')}</button>`
+    : `<span class="upbar" aria-hidden="true"><i style="width:${UPD.pct || 0}%"></i></span>`;
+  const close = updBusy() ? '' : `<button class="icb" data-upd="later" aria-label="${esc(t('u.later'))}">${I.x}</button>`;
+  return `<span class="ii up">${I.upd}</span><span class="msg">${updLabel()}</span>${btns}${close}`;
+}
+function updRow() {
+  const s = UPD.state, hr = '<div class="hr"></div>';
+  if (s === 'ready') return row('update-restart', t('u.restartMenu', { v: UPD.tag }), '', false, 'updrow') + hr;
+  if (updBusy()) return row('noop', updLabel(), '', true, 'updrow') + hr;
+  return UPD.tag ? row('update', t('u.menu', { v: UPD.tag }), '', false, 'updrow') + hr : '';
 }
 setTimeout(() => checkUpdate(false), 8000);
