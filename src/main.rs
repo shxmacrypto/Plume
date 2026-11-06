@@ -69,7 +69,7 @@ const PAGE_JS: &str = include_str!("page.js");
 
 /// Version (une seule source : Cargo.toml) et dépôt GitHub (vérification des mises à jour).
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-const REPO: &str = "shxmacrypto/plume";
+const REPO: &str = "shxmacrypto/Plume";
 
 /// Les extensions peuvent demander le panneau latéral (chrome.sidePanel), absent de WebView2 : on le fournit.
 const SIDE_PANEL_JS: &str = r#"(() => {
