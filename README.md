@@ -6,8 +6,8 @@
 
 <p align="center">
   <b>The browser that weighs nothing.</b><br>
-  An ultra-light web browser for Windows, written in Rust — one ~2 MB file.<br>
-  <i>Le navigateur qui ne pèse rien — ultra-léger, écrit en Rust, un installeur de 2 Mo.</i>
+  An ultra-light web browser for Windows, written in Rust — one ~2.6 MB file.<br>
+  <i>Le navigateur qui ne pèse rien — ultra-léger, écrit en Rust, un installeur de 2,6 Mo.</i>
 </p>
 
 <p align="center">
@@ -22,7 +22,7 @@
 
 ## Features
 
-- **Tiny** — a ~2 MB installer, no admin rights needed. It renders pages with the WebView2 (Microsoft Edge) engine already on Windows, so it ships no browser engine of its own.
+- **Tiny** — a ~2.6 MB installer, no admin rights needed. It renders pages with the WebView2 (Microsoft Edge) engine already on Windows, so it ships no browser engine of its own.
 - **Memory saver** — background tabs are suspended, then unloaded after a few minutes (unless they play audio). Restored tabs sleep until you open them.
 - **Ad & tracker blocker** — ~3,600 domains plus cosmetic filters, a per-site toggle and Edge tracking prevention.
 - **Encrypted passwords** — a vault locked by one master password (Argon2id + AES-256-GCM). Plume offers to save logins, fills them for you and imports CSV exports.
@@ -34,6 +34,15 @@
 - **Plume DevTools** — a docked panel with console, elements, network, storage and performance.
 - **Updates in one click** — Plume checks GitHub once a day, then downloads, verifies (SHA-256) and installs new versions itself.
 - **For everyone** — French & English, light/dark themes, text size, high contrast, reduced motion, full keyboard support.
+
+And much more, each feature optional and free when switched off:
+
+- **Tabs** — workspaces, split screen, tab search, Peek previews, sessions, notes, archive of inactive tabs.
+- **Navigation** — command palette (`Ctrl+K`), calculator and unit conversions in the address bar, Tab to search a site (YouTube, Wikipedia, Amazon…), mouse gestures.
+- **Privacy** — containers (two accounts at once), clear data on close, a privacy report under the shield, password generator and audit, breach check, Windows Hello, secure DNS.
+- **Appearance** — adaptive tint, new tab backgrounds and widgets (clock, weather, to-do), custom CSS/JS per site, compact and Zen modes, full screen.
+- **Tools** — automatic picture-in-picture, media control, focus mode with Pomodoro, color picker and ruler, QR code, save as PDF or Markdown, read later offline.
+- **Performance** — memory badge and task manager (`Shift+Esc`), battery saver, never-sleep list, smart preloading, Lite mode per site, statistics.
 
 ## Install
 
@@ -58,6 +67,11 @@ Plume has no account and no telemetry. Your history, favorites and settings stay
 | `github.com` — the new installer | when you click *Install update* | — |
 | Chrome Web Store download | when you install an extension | — |
 | yt-dlp (GitHub) and FFmpeg (gyan.dev) | the first time you download a video, after you agree | — |
+| `api.frankfurter.app` — currency rates | when you convert a currency in the address bar, at most once a day | Settings › Navigation › Currencies |
+| `api.pwnedpasswords.com` — first 5 characters of a SHA-1 hash | only if you turn on the data breach check | off by default |
+| your secure DNS provider | every site address lookup, only if you turn on secure DNS | off by default |
+| `bing.com` — picture of the day | once a day, only if you choose it as new tab background | off by default |
+| `open-meteo.com` — weather | only with the weather widget and a city you enter | off by default |
 
 Pages are rendered by Microsoft's WebView2 runtime; Plume starts it with Edge's background services, sync and crash reporting disabled.
 
@@ -77,7 +91,9 @@ Plume builds with the **GNU** Rust toolchain, so Visual Studio is not needed.
    ```
    The result is the installer `dist\PlumeSetup.exe` plus `dist\PlumeSetup.exe.sha256`.
 
-Run the tests with `cargo test --release`. Tests that need the network are marked `#[ignore]`.
+Run the tests with `cargo test --release` (Rust) and `node --test tests/ui07.test.js` (interface functions: calculator, fuzzy search, QR codes). Tests that need the network are marked `#[ignore]`.
+
+`vendor/wry` is a copy of wry 0.53.5 with one addition, the WebView2 profile name used by containers (see `vendor/wry/PLUME.md`). `Cargo.toml` points to it with `[patch.crates-io]`.
 
 ## Publish a new version
 
@@ -95,9 +111,21 @@ The version number has a single source: `version` in `Cargo.toml`.
 ## Project layout
 
 ```
-src/main.rs        windows, tabs, events, settings (Rust, wry + tao + WebView2)
-src/ui/            the browser interface: style.css, body.html, i18n.js, app.js, settings.js, devtools.js, boot.js
-src/page.js        script injected into web pages: password autofill, reader mode, dark mode, read aloud
+src/main.rs        windows, tabs, events (Rust, wry + tao + WebView2)
+src/settings.json  every setting: default per mode, section, network use; read by settings.rs and the interface
+src/settings.rs    defaults, migration of older profiles, mode switch, resets
+src/perf.rs        process memory / CPU, battery, metered connection
+src/tabs07.rs      workspaces, archive, split screen, Peek, sessions, notes, custom shortcuts
+src/feats07.rs     command palette and mouse gestures messages
+src/priv07.rs      containers, clear on close, privacy report, password audit, Windows Hello, secure DNS
+src/pwgen.rs       password generator, audit, breach check (k-anonymity)   src/hello.rs  Windows Hello
+src/look07.rs      Zen and full screen, adaptive tint, new tab images and widgets, custom CSS/JS
+src/tools07.rs     picture-in-picture, media control, focus mode, color picker, PDF/Markdown, read later
+src/ui/            the browser interface: style.css, style07.css, body.html, i18n.js, i18n07.js, app.js, settings.js,
+                   feat_*.js (one file per theme), pure07.js (calculator, fuzzy search, QR codes), devtools.js, boot.js
+src/page.js        script injected into web pages: password autofill, reader mode, dark mode, read aloud and the 0.7 page features
+tests/             tests of the interface functions (node --test)
+vendor/wry/        wry 0.53.5 with WebView2 profiles (containers)
 src/vault.rs       encrypted password vault
 src/import.rs      Chromium / Firefox profile import (sqlite.rs reads their databases with Windows' winsqlite3.dll)
 src/ext.rs         Chrome Web Store download + CRX/ZIP unpacking        src/bicon.rs  real browser icons
@@ -111,7 +139,10 @@ assets/            logo, icon, ad list
 
 ## Credits
 
-Built with [wry](https://github.com/tauri-apps/wry) and [tao](https://github.com/tauri-apps/tao) (Tauri), [webview2-com](https://github.com/wravery/webview2-rs), [serde_json](https://github.com/serde-rs/json), [RustCrypto](https://github.com/RustCrypto) `aes-gcm`, `argon2` and `sha2`, and [miniz_oxide](https://github.com/Frommi/miniz_oxide).
+Built with [wry](https://github.com/tauri-apps/wry) and [tao](https://github.com/tauri-apps/tao) (Tauri), [webview2-com](https://github.com/wravery/webview2-rs), [windows-rs](https://github.com/microsoft/windows-rs), [serde_json](https://github.com/serde-rs/json), [RustCrypto](https://github.com/RustCrypto) `aes-gcm`, `argon2`, `sha1` and `sha2`, and [miniz_oxide](https://github.com/Frommi/miniz_oxide).
+
+- QR codes follow the ISO/IEC 18004 algorithm as described by Project Nayuki's reference implementation.
+- Optional online services: [Have I Been Pwned](https://haveibeenpwned.com/Passwords) (Pwned Passwords), [Frankfurter](https://www.frankfurter.app/) (exchange rates), [Open-Meteo](https://open-meteo.com/) (weather), Bing (picture of the day).
 
 - The ad list in `assets/adlist.txt` is based on [Peter Lowe's ad server list](https://pgl.yoyo.org/adservers/); see that site for its terms of use.
 - `WebView2Loader.dll` is redistributed from Microsoft's WebView2 SDK.

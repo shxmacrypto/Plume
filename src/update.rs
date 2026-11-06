@@ -127,6 +127,11 @@ pub fn install(setup: &Path) -> Result<(), String> {
     if st.success() { Ok(()) } else { Err(format!("the installer failed (code {})", st.code().unwrap_or(-1))) }
 }
 
+/// GET simple pour les autres fonctions réseau (fuites de mots de passe, météo…).
+pub fn http_get(url: &str) -> Result<Vec<u8>, String> {
+    get(url, &mut |_| {})
+}
+
 /// GET via WinINet (réglages proxy de Windows, suit les redirections de GitHub, pas de cache).
 fn get(url: &str, progress: &mut dyn FnMut(usize)) -> Result<Vec<u8>, String> {
     struct H(*mut core::ffi::c_void);

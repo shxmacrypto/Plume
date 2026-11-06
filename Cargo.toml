@@ -13,6 +13,8 @@ aes-gcm = { version = "0.10", default-features = false, features = ["aes", "allo
 argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
 miniz_oxide = "0.8"
 sha2 = "0.10"
+sha1 = "0.10"
+windows-future = "0.2"
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
@@ -29,6 +31,17 @@ windows = { version = "0.61", features = [
     "Win32_System_Threading",
     "Win32_Security",
     "Win32_Networking_WinInet",
+    "Win32_System_Power",
+    "Win32_System_ProcessStatus",
+    "Win32_System_SystemInformation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
+    "Win32_System_WinRT",
+    "Foundation",
+    "Security_Credentials",
+    "Security_Credentials_UI",
+    "Security_Cryptography",
+    "Storage_Streams",
 ] }
 
 [profile.release]
@@ -37,3 +50,7 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# wry avec le nom de profil WebView2 (conteneurs, #19) : voir vendor/wry/PLUME.md
+[patch.crates-io]
+wry = { path = "vendor/wry" }

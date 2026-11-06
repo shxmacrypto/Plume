@@ -86,6 +86,7 @@ function dtRender(soft) {
   if (!soft || !el.querySelector('.dth')) {
     el.innerHTML = `<div class="grip" aria-hidden="true"></div><div class="dth" role="tablist">`
       + `<button class="ib${DT.picking ? ' on' : ''}" data-dta="pick" aria-label="${esc(t('dt.pick'))}" title="${esc(t('dt.pick'))}">${svg('<path d="M3 3h6M3 3v6M3 3l9.5 9.5M13 9v4H9"/>')}</button>`
+      + (window.dqDevButtons ? dqDevButtons() : '')
       + TABS.map((k) => `<button class="tb${DT.tab === k ? ' on' : ''}" role="tab" aria-selected="${DT.tab === k}" data-dtt="${k}">${t('dt.' + k)}${k === 'console' ? '<span class="cnt"></span>' : ''}</button>`).join('')
       + `<span class="sp"></span><button class="ib" data-dta="edge" aria-label="${esc(t('dt.edge'))}" title="${esc(t('dt.edge'))}">${svg('<path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3"/>')}</button>`
       + `<button class="ib" data-dta="close" aria-label="${esc(t('dt.close'))}" title="${esc(t('dt.close'))}">${I.x.replace('viewBox="0 0 10 10"', 'viewBox="-3 -3 16 16"')}</button></div><div class="dtb"></div>`;
@@ -323,6 +324,7 @@ $('dt').addEventListener('click', (e) => {
     case 'cnet': DT.net.clear(); DT.netOrder = []; DT.netSel = null; return dtRender(true);
     case 'rst': DT.storeData = null; return dtRender(true);
     case 'gc': return DT.call('HeapProfiler.collectGarbage').then(pollPerf);
+    case 'dq-color': case 'dq-ruler': return FX.click[d.dta]();
   }
 });
 $('dt').addEventListener('change', (e) => {

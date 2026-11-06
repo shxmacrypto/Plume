@@ -68,6 +68,52 @@ impl Vault {
         Ok(())
     }
 
+    /// Chiffre des données annexes (notes d'onglet…) avec la clé du coffre : nonce (12) | données chiffrées.
+    pub fn seal(&self, plain: &[u8]) -> Option<Vec<u8>> {
+        let key = self.key?;
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let ct = Aes256Gcm::new(&key.into()).encrypt(&nonce, plain).ok()?;
+        Some([nonce.as_slice(), &ct].concat())
+    }
+
+    pub fn open(&self, data: &[u8]) -> Option<Vec<u8>> {
+        let key = self.key?;
+        if data.len() < 13 {
+            return None;
+        }
+        Aes256Gcm::new(&key.into()).decrypt(data[..12].into(), &data[12..]).ok()
+    }
+
+    /// Clé du coffre protégée par Windows Hello (#24), à côté du coffre.
+    pub fn hello_path(&self) -> PathBuf {
+        self.path.with_file_name("hello.bin")
+    }
+
+    /// Clé du coffre ouvert (activation de Windows Hello).
+    pub fn key(&self) -> Option<[u8; 32]> {
+        self.key
+    }
+
+    /// Déverrouillage par une clé déjà connue (Windows Hello) au lieu du mot de passe maître.
+    pub fn unlock_with_key(&mut self, key: [u8; 32]) -> Result<(), String> {
+        let data = std::fs::read(&self.path).map_err(|e| e.to_string())?;
+        if data.len() < 32 || &data[..4] != MAGIC {
+            return Err("corrupt".into());
+        }
+        let plain = Aes256Gcm::new(&key.into()).decrypt(data[20..32].into(), &data[32..]).map_err(|_| "wrong".to_string())?;
+        self.items = serde_json::from_slice(&plain).unwrap_or_default();
+        self.salt.copy_from_slice(&data[4..20]);
+        self.key = Some(key);
+        Ok(())
+    }
+
+    /// Octets aléatoires (générateur de mots de passe).
+    pub fn random(n: usize) -> Vec<u8> {
+        let mut b = vec![0u8; n];
+        OsRng.fill_bytes(&mut b);
+        b
+    }
+
     /// Oublie la clé et les mots de passe déchiffrés.
     pub fn lock(&mut self) {
         if let Some(k) = self.key.as_mut() {

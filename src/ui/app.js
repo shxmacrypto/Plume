@@ -50,6 +50,8 @@ const act = () => S.tabs.find((x) => x.id === S.a) || {};
 const isBlank = () => !act().u;
 const C = () => S.cfg || {};
 const grp = (id) => S.groups.find((g) => g.id === id);
+// favoris séparés par espace (#7) : ceux sans espace appartiennent à l'espace Principal
+const bmShow = (b) => !(C().spaces && C().spacesBm === 'separate') || (b.sp || 0) === (S.space || 0);
 const engine = () => ENGINES[C().search] || 'Google';
 
 /* Icône de site : lettre colorée, remplacée par le favicon dès qu'il est chargé */
@@ -97,11 +99,11 @@ window.U = (s) => { S = s; applyCfg(); render(); if (mode === 'ext') renderPanel
 window.L = (l) => { H = l.hist || []; if (mode === 'hist' || (!mode && isBlank()) || (mode === 'omni' && !typed.trim())) renderPanel(); };
 window.D = (l) => { DLS = l; renderDlBtn(); if (mode === 'dl') renderPanel(); };
 // Barre d'adresse : jamais volée à un panneau ouvert, sauf demande explicite (Ctrl+L)
-window.focusBar = (force) => { if (!force && ['set', 'hist', 'dl', 'media', 'unlock', 'menu', 'ctx', 'ext'].includes(mode)) return; $('q').focus(); $('q').select(); };
+window.focusBar = (force) => { if (!force && ['set', 'hist', 'dl', 'media', 'unlock', 'menu', 'ctx', 'ext', 'pg', 'modal', 'pop'].includes(mode)) return; $('q').focus(); $('q').select(); };
 window.openPanel = (m, sub) => { if (sub) SET.sec = sub; setMode(mode === m && !sub ? null : m, true); };
 window.openUnlock = () => setMode('unlock');
 // clic dans la page pendant qu'un petit menu est ouvert → il se ferme
-window.pageClicked = () => { if (['menu', 'ext', 'ctx'].includes(mode)) setMode(null); };
+window.pageClicked = () => { if (['menu', 'ext', 'ctx', 'pop'].includes(mode)) setMode(null); };
 /* Zones visibles de l'interface au-dessus de la page (le reste laisse voir la page, sans clignotement) */
 let lastOvr = '';
 function sendOvr() {
@@ -109,7 +111,7 @@ function sendOvr() {
   const sp = document.getElementById('splash');
   const cover = (sp && !sp.classList.contains('gone')) || ONB.on;
   if (!mode && !cover) { lastOvr = ''; return; }
-  const full = cover || ['set', 'hist', 'dl', 'media', 'unlock'].includes(mode) || isBlank();
+  const full = cover || ['set', 'hist', 'dl', 'media', 'unlock', 'pg', 'modal'].includes(mode) || isBlank();
   const rects = full ? [] : [...document.querySelectorAll('#ov .card, #sug .card')].map((c) => { const r = c.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)]; });
   const k = JSON.stringify([full, rects]);
   if (k !== lastOvr) { lastOvr = k; send('ovr', { full, rects }); }
@@ -161,7 +163,7 @@ function render() {
   renderInfo();
   const bar = $('bmb');
   bar.classList.toggle('on', !!C().bmbar && S.bm.length > 0);
-  bar.innerHTML = S.bm.map((b, i) => `<button class="bm" draggable="true" data-bi="${i}" data-u="${esc(b.u)}" title="${esc(b.u)}">${icon(b.u, b.f, true)}<span>${esc(b.t)}</span></button>`).join('');
+  bar.innerHTML = S.bm.map((b, i) => !bmShow(b) ? '' : `<button class="bm" draggable="true" data-bi="${i}" data-u="${esc(b.u)}" title="${esc(b.u)}">${icon(b.u, b.f, true)}<span>${esc(b.t)}</span></button>`).join('');
   $('extBtn').hidden = !(S.exts || []).length;
   document.documentElement.style.setProperty('--sr', (S.sideR || 0) + 'px');
   const sp = S.sidep;
@@ -175,6 +177,7 @@ function render() {
   $('menuBtn').classList.toggle('updready', UPD.state === 'ready');
   $('maxBtn').innerHTML = S.max ? '&#xE923;' : '&#xE922;';
   $('maxBtn').title = t(S.max ? 't.restore' : 't.max');
+  if (window.renderExtra) renderExtra(x);
   if (mode === 'set' && window.renderSettings) return renderSettings(true);
   if (mode || isBlank()) renderPanel(); else $('ov').classList.remove('on');
 }
@@ -183,7 +186,7 @@ function renderShield() {
   const on = C().ab && S.abSite && act().u && act().u.startsWith('http');
   $('shield').classList.toggle('on', !!on);
   $('shield').classList.toggle('hide', !act().u || !act().u.startsWith('http'));
-  $('blk').textContent = on && S.blocked ? S.blocked : '';
+  $('blk').textContent = on && S.blocked && !(C().privReport && C().prCount === false) ? S.blocked : '';
   $('shield').title = on ? t('m.blocked', { n: S.blocked || 0 }) : t('t.shield');
 }
 
@@ -213,7 +216,7 @@ function tabHtml(x, narrow) {
   return `<div class="tab${on ? ' on' : ''}${x.s ? ' zz' : ''}${x.p ? ' pv' : ''}${pop}" role="tab" tabindex="${on ? 0 : -1}" aria-selected="${on}" data-id="${x.id}"`
     + `${g ? ` data-gc style="--gc:${GC[g.color]}"` : ''} title="${esc(title)}${x.s ? ' — ' + t('tab.asleep') : ''}${x.p ? ' — InPrivate' : ''}">`
     + (x.l ? '<i class="spin" aria-hidden="true"></i>' : x.u ? icon(x.u, x.f) : I.plusTab)
-    + (narrow && !on ? '' : `<span class="tt">${esc(title)}</span>`)
+    + (narrow && !on ? '' : `<span class="tt">${esc(title)}</span>`) + (window.tabExtra ? tabExtra(x, narrow && !on) : '')
     + (narrow && !on ? '' : `<button class="x" data-x="${x.id}" aria-label="${esc(t('tab.closeTab'))}" tabindex="-1">${I.x}</button>`) + '</div>';
 }
 function renderTabs() {
@@ -251,7 +254,7 @@ function renderSide() {
     const title = x.t || (x.u ? host(x.u) : t('tab.new')), on = x.id === S.a;
     html += `<div class="vtab${on ? ' on' : ''}${x.s ? ' zz' : ''}${x.p ? ' pv' : ''}${g ? ' ing' : ''}" role="tab" tabindex="${on ? 0 : -1}" aria-selected="${on}" data-id="${x.id}"${g ? ` style="--gc:${GC[g.color]}"` : ''} title="${esc(title)}">`
       + (x.l ? '<i class="spin" aria-hidden="true"></i>' : x.u ? icon(x.u, x.f) : I.plusTab)
-      + `<span class="tt">${esc(title)}</span><button class="x" data-x="${x.id}" aria-label="${esc(t('tab.closeTab'))}" tabindex="-1">${I.x}</button></div>`;
+      + `<span class="tt">${esc(title)}</span>` + (window.tabExtra ? tabExtra(x, false) : '') + `<button class="x" data-x="${x.id}" aria-label="${esc(t('tab.closeTab'))}" tabindex="-1">${I.x}</button></div>`;
   }
   $('vlist').innerHTML = html;
 }
@@ -272,6 +275,8 @@ function renderInfo() {
     msg = t('info.unlock', v); btns = `<button class="pill pri" data-info="unlock">${t('b.unlock')}</button>`;
   } else if (i.k === 'choose') {
     msg = t('info.choose', v); btns = i.list.map((u, k) => `<button class="pill" data-info="fill" data-i="${k}">${esc(u || '—')}</button>`).join('');
+  } else if (i.k === 'gen') {
+    msg = `${t('info.gen')} <code class="genpw">${esc(i.pw || '')}</code>`; btns = `<button class="pill pri" data-info="gen">${t('b.usePw')}</button>`;
   } else if (i.k === 'store') {
     ic = I.puzzle;
     msg = S.extOn ? t('info.store') : t('info.storeOff');
@@ -294,27 +299,41 @@ function setMode(m, focusPage) {
   if (m === 'menu' || m === 'ctx' || m === 'ext') setTimeout(() => document.querySelector('#ov .card .row:not(:disabled)')?.focus(), 30);
 }
 
+/* Panneau affiché dans #ov : on ne remplace le contenu que s'il a changé. Une mise à jour du même panneau
+   ne rejoue pas son animation d'entrée, et un clic en cours n'atterrit pas sur un élément qui vient d'être remplacé. */
+let ovLast = { mode: null, html: '', node: null };
+function ovSet(html) {
+  const ov = $('ov');
+  const same = ovLast.mode === mode && ovLast.node && ovLast.node.isConnected && ov.firstElementChild === ovLast.node;
+  if (same && ovLast.html === html) return false;
+  ov.classList.toggle('again', same);
+  ov.innerHTML = html;
+  ovLast = { mode, html, node: ov.firstElementChild };
+  return true;
+}
 function renderPanel() {
   const ov = $('ov');
   if (!(mode === 'omni' && typed.trim())) $('sug').innerHTML = '';
   if (mode === 'omni' && prevMode) { if (typed.trim()) renderSuggest(); return; }
   const show = !!mode || isBlank();
   ov.classList.toggle('on', show);
-  ov.classList.toggle('dim', isBlank() && !['hist', 'dl', 'set'].includes(mode));
-  ov.classList.toggle('full', ['hist', 'dl', 'set'].includes(mode));
+  ov.classList.toggle('dim', isBlank() && !['hist', 'dl', 'set', 'pg'].includes(mode));
+  ov.classList.toggle('full', ['hist', 'dl', 'set', 'pg'].includes(mode));
   if (!show) return;
   const under = isBlank() ? startHtml() : '';
   switch (mode) {
-    case 'menu': return (ov.innerHTML = under + menuHtml());
-    case 'ext': return (ov.innerHTML = under + extMenuHtml());
-    case 'ctx': return (ov.innerHTML = under + ctxHtml());
+    case 'menu': return ovSet(under + menuHtml());
+    case 'ext': return ovSet(under + extMenuHtml());
+    case 'ctx': return ovSet(under + ctxHtml());
     case 'unlock': return renderUnlock(under);
     case 'media': return renderMedia(under);
     case 'hist': return renderHist();
     case 'dl': return renderDl();
     case 'set': return renderSettings();
+    case 'pg': return renderPage();
   }
-  ov.innerHTML = isBlank() || mode !== 'omni' ? startHtml() : '';
+  if (window.panelHook && panelHook(under)) return;
+  ovSet(isBlank() || mode !== 'omni' ? startHtml() : '');
   if (mode === 'omni' && typed.trim()) renderSuggest();
 }
 
@@ -322,7 +341,7 @@ let startSeen = false;
 function startHtml() {
   const x = act();
   const fav = S.bm.length
-    ? `<div class="grid favgrid">${S.bm.map((b, i) => `<button class="tile" draggable="true" data-bi="${i}" data-u="${esc(b.u)}" title="${esc(b.u)}">${icon(b.u, b.f, true)}<span>${esc(b.t)}</span><i class="x" data-del="${esc(b.u)}" role="button" aria-label="${esc(t('b.remove'))}">${I.x}</i></button>`).join('')}</div>`
+    ? `<div class="grid favgrid">${S.bm.map((b, i) => !bmShow(b) ? '' : `<button class="tile" draggable="true" data-bi="${i}" data-u="${esc(b.u)}" title="${esc(b.u)}">${icon(b.u, b.f, true)}<span>${esc(b.t)}</span><i class="x" data-del="${esc(b.u)}" role="button" aria-label="${esc(t('b.remove'))}">${I.x}</i></button>`).join('')}</div>`
     : `<p class="hint">${t('home.favHint')}</p>`;
   const seen = new Set(), top = [];
   for (const h of [...H].sort((a, b) => (b.c || 1) - (a.c || 1))) {
@@ -334,12 +353,15 @@ function startHtml() {
   const typing = mode === 'omni';
   const hero = `<div class="hero">${logo('home')}<h1>${title}</h1><button class="fake" data-fake="1">${I.g.replace('class="g"', 'class="g"')}<span>${typing ? '' : esc(t('q.ph', { e: engine() }))}</span><kbd>Ctrl L</kbd></button></div>`;
   const wasSeen = startSeen; startSeen = true;
+  if (window.homeHtml) return homeHtml({ hero, fav, freq, x, wasSeen, typing });
   return `<div class="start${wasSeen ? ' seen' : ''}${typing ? ' typing' : ''}${x.p ? ' priv' : ''}">${hero}${x.p ? `<p class="privnote">${t('home.privNote')}</p>` : ''}<h2>${t('home.fav')}</h2>${fav}${freq}</div>`;
 }
 
 function suggest(raw) {
   const q = raw.trim().toLowerCase(), out = [];
   const url = /^[^\s]+\.[^\s]{2,}$|^localhost|^[\w.-]+:\d+|:\/\//.test(q);
+  const ci = window.calcItem && calcItem(raw);
+  if (ci) out.push(ci); // résultat d'un calcul / d'une conversion : Entrée le copie
   out.push(url ? { k: 'globe', t: raw.trim(), u: raw.trim(), sub: t('q.go') } : { k: C().search === 'google' || !C().search ? 'g' : 'search', t: raw.trim(), u: raw.trim(), sub: t('q.search', { e: engine() }) });
   const seen = new Set();
   for (const [k, arr] of [['star', S.bm], ['clock', H]]) {
@@ -374,6 +396,7 @@ function menuHtml() {
     + '<div class="hr"></div>'
     + `<div class="zoom"><span>${t('m.zoom')}</span><button data-z="-1"${!x.u ? ' disabled' : ''} aria-label="Zoom −">−</button><button data-z="0"${!x.u ? ' disabled' : ''}>${z}%</button><button data-z="1"${!x.u ? ' disabled' : ''} aria-label="Zoom +">+</button></div>`
     + row('print', t('m.print'), 'Ctrl+P', !x.u) + row('dev', t('m.dev'), 'F12', !x.u)
+    + (window.menuExtra ? menuExtra(x, web) : '')
     + '<div class="hr"></div>'
     + row('settings', t('m.settings'), '')
     + `<div class="foot"><i class="dot"></i>${t('m.saver', { n: S.asleep || 0 })}${S.eco ? ' · Eco' : ''}</div></div>`;
@@ -403,6 +426,7 @@ function ctxHtml() {
     + '<div class="hr"></div>' + row('grp-new', t('ctx.newGroup'))
     + others.map((g) => `<button class="row" role="menuitem" data-m="grp-add" data-g="${g.id}"><span class="ic" style="background:${GC[g.color]}"></span><span class="tt">${esc(t('ctx.toGroup', { g: g.name || t('g.unnamed') }))}</span></button>`).join('')
     + (x.g ? row('grp-rm', t('ctx.ungroup')) : '')
+    + (window.ctxExtra ? ctxExtra(x) : '')
     + '<div class="hr"></div>' + row('close-others', t('ctx.others'), '', S.tabs.length < 2) + row('close-right', t('ctx.right'), '', S.tabs.indexOf(x) === S.tabs.length - 1)
     + row('close', t('ctx.close'), 'Ctrl+W') + '</div>';
 }
@@ -471,12 +495,17 @@ $('ov').addEventListener('click', (e) => {
 function renderUnlock(under) {
   $('ov').innerHTML = under + `<div class="modal"><div class="card" role="dialog" aria-modal="true" aria-labelledby="ult"><h3 id="ult">${t('unlock.t')}</h3><p>${t('unlock.p')}</p>`
     + `<form id="ulf" class="form"><input class="inp" type="password" id="ulp" placeholder="${esc(t('unlock.ph'))}" aria-label="${esc(t('unlock.ph'))}" autocomplete="off"><div class="err" id="ule" role="alert"></div></form>`
-    + `<div class="acts"><button class="pill" data-m="close-ov">${t('b.cancel')}</button><button class="pill pri" id="ulb">${t('b.unlock')}</button></div></div></div>`;
+    + `<div class="acts">${S.vault && S.vault.hello ? `<button class="pill" id="ulh">${t('hl.use')}</button><span style="flex:1"></span>` : ''}<button class="pill" data-m="close-ov">${t('b.cancel')}</button><button class="pill pri" id="ulb">${t('b.unlock')}</button></div></div></div>`;
   const go = (e) => { e && e.preventDefault(); if ($('ulp').value) send('vault-unlock', { pw: $('ulp').value }); };
   $('ulf').onsubmit = go; $('ulb').onclick = go;
+  if ($('ulh')) $('ulh').onclick = () => send('hello-unlock');
   setTimeout(() => $('ulp')?.focus(), 30);
+  // Windows Hello configuré : demandé tout de suite (le mot de passe maître reste possible)
+  if (S.vault && S.vault.hello && !renderUnlock.asked) { renderUnlock.asked = true; send('hello-unlock'); }
 }
 window.vaultRes = (r) => {
+  if (r.hello && !r.ok) return; // Windows Hello annulé : on reste sur le mot de passe
+  renderUnlock.asked = false;
   if (window.onVaultRes) onVaultRes(r);
   if (mode !== 'unlock') return;
   if (r.ok) setMode(null, true);
@@ -518,7 +547,13 @@ function renderDl() {
   $('ov').innerHTML = `<div class="page"><div class="pgw"><div class="pgh"><h2>${t('dl.title')}</h2><button class="pill" data-m="dl-clear"${DLS.length ? '' : ' disabled'}>${t('dl.clear')}</button><button class="icb" data-m="close-ov" aria-label="${esc(t('b.close'))}">${I.x}</button></div><div class="group">${rows || `<div class="empty">${t('dl.empty')}</div>`}</div></div></div>`;
 }
 
-function go(u) { if (!u.trim()) return; mode = null; prevMode = null; typed = ''; $('sug').innerHTML = ''; $('q').blur(); send('go', { u }); }
+function go(u) {
+  if (!u.trim()) return;
+  const pg = /^plume:\/\/([\w-]+)/i.exec(u.trim());
+  if (pg && window.openPage) { typed = ''; prevMode = null; $('sug').innerHTML = ''; $('q').blur(); mode = null; return openPage(pg[1].toLowerCase()); }
+  if (window.goHook && goHook(u)) return;
+  mode = null; prevMode = null; typed = ''; $('sug').innerHTML = ''; $('q').blur(); send('go', { u });
+}
 
 /* ---------- Barre d'adresse ---------- */
 const q = $('q');
@@ -557,12 +592,17 @@ q.addEventListener('keydown', (e) => {
     renderSuggest();
   } else if (e.key === 'Enter') {
     e.preventDefault();
+    if (items[sel] && items[sel].calc) { navigator.clipboard.writeText(items[sel].calc.replace(/[  ]/g, ' ')).then(() => toast('calc-copied')).catch(() => {}); return; }
     go(sel > 0 && items[sel] ? items[sel].u : q.value);
   } else if (e.key === 'Escape') {
     e.preventDefault(); leaveOmni(true); q.blur();
   }
 });
-$('omni').addEventListener('mousedown', (e) => { if (e.target === $('omni')) { e.preventDefault(); q.focus(); } });
+$('omni').addEventListener('mousedown', (e) => {
+  if (e.target === $('omni')) { e.preventDefault(); q.focus(); }
+  // bouclier, QR, lecteur, favori… : pas de prise de focus, sinon la barre se met en mode saisie, cache ces icônes et le clic se perd
+  else if (e.target.closest('.ob')) e.preventDefault();
+});
 
 /* ---------- Clics ---------- */
 document.addEventListener('mousedown', (e) => {
@@ -572,6 +612,8 @@ document.addEventListener('mousedown', (e) => {
 });
 document.addEventListener('click', (e) => {
   if (e.target.closest('#onb,#dt')) return;
+  const fe = e.target.closest('[data-f]');
+  if (fe && window.featClick && featClick(fe.dataset.f, fe, e)) { e.preventDefault(); return; } // data-f d'un module (pas les formats vidéo)
   if (e.target.closest('[data-fake]')) return q.focus();
   const spb = e.target.closest('[data-sp]');
   if (spb) return send(spb.dataset.sp);
@@ -596,7 +638,7 @@ document.addEventListener('click', (e) => {
     return send('ext-open', { id: d.xo, page: d.page, how: 'popup', x: anchor.getBoundingClientRect().right });
   }
   if (d.gcol) { send('grp-set', { g: ctx.g, color: d.gcol }); return; }
-  if (d.i && mode === 'omni') return go(items[+d.i].u);
+  if (d.i && mode === 'omni') { const it = items[+d.i]; if (it && it.calc) { navigator.clipboard.writeText(it.calc).then(() => toast('calc-copied')).catch(() => {}); return; } return go(it.u); }
   if (d.u) return go(d.u);
   if (d.z) return send('zoom', { d: +d.z });
   if (d.g && !d.m) { const g = grp(+d.g); if (g) send('grp-set', { g: g.id, col: !g.col }); return; }
@@ -608,7 +650,7 @@ document.addEventListener('click', (e) => {
     case 'fwd': return send('fwd');
     case 'reload': return send(act().l ? 'stop' : 'reload');
     case 'star': return send('star');
-    case 'shield': return setMode(mode === 'menu' ? null : 'menu', true);
+    case 'shield': return C().privReport && window.openPriv ? (mode === 'pop' ? setMode(null, true) : openPriv()) : setMode(mode === 'menu' ? null : 'menu', true);
     case 'readerBtn': return send('reader');
     case 'mediaBtn': return openMedia();
     case 'extBtn': return setMode(mode === 'ext' ? null : 'ext', true);
@@ -639,6 +681,7 @@ function menuAction(m, d) {
     case 'grp-rm': close(); return send('grp-add', { id, g: 0 });
     case 'grp-ungroup': case 'grp-close': { const g = ctx.g; close(); return send(m, { g }); }
   }
+  if (window.featAction && featAction(m, d, id)) return;
   send(m);
   close();
 }

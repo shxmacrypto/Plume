@@ -38,3 +38,16 @@ pub fn allowed(page_host: &str) -> bool {
 pub fn count() -> usize {
     LIST.lines().filter(|l| !l.trim().is_empty()).count()
 }
+
+/// Mode Lite par site (#5) : bits 1 = JavaScript, 2 = images, 4 = polices web, 8 = lecture auto.
+/// None = fonction désactivée (aucun coût).
+pub static LITE: RwLock<Option<(u8, std::collections::HashMap<String, u8>)>> = RwLock::new(None);
+pub const LITE_JS: u8 = 1;
+pub const LITE_IMG: u8 = 2;
+pub const LITE_FONT: u8 = 4;
+pub const LITE_AUTO: u8 = 8;
+
+/// Ce qui est coupé sur ce site (règle du site, sinon les valeurs par défaut).
+pub fn lite(host: &str) -> u8 {
+    LITE.read().ok().and_then(|l| l.as_ref().map(|(d, m)| *m.get(host).unwrap_or(d))).unwrap_or(0)
+}

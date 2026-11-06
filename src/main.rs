@@ -1,24 +1,36 @@
 // Plume — navigateur ultra-léger : Rust + WebView2 système, UI style iOS, onglets avec économiseur de mémoire,
 // coffre à mots de passe chiffré, import de profils, extensions Chrome, bloqueur de pubs, mode lecture…
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![recursion_limit = "512"]
 
 mod adblock;
 mod bicon;
 mod devtools;
 mod ext;
 mod import;
+mod look07;
 mod media;
+mod hello;
+mod perf;
+mod priv07;
+mod pwgen;
+mod settings;
 mod setup;
 mod sqlite;
+mod tabs07;
+mod tools07;
+mod feats07;
 mod update;
 mod vault;
 
 use serde_json::{Value, json};
+use std::sync::RwLock;
+use tabs07::WinX;
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
     path::PathBuf,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tao::{
@@ -30,8 +42,8 @@ use tao::{
 use webview2_com::{
     AcceleratorKeyPressedEventHandler, AddScriptToExecuteOnDocumentCreatedCompletedHandler,
     BrowserExtensionEnableCompletedHandler, BrowserExtensionRemoveCompletedHandler, BytesReceivedChangedEventHandler,
-    DownloadStartingEventHandler, FaviconChangedEventHandler, FocusChangedEventHandler, WindowCloseRequestedEventHandler, HistoryChangedEventHandler,
-    Microsoft::Web::WebView2::Win32::*, NavigationCompletedEventHandler, ProfileAddBrowserExtensionCompletedHandler,
+    DownloadStartingEventHandler, FaviconChangedEventHandler, GetProcessExtendedInfosCompletedHandler, NavigationStartingEventHandler, FocusChangedEventHandler, WindowCloseRequestedEventHandler, HistoryChangedEventHandler,
+    ContainsFullScreenElementChangedEventHandler, Microsoft::Web::WebView2::Win32::*, NavigationCompletedEventHandler, ProfileAddBrowserExtensionCompletedHandler,
     ProfileGetBrowserExtensionsCompletedHandler, SourceChangedEventHandler, StateChangedEventHandler,
     TrySuspendCompletedHandler, WebResourceRequestedEventHandler,
 };
@@ -55,12 +67,24 @@ type Res<T> = std::result::Result<T, String>;
 const UI_HTML: &str = concat!(
     "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Plume UI</title><style>",
     include_str!("ui/style.css"),
+    include_str!("ui/style07.css"),
     "</style></head><body>",
     include_str!("ui/body.html"),
-    "<script>",
+    "<script>const SCHEMA=",
+    include_str!("settings.json"),
+    ";",
     include_str!("ui/i18n.js"),
+    include_str!("ui/i18n07.js"),
     include_str!("ui/app.js"),
     include_str!("ui/settings.js"),
+    include_str!("ui/pure07.js"),
+    include_str!("ui/feat_core.js"),
+    include_str!("ui/feat_perf.js"),
+    include_str!("ui/feat_tabs.js"),
+    include_str!("ui/feat_nav.js"),
+    include_str!("ui/feat_priv.js"),
+    include_str!("ui/feat_look.js"),
+    include_str!("ui/feat_tools.js"),
     include_str!("ui/devtools.js"),
     include_str!("ui/boot.js"),
     "</script></body></html>"
@@ -91,25 +115,12 @@ fn search_url(engine: &str) -> &'static str {
     }
 }
 
-/// Réglages par défaut (mode « Complet »).
+/// Données de profil hors registre ; tous les réglages viennent de src/settings.json (module settings).
 fn defaults() -> Value {
     json!({
-        "onboarded": false, "name": "", "mode": "full", "lang": "auto", "search": "google",
-        "theme": "dark", "accent": "#0a84ff", "tabs": "h", "bmbar": false, "restore": true,
-        "uiScale": 1.0, "pageZoom": 1.0, "contrast": false, "motion": false, "bigTargets": false, "focusRings": true,
-        "ab": true, "tracking": "balanced", "allow": [], "dark": [], "light": [], "darkAll": false, "never": [],
-        "sleep": 10, "eco": false, "ext": true, "autolock": 15, "updates": true,
-        "readerSize": 20, "readerTheme": "auto", "ttsRate": 1.0,
+        "onboarded": false, "name": "", "mode": "full", "allow": [], "dark": [], "light": [], "never": [],
+        "readerSize": 20, "readerTheme": "auto",
     })
-}
-
-/// Préréglages proposés à la première configuration (modifiables ensuite dans les réglages).
-fn preset(mode: &str) -> Value {
-    if mode == "ultra" {
-        json!({"mode": "ultra", "eco": true, "ext": false, "tracking": "strict", "sleep": 3, "motion": true, "ab": true})
-    } else {
-        json!({"mode": "full", "eco": false, "ext": true, "tracking": "balanced", "sleep": 10, "motion": false, "ab": true})
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -132,6 +143,13 @@ enum Cmd {
     UiDev,
     NewWindow,
     PageFocus,
+    Tasks,
+    Palette,
+    TabSearch,
+    Split,
+    Zen,
+    Fullscreen,
+    Space(usize),
 }
 
 /// Origine d'un raccourci clavier : l'interface d'une fenêtre ou un onglet.
@@ -149,7 +167,7 @@ pub(crate) enum Ev {
     Loading(u32, bool),
     Fav(u32, String),
     Nav(u32, bool, bool),
-    Blocked(u32),
+    Blocked(u32, String),
     Open(u32, String, bool),
     Cmd(Who, Cmd),
     Active(u32, bool),
@@ -163,7 +181,24 @@ pub(crate) enum Ev {
     ExtAdded(Res<(String, String, PathBuf)>),
     Dev(devtools::Msg),
     Upd(Value),
+    /// Mesure mémoire / CPU (badge des onglets, gestionnaire de tâches)
+    RamTick,
+    Procs(Vec<(u32, i32, Vec<u32>, Vec<String>)>),
+    /// Branchement / débranchement du secteur
+    Power,
+    /// Suite d'un travail fait hors du fil de l'interface (Windows Hello, fuites, cookies…)
+    Do(Box<dyn FnOnce(&mut App) + Send>),
+    /// Une page entre ou sort du plein écran (vidéo)
+    PageFs(u32, bool),
+    /// Son qui démarre ou s'arrête dans un onglet (#33)
+    Audio(u32, bool),
+    /// Navigation vers un site bloqué pendant une session de focus (#34)
+    FocusBlock(u32, String),
 }
+
+/// Fréquence du relevé mémoire (s) ; 0 = arrêté. Un seul fil, créé seulement quand on en a besoin.
+static RAM_EVERY: AtomicU32 = AtomicU32::new(0);
+static POLLER: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
     /// Téléchargements en cours (objets COM, thread UI uniquement).
@@ -187,6 +222,27 @@ struct Tab {
     info: Option<Value>,
     speaking: bool,
     pinned: bool,
+    /// formulaire commencé et pas envoyé (#3)
+    dirty: bool,
+    /// caméra ou micro en cours d'utilisation (#3)
+    call: bool,
+    /// mémoire du processus de rendu (#1), en octets
+    ram: u64,
+    /// dernière visite (ms), gardée dans la session (#8)
+    lv: u64,
+    /// conteneur (#19), 0 = aucun
+    cont: u32,
+    /// traqueurs bloqués sur la page : (domaine, nombre) (#21)
+    bl: Vec<(String, u32)>,
+    /// couleur du site (theme-color) pour la teinte adaptative (#26)
+    tint: Option<String>,
+    /// son (#33) : 0 aucun, 1 en lecture, 2 en pause après avoir joué
+    audio: u8,
+    muted: bool,
+    /// coupé d'office à l'ouverture en arrière-plan (retrouve le son à la première visite)
+    auto_muted: bool,
+    /// vidéo en Picture-in-Picture (#32) : l'onglet ne doit pas être suspendu
+    pip: bool,
 }
 
 impl Tab {
@@ -194,6 +250,7 @@ impl Tab {
         Tab {
             id, view: None, url, title, fav, loading: false, back: false, fwd: false, last: Instant::now(),
             private: false, group: 0, blocked: 0, info: None, speaking: false, pinned: false,
+            dirty: false, call: false, ram: 0, lv: now_ms(), cont: 0, bl: vec![], tint: None, audio: 0, muted: false, auto_muted: false, pip: false,
         }
     }
 }
@@ -216,6 +273,7 @@ struct Win {
     sidep: Option<WebView>,
     sidep_ext: Value,
     side_r: f64,
+    x: WinX,
 }
 
 /// Demande d'ouverture de fenêtre (traitée dans la boucle, qui seule peut créer des fenêtres).
@@ -241,6 +299,13 @@ struct App {
     popup_at: Instant,
     ovr_full: bool,
     ovr_rects: Vec<[f64; 4]>,
+    /// état 0.7 propre à la fenêtre courante (espace, écran partagé, coup d'œil)
+    x: WinX,
+    /// espaces de travail (#7), archive (#8), sessions (#12), notes (#13 ; None = coffre verrouillé)
+    spaces: Vec<Value>,
+    archive: Vec<Value>,
+    sessions: Vec<Value>,
+    notes: Option<Value>,
     others: Vec<Win>,
     want_window: Vec<WinReq>,
     proxy: EventLoopProxy<Ev>,
@@ -249,7 +314,30 @@ struct App {
     tabs: Vec<Tab>,
     active: usize,
     next_id: u32,
-    closed: Vec<String>,
+    closed: Vec<Value>,
+    /// conteneur imposé au prochain onglet (#19)
+    open_cont: Option<u32>,
+    /// conteneurs dont le profil a reçu les extensions cette session
+    cont_ext: std::collections::HashSet<u32>,
+    /// sites visités (conteneur, domaine) à effacer à la fermeture (#20)
+    visited: std::collections::HashSet<(u32, String)>,
+    hello_busy: bool,
+    /// image du jour (#27) : {date, credit, link}
+    daily: Value,
+    daily_busy: bool,
+    daily_try: Option<Instant>,
+    /// change quand l'image de la nouvelle page change (l'interface la recharge)
+    ntp_v: u64,
+    /// météo en cache (#28) : (ville|unité|langue, quand, données)
+    wx: Option<(String, Instant, Value)>,
+    wx_busy: bool,
+    /// liste de tâches de la nouvelle page (#28), chargée à la première demande
+    todo: Value,
+    /// CSS / JS par site (#29) : {domaine: {css, js, on}}
+    custom: Value,
+    /// session de focus (#34) : {phase, end} ; génération du minuteur en cours
+    focus: Value,
+    focus_gen: u64,
     bookmarks: Vec<Value>,
     history: Vec<Value>,
     groups: Vec<Value>,
@@ -275,6 +363,17 @@ struct App {
     /// Dernier état de la mise à jour (rejoué aux fenêtres qui s'ouvrent)
     upd: Value,
     upd_busy: bool,
+    /// Réglages au démarrage : ceux marqués « rs » ne s'appliquent qu'après un redémarrage
+    boot: Value,
+    /// Statistiques d'économies (#6), stats.json
+    stats: Value,
+    stats_dirty: bool,
+    /// Économie de batterie active (#2) / connexion limitée
+    batt: bool,
+    metered: bool,
+    tasks_open: bool,
+    cpu_prev: HashMap<u32, (u64, Instant)>,
+    procs: Value,
     _ctx: WebContext,
 }
 
@@ -313,6 +412,10 @@ fn main() {
     if saved["cfg"].is_null() && saved["bmbar"].is_boolean() {
         cfg["bmbar"] = saved["bmbar"].clone(); // réglage d'une version précédente
     }
+    if saved["cfg"].is_null() {
+        cfg["cfgV"] = json!(settings::SCHEMA); // premier lancement : rien à migrer
+    }
+    settings::migrate(&mut cfg);
     let eco = args.iter().any(|a| a == "--eco") || cfg["eco"].as_bool().unwrap_or(false);
     let ext_on = cfg["ext"].as_bool().unwrap_or(true);
     adblock::ON.store(cfg["ab"].as_bool().unwrap_or(true), Ordering::Relaxed);
@@ -336,6 +439,8 @@ AutofillServerCommunication,InterestFeedContentSuggestions \
     if eco {
         flags.push_str(" --enable-low-end-device-mode --renderer-process-limit=2 --disable-gpu-compositing");
     }
+    priv07::doh_prefs(&dir, &cfg); // DNS sécurisé (#25) : réglage du moteur, lu à son démarrage
+    App::cont_gc(&dir, &cfg);
 
     let base = WebViewBuilder::new_with_web_context(&mut ctx).with_additional_browser_args(&flags).with_browser_extensions_enabled(ext_on);
     let ui = build_ui(&window, base, &proxy, 1);
@@ -358,6 +463,11 @@ AutofillServerCommunication,InterestFeedContentSuggestions \
         popup_at: Instant::now(),
         ovr_full: true,
         ovr_rects: vec![],
+        x: WinX::default(),
+        spaces: saved["spaces"].as_array().cloned().unwrap_or_default(),
+        archive: tabs07::load_json("archive.json", json!([])).as_array().cloned().unwrap_or_default(),
+        sessions: tabs07::load_json("sessions.json", json!([])).as_array().cloned().unwrap_or_default(),
+        notes: None,
         others: vec![],
         want_window: vec![],
         proxy: proxy.clone(),
@@ -367,6 +477,20 @@ AutofillServerCommunication,InterestFeedContentSuggestions \
         active: 0,
         next_id: 1,
         closed: vec![],
+        open_cont: None,
+        cont_ext: Default::default(),
+        visited: Default::default(),
+        hello_busy: false,
+        daily: tabs07::load_json("ntp-daily.json", Value::Null),
+        daily_busy: false,
+        daily_try: None,
+        ntp_v: now_ms(),
+        wx: None,
+        wx_busy: false,
+        todo: Value::Null,
+        custom: json!({}),
+        focus: Value::Null,
+        focus_gen: 0,
         bookmarks: list("bookmarks"),
         history: list("history"),
         groups: list("groups"),
@@ -390,13 +514,29 @@ AutofillServerCommunication,InterestFeedContentSuggestions \
         dev: devtools::DevTools::default(),
         upd: Value::Null,
         upd_busy: false,
+        boot: cfg.clone(),
+        stats: std::fs::read_to_string(dir.join("stats.json")).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({"days": {}})),
+        stats_dirty: false,
+        batt: false,
+        metered: false,
+        tasks_open: false,
+        cpu_prev: HashMap::new(),
+        procs: json!([]),
         cfg,
         _ctx: ctx,
     };
     app.apply_profile();
     let _ = app.ui.zoom(app.ui_scale());
+    app.sync_lite();
+    app.update_power();
+    app.poller();
+    app.load_notes();
+    app.sync_keys();
+    app.cc_load();
+    app.daily_check();
 
-    // Session précédente : onglets restaurés "endormis" (0 Mo) sauf l'actif
+    // Session précédente : onglets restaurés "endormis" (0 Mo) sauf l'actif ; ceux des autres espaces sont rangés
+    app.x.space = if app.cfg["spaces"] == true { saved["space"].as_u64().unwrap_or(0) as u32 } else { 0 };
     if app.cfg["restore"].as_bool().unwrap_or(true) {
         for t in list("session") {
             let u = str_of(&t["u"]);
@@ -405,7 +545,18 @@ AutofillServerCommunication,InterestFeedContentSuggestions \
                 let mut tab = Tab::new(id, u, str_of(&t["t"]), str_of(&t["f"]));
                 tab.group = t["g"].as_u64().unwrap_or(0) as u32;
                 tab.pinned = t["pin"] == true;
-                app.tabs.push(tab);
+                tab.lv = t["lv"].as_u64().unwrap_or_else(now_ms);
+                let c = t["c"].as_u64().unwrap_or(0) as u32;
+                tab.cont = if app.cont_ok(c) { c } else { 0 };
+                let sp = if app.cfg["spaces"] == true { t["sp"].as_u64().unwrap_or(0) as u32 } else { 0 };
+                if sp == app.x.space {
+                    app.tabs.push(tab);
+                } else {
+                    match app.x.stash.iter_mut().find(|s| s.0 == sp) {
+                        Some(s) => s.1.push(tab),
+                        None => app.x.stash.push((sp, vec![tab], 0)),
+                    }
+                }
             }
         }
     }
@@ -464,6 +615,7 @@ AutofillServerCommunication,InterestFeedContentSuggestions \
             app.open_window(target, req);
         }
         if app.quit {
+            app.on_quit();
             app.vault.lock();
             app.save();
             *flow = ControlFlow::Exit;
@@ -492,6 +644,7 @@ impl App {
         swap(&mut self.sidep, &mut o.sidep);
         swap(&mut self.sidep_ext, &mut o.sidep_ext);
         swap(&mut self.side_r, &mut o.side_r);
+        swap(&mut self.x, &mut o.x);
     }
 
     fn bring(&mut self, i: usize) {
@@ -550,7 +703,7 @@ impl App {
         let mut w = Win {
             ui, tabs: vec![], window, wid, active: 0, ui_h: 84.0, side_w: 0.0, overlay: false,
             ui_ready: false, was_max: false, dev: devtools::DevTools::default(), private_win: req.private,
-            popup: None, sidep: None, sidep_ext: Value::Null, side_r: 0.0,
+            popup: None, sidep: None, sidep_ext: Value::Null, side_r: 0.0, x: WinX::default(),
         };
         self.swap_fields(&mut w);
         self.others.push(w);
@@ -568,6 +721,8 @@ impl App {
                 let mut tab = Tab::new(id, str_of(&t["u"]), str_of(&t["t"]), str_of(&t["f"]));
                 tab.group = t["g"].as_u64().unwrap_or(0) as u32;
                 tab.pinned = t["pin"] == true;
+                let c = t["c"].as_u64().unwrap_or(0) as u32;
+                tab.cont = if self.cont_ok(c) { c } else { 0 };
                 self.tabs.push(tab);
             }
             self.activate(req.active.min(self.tabs.len() - 1));
@@ -587,7 +742,7 @@ impl App {
         self.dev.close();
         for t in self.tabs.drain(..) {
             if !t.url.is_empty() && !t.private {
-                self.closed.push(t.url);
+                self.closed.push(json!({"u": t.url, "t": t.title, "f": t.fav}));
             }
         }
         let mut o = self.others.pop().unwrap();
@@ -647,10 +802,11 @@ impl App {
     fn content_rect(&self) -> Rect {
         let s = self.window.inner_size();
         let k = self.ui_scale() * self.scale();
-        let top = (self.ui_h * k) as u32;
-        let left = (self.side_w * k) as u32;
-        let bottom = (self.dev.height() * k) as u32;
-        let right = (self.side_r * k) as u32;
+        let top = (self.top_h() * k) as u32;
+        let (fs, zen) = (self.x.page_fs, self.x.zen);
+        let left = if fs || zen { 0 } else { (self.side_w * k) as u32 };
+        let bottom = if fs { 0 } else { (self.dev.height() * k) as u32 };
+        let right = if fs { 0 } else { (self.side_r * k) as u32 };
         Rect {
             position: PhysicalPosition::new(left as i32, top as i32).into(),
             size: PhysicalSize::new(s.width.saturating_sub(left + right), s.height.saturating_sub(top + bottom)).into(),
@@ -672,14 +828,30 @@ impl App {
             self.push();
         }
         let hide = self.blank();
-        let full = self.overlay || self.blank() || self.side_w > 0.0 || self.dev.height() > 0.0 || self.side_r > 0.0;
+        let full = !self.x.page_fs && (self.overlay || self.blank() || self.side_w > 0.0 || self.dev.height() > 0.0 || self.side_r > 0.0 || self.x.split.is_some());
         let s = self.window.inner_size();
-        let h = if full { s.height } else { (self.ui_h * self.ui_scale() * self.scale()) as u32 };
+        let h = if full { s.height } else { (self.top_h() * self.ui_scale() * self.scale()) as u32 };
         let _ = self.ui.set_bounds(Rect { position: PhysicalPosition::new(0, 0).into(), size: PhysicalSize::new(s.width, h).into() });
         let r = self.content_rect();
-        if let Some(v) = self.active_view() {
-            let _ = v.set_bounds(r);
-            let _ = v.set_visible(!hide);
+        match self.x.split {
+            Some(sp) if !hide => {
+                let (ra, rb) = self.split_rects(r, sp);
+                for (id, rr) in [(sp.a, ra), (sp.b, rb)] {
+                    if let Some(v) = self.idx(id).and_then(|i| self.tabs[i].view.as_ref()) {
+                        let _ = v.set_bounds(rr);
+                        let _ = v.set_visible(true);
+                    }
+                }
+            }
+            _ => {
+                if let Some(v) = self.active_view() {
+                    let _ = v.set_bounds(r);
+                    let _ = v.set_visible(!hide);
+                }
+            }
+        }
+        if let Some(p) = &self.x.peek {
+            let _ = p.set_bounds(self.peek_rect());
         }
         // panneau latéral d'extension : à droite, sous son en-tête (caché quand un menu est ouvert)
         if let Some(p) = &self.sidep {
@@ -825,7 +997,26 @@ impl App {
 
     fn cfg_script(&self) -> String {
         let c = &self.cfg;
-        let o = json!({"ab": c["ab"], "allow": c["allow"], "dark": c["dark"], "light": c["light"], "darkAll": c["darkAll"]});
+        // préchargement (#4) : coupé sur batterie ou connexion limitée si demandé
+        let pf = if c["prefetch"] == true && !(c["prefetchSave"] == true && (self.batt || self.metered)) { c["prefetchMode"].clone() } else { json!("off") };
+        let lite_auto: Vec<String> = match adblock::LITE.read().ok().and_then(|l| l.clone()) {
+            Some((d, m)) => {
+                let mut v: Vec<String> = m.iter().filter(|(_, f)| *f & adblock::LITE_AUTO != 0).map(|(h, _)| h.clone()).collect();
+                if d & adblock::LITE_AUTO != 0 {
+                    v.push("*".into());
+                    v.extend(m.iter().filter(|(_, f)| *f & adblock::LITE_AUTO == 0).map(|(h, _)| format!("-{h}")));
+                }
+                v
+            }
+            None => vec![],
+        };
+        let (cc, ccjs) = self.cc_page_cfg();
+        let o = json!({"ab": c["ab"], "allow": c["allow"], "tint": c["adaptive"] == true, "cc": cc, "ccjs": ccjs, "dark": c["dark"], "light": c["light"], "darkAll": c["darkAll"],
+            "pf": pf, "pfd": c["prefetchDelay"], "pwo": c["pwgen"] == true && c["pwOffer"] == true, "form": c["sleepWl"] == true && c["sleepForms"] == true,
+            "call": c["sleepWl"] == true && c["sleepCalls"] == true, "noAuto": lite_auto,
+            "peek": if c["peek"] == true { c["peekTrigger"].clone() } else { json!("") }, "peekSites": c["peekSites"],
+            "gest": if c["gestures"] == true { json!({"trail": c["gestTrail"], "sens": c["gestSens"]}) } else { Value::Null },
+            "navSide": c["navBtns"] == true && c["navSide"] == true});
         format!("window.__plumeCfg={o};window.__plume&&window.__plume.apply();")
     }
 
@@ -833,11 +1024,17 @@ impl App {
         let id = self.tabs[i].id;
         let private = self.tabs[i].private;
         let url = self.tabs[i].url.clone();
+        // article enregistré (#38) : servi depuis le disque par un nom d'hôte virtuel, posé avant la navigation
+        let rl = url.starts_with("https://reading.plume/");
+        let cont = if private { 0 } else { self.tabs[i].cont };
         let (p1, p2, p3, p4) = (self.proxy.clone(), self.proxy.clone(), self.proxy.clone(), self.proxy.clone());
-        let built = WebViewBuilder::new()
-            .with_environment(self.env.clone())
-            .with_incognito(private)
-            .with_url(&url)
+        let mut b = WebViewBuilder::new().with_environment(self.env.clone()).with_incognito(private);
+        if cont > 0 {
+            b = b.with_profile_name(format!("plume-c{cont}")); // conteneur : cookies et stockage à part (#19)
+        }
+        let built = b
+            .with_back_forward_navigation_gestures(self.cfg["navBtns"] == true && self.cfg["navSwipe"] == true)
+            .with_url(if rl { "about:blank" } else { url.as_str() })
             .with_bounds(self.content_rect())
             .with_visible(false)
             .with_devtools(true)
@@ -866,21 +1063,48 @@ impl App {
             clip_siblings(&v);
             unsafe {
                 let _ = hook_tab(&v, id, &self.proxy);
+                App::hook_audio(&v, id, &self.proxy);
+                if rl && let Ok(w3) = v.webview().cast::<ICoreWebView2_3>() {
+                    let _ = w3.SetVirtualHostNameToFolderMapping(
+                        w!("reading.plume"),
+                        &HSTRING::from(App::rl_dir().as_path()),
+                        COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS,
+                    );
+                }
             }
             let z = self.cfg["pageZoom"].as_f64().unwrap_or(1.0);
             if z != 1.0 {
                 let _ = v.zoom(z);
             }
+            if cont > 0 {
+                self.cont_exts(cont, &v);
+            }
+            if rl {
+                let _ = v.load_url(&url);
+            }
             self.tabs[i].view = Some(v);
         }
     }
 
+    /// Onglet protégé de la veille (#3) : site en liste blanche, formulaire en cours, appel en cours.
+    fn protected(&self, t: &Tab) -> bool {
+        let c = &self.cfg;
+        c["sleepWl"] == true
+            && (strs(&c["sleepList"]).iter().any(|h| *h == import::host_of(&t.url))
+                || (c["sleepForms"] == true && t.dirty)
+                || (c["sleepCalls"] == true && t.call))
+    }
+
     /// Onglet en arrière-plan : caché + suspendu (scripts et rendu arrêtés) + mémoire minimale.
     fn sleep(&mut self, i: usize) {
+        let keep = self.protected(&self.tabs[i]) || self.tabs[i].pip;
         let t = &mut self.tabs[i];
         t.last = Instant::now();
         if let Some(v) = &t.view {
             let _ = v.set_visible(false);
+            if keep {
+                return; // liste blanche : caché mais jamais suspendu
+            }
             let _ = v.set_memory_usage_level(MemoryUsageLevel::Low);
             unsafe {
                 if let Ok(c3) = v.webview().cast::<ICoreWebView2_3>() {
@@ -895,16 +1119,33 @@ impl App {
             return;
         }
         self.popup = None;
+        if i != self.active {
+            self.leave_page_fs();
+        }
+        let id_i = self.tabs[i].id;
+        if let Some(sp) = self.x.split.filter(|sp| sp.a != id_i && sp.b != id_i) {
+            let _ = sp;
+            self.unsplit();
+        }
+        let in_split = self.x.split.is_some();
         if i != self.active && self.active < self.tabs.len() {
+            self.auto_pip(self.active); // la vidéo continue en PiP (#32)
+        }
+        if i != self.active && self.active < self.tabs.len() && !in_split {
             self.sleep(self.active);
         }
         self.active = i;
+        self.pip_back(i);
+        if self.tabs[i].auto_muted {
+            self.set_mute(i, false);
+        }
         self.overlay = false;
         if self.tabs[i].view.is_none() && !self.tabs[i].url.is_empty() {
             self.build_view(i);
         }
         let t = &mut self.tabs[i];
         t.last = Instant::now();
+        t.lv = now_ms();
         if let Some(v) = &t.view {
             let _ = v.set_memory_usage_level(MemoryUsageLevel::Normal);
         }
@@ -929,11 +1170,13 @@ impl App {
         let pos = if self.tabs.is_empty() { 0 } else { (self.active + 1).max(pins) };
         let mut t = Tab::new(id, url.clone().unwrap_or_default(), String::new(), String::new());
         t.private = private;
+        t.cont = if private { 0 } else { self.cont_for(url.as_deref()) };
         // un onglet ouvert depuis un groupe reste dans le groupe
         t.group = self.tabs.get(self.active).map_or(0, |a| if url.is_some() { a.group } else { 0 });
         self.tabs.insert(pos, t);
         if !fg && url.is_some() {
             self.build_view(pos);
+            self.bg_mute(pos);
             self.sleep(pos);
         }
         if fg || self.tabs.len() == 1 {
@@ -947,9 +1190,14 @@ impl App {
         if i >= self.tabs.len() {
             return;
         }
+        let cid = self.tabs[i].id;
+        if self.x.split.is_some_and(|sp| sp.a == cid || sp.b == cid) {
+            self.unsplit();
+        }
         let t = self.tabs.remove(i);
+        self.clear_if_last(&t);
         if !t.url.is_empty() && !t.private {
-            self.closed.push(t.url.clone());
+            self.closed.push(json!({"u": t.url, "t": t.title, "f": t.fav}));
             if self.closed.len() > 25 {
                 self.closed.remove(0);
             }
@@ -982,6 +1230,14 @@ impl App {
             return;
         }
         let i = self.active;
+        // site toujours ouvert dans un conteneur (#19)
+        if let Some(c) = self.cont_site(&url).filter(|c| *c != self.tabs[i].cont && !self.tabs[i].private) {
+            if self.tabs[i].view.is_some() {
+                self.open_cont = Some(c);
+                return self.new_tab(Some(url), true, false);
+            }
+            self.tabs[i].cont = c;
+        }
         self.overlay = false;
         self.tabs[i].url = url.clone();
         match &self.tabs[i].view {
@@ -1001,24 +1257,41 @@ impl App {
 
     /// Économiseur de mémoire : décharge les onglets inactifs depuis longtemps (sauf s'ils jouent du son).
     fn discard_idle(&mut self) {
-        let mins = self.cfg["sleep"].as_u64().unwrap_or(10);
+        self.update_power();
+        // sur batterie (#2), les onglets s'endorment plus vite
+        let mins = if self.batt { self.cfg["battSleep"].as_u64().unwrap_or(2) } else { self.cfg["sleep"].as_u64().unwrap_or(10) };
         let mut changed = false;
         if mins > 0 {
             let limit = Duration::from_secs(mins * 60);
             let dev = self.dev.target;
-            for (i, t) in self.tabs.iter_mut().enumerate() {
-                if i == self.active || t.view.is_none() || t.last.elapsed() < limit || t.private || t.id == dev {
+            let audio_ok = self.cfg["sleepWl"] != true || self.cfg["sleepAudio"] != false;
+            let mut freed = 0u64;
+            for i in 0..self.tabs.len() {
+                let skip = {
+                    let t = &self.tabs[i];
+                    i == self.active || t.view.is_none() || t.last.elapsed() < limit || t.private || t.id == dev || self.protected(t) || t.pip
+                        || self.x.split.is_some_and(|sp| sp.a == t.id || sp.b == t.id)
+                };
+                if skip {
                     continue;
                 }
-                let playing = t.view.as_ref().is_some_and(|v| unsafe {
-                    let mut b = BOOL(0);
-                    v.webview().cast::<ICoreWebView2_8>().and_then(|c| c.IsDocumentPlayingAudio(&mut b)).is_ok() && b.as_bool()
-                });
+                let t = &mut self.tabs[i];
+                let playing = audio_ok
+                    && t.view.as_ref().is_some_and(|v| unsafe {
+                        let mut b = BOOL(0);
+                        v.webview().cast::<ICoreWebView2_8>().and_then(|c| c.IsDocumentPlayingAudio(&mut b)).is_ok() && b.as_bool()
+                    });
                 if !playing {
+                    // mémoire libérée (#6) : la dernière mesure, sinon une estimation prudente
+                    freed += if t.ram > 0 { t.ram } else { 60 << 20 };
                     t.view = None;
                     t.loading = false;
+                    t.ram = 0;
                     changed = true;
                 }
+            }
+            if freed > 0 {
+                self.stat_add("f", (freed >> 20) as f64);
             }
         }
         // verrouillage automatique du coffre
@@ -1030,7 +1303,221 @@ impl App {
         if changed {
             self.push();
         }
+        if self.cfg["stats"] == true && self.cfg["statsHome"] == true {
+            self.push_stats();
+        }
+        self.auto_close();
         self.save();
+    }
+
+    /* ---------- Performance (0.7) ---------- */
+
+    /// Relevé mémoire / CPU : seulement quand le badge des onglets ou le gestionnaire de tâches en a besoin.
+    fn poller(&self) {
+        let every = if self.tasks_open { 2 } else if self.cfg["ram"] == true { self.cfg["ramEvery"].as_u64().unwrap_or(5).clamp(1, 60) as u32 } else { 0 };
+        RAM_EVERY.store(every, Ordering::Relaxed);
+        if every > 0 && !POLLER.swap(true, Ordering::Relaxed) {
+            let p = self.proxy.clone();
+            std::thread::spawn(move || {
+                loop {
+                    // d'abord attendre : WebView2 plante si on demande ses processus pendant son démarrage
+                    std::thread::sleep(Duration::from_secs(RAM_EVERY.load(Ordering::Relaxed).max(2) as u64));
+                    let n = RAM_EVERY.load(Ordering::Relaxed);
+                    if n == 0 || p.send_event(Ev::RamTick).is_err() {
+                        break;
+                    }
+                }
+                POLLER.store(false, Ordering::Relaxed);
+            });
+        }
+    }
+
+    /// Processus WebView2 (navigateur, rendu, GPU…) avec les cadres qu'ils affichent.
+    fn poll_procs(&self) {
+        if !self.ui_ready {
+            return;
+        }
+        let Ok(e13) = self.env.cast::<ICoreWebView2Environment13>() else { return };
+        let p = self.proxy.clone();
+        unsafe {
+            let _ = e13.GetProcessExtendedInfos(&GetProcessExtendedInfosCompletedHandler::create(Box::new(move |r, list| {
+                r?;
+                let Some(list) = list else { return Ok(()) };
+                let mut n = 0u32;
+                list.Count(&mut n)?;
+                let mut out = vec![];
+                for i in 0..n {
+                    let x = list.GetValueAtIndex(i)?;
+                    let info = x.ProcessInfo()?;
+                    let (mut pid, mut kind) = (0i32, COREWEBVIEW2_PROCESS_KIND::default());
+                    info.ProcessId(&mut pid)?;
+                    info.Kind(&mut kind)?;
+                    let (mut frames, mut srcs) = (vec![], vec![]);
+                    // seuls les processus de rendu ont des cadres (les autres font planter WebView2)
+                    if kind == COREWEBVIEW2_PROCESS_KIND_RENDERER && let Ok(coll) = x.AssociatedFrameInfos() {
+                        let it = coll.GetIterator()?;
+                        let mut has = BOOL(0);
+                        it.HasCurrent(&mut has)?;
+                        while has.as_bool() {
+                            let f = it.GetCurrent()?;
+                            let f = std::mem::ManuallyDrop::new(f);
+                            if let Ok(f2) = f.cast::<ICoreWebView2FrameInfo2>() {
+                                let mut id = 0u32;
+                                f2.FrameId(&mut id)?;
+                                frames.push(id);
+                            }
+                            let mut src = PWSTR::null();
+                            f.Source(&mut src)?;
+                            srcs.push(webview2_com::take_pwstr(src));
+                            it.MoveNext(&mut has)?;
+                        }
+                        std::mem::forget(it);
+                        std::mem::forget(coll);
+                    }
+                    out.push((pid as u32, kind.0, frames, srcs));
+                }
+                let _ = p.send_event(Ev::Procs(out));
+                Ok(())
+            })));
+        }
+    }
+
+    fn on_procs(&mut self, list: Vec<(u32, i32, Vec<u32>, Vec<String>)>) {
+        let ncpu = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) as f64;
+        let now = Instant::now();
+        // cadre principal de chaque onglet (toutes les fenêtres) → onglet
+        let mut by_frame: HashMap<u32, (u32, String)> = HashMap::new();
+        for t in self.tabs.iter().chain(self.others.iter().flat_map(|w| w.tabs.iter())) {
+            if let Some(fid) = t.view.as_ref().and_then(main_frame) {
+                by_frame.insert(fid, (t.id, if t.title.is_empty() { t.url.clone() } else { t.title.clone() }));
+            }
+        }
+        let mut per_tab: HashMap<u32, (u64, usize)> = HashMap::new();
+        let mut procs = vec![];
+        let mut seen = vec![];
+        for (pid, kind, frames, srcs) in list {
+            let (mem, cpu) = perf::stat(pid).unwrap_or((0, 0));
+            let pct = match self.cpu_prev.get(&pid) {
+                Some((c0, t0)) => {
+                    let dt = now.duration_since(*t0).as_nanos() as f64 / 100.0;
+                    if dt > 0.0 { (cpu.saturating_sub(*c0) as f64 / dt / ncpu * 100.0).min(100.0) } else { 0.0 }
+                }
+                None => 0.0,
+            };
+            self.cpu_prev.insert(pid, (cpu, now));
+            seen.push(pid);
+            let mut tabs: Vec<u32> = vec![];
+            let mut titles: Vec<String> = vec![];
+            for f in &frames {
+                if let Some((id, title)) = by_frame.get(f).filter(|(id, _)| !tabs.contains(id)) {
+                    tabs.push(*id);
+                    titles.push(title.clone());
+                }
+            }
+            let ui = srcs.iter().any(|s| s.starts_with("http://plume.ui") || s.starts_with("plume:"));
+            let exts: Vec<Value> = srcs
+                .iter()
+                .filter_map(|s| s.strip_prefix("chrome-extension://").and_then(|r| r.split('/').next()))
+                .map(|id| self.exts.iter().find(|e| e["id"] == id).map(|e| e["name"].clone()).unwrap_or(json!(id)))
+                .collect();
+            for id in &tabs {
+                per_tab.insert(*id, (mem, tabs.len()));
+            }
+            let kind = match COREWEBVIEW2_PROCESS_KIND(kind) {
+                COREWEBVIEW2_PROCESS_KIND_BROWSER => "browser",
+                COREWEBVIEW2_PROCESS_KIND_RENDERER => "renderer",
+                COREWEBVIEW2_PROCESS_KIND_GPU => "gpu",
+                COREWEBVIEW2_PROCESS_KIND_UTILITY => "utility",
+                _ => "other",
+            };
+            procs.push(json!({"pid": pid, "kind": kind, "mem": mem, "cpu": (pct * 10.0).round() / 10.0, "tabs": tabs, "titles": titles, "ext": exts, "ui": ui}));
+        }
+        self.cpu_prev.retain(|p, _| seen.contains(p));
+        for t in self.tabs.iter_mut() {
+            t.ram = per_tab.get(&t.id).map_or(0, |x| x.0);
+        }
+        for w in self.others.iter_mut() {
+            for t in w.tabs.iter_mut() {
+                t.ram = per_tab.get(&t.id).map_or(0, |x| x.0);
+            }
+        }
+        // Plume lui-même (l'hôte des WebView2)
+        let me = std::process::id();
+        if let Some((mem, _)) = perf::stat(me) {
+            procs.insert(0, json!({"pid": me, "kind": "plume", "mem": mem, "cpu": 0, "tabs": [], "titles": [], "ext": []}));
+        }
+        self.procs = json!(procs);
+        let tabs: serde_json::Map<String, Value> = per_tab.iter().map(|(id, (m, n))| (id.to_string(), json!([m, *n > 1]))).collect();
+        self.js_all(&format!("RAM({})", json!({"tabs": tabs, "procs": self.procs})));
+    }
+
+    /// Économie de batterie (#2) et connexion limitée (préchargement, #4).
+    fn update_power(&mut self) {
+        let c = &self.cfg;
+        let pw = perf::power();
+        let on = c["batt"] == true
+            && pw.on_battery
+            && (c["battWhen"] != "below" || (pw.percent as u64) <= c["battPct"].as_u64().unwrap_or(20));
+        let metered = c["prefetch"] == true && c["prefetchSave"] == true && perf::metered();
+        if on != self.batt || metered != self.metered {
+            self.batt = on;
+            self.metered = metered;
+            self.push_page_cfg();
+            self.push();
+        }
+    }
+
+    /// Règles Lite (#5) pour le filtre des requêtes.
+    fn sync_lite(&self) {
+        let c = &self.cfg;
+        let mut l = adblock::LITE.write().unwrap();
+        if c["lite"] != true {
+            *l = None;
+            return;
+        }
+        let bit = |k: &str, b: u8| if c[k] == true { b } else { 0 };
+        let def = bit("liteJs", adblock::LITE_JS) | bit("liteImg", adblock::LITE_IMG) | bit("liteFont", adblock::LITE_FONT) | bit("liteAutoplay", adblock::LITE_AUTO);
+        let sites = c["liteSites"].as_object().map(|m| m.iter().map(|(h, f)| (h.clone(), f.as_u64().unwrap_or(0) as u8)).collect()).unwrap_or_default();
+        *l = Some((def, sites));
+    }
+
+    fn lite_set(&mut self, bit: u8, on: bool) {
+        let host = import::host_of(&self.tabs[self.active].url);
+        if host.is_empty() {
+            return;
+        }
+        let cur = adblock::lite(&host);
+        let next = if on { cur | bit } else { cur & !bit };
+        let mut sites = self.cfg["liteSites"].as_object().cloned().unwrap_or_default();
+        sites.insert(host, json!(next));
+        self.cfg["liteSites"] = Value::Object(sites);
+        self.sync_lite();
+        self.push_page_cfg();
+        if let Some(v) = self.active_view() {
+            unsafe {
+                if let Ok(st) = v.webview().Settings() {
+                    let _ = st.SetIsScriptEnabled(next & adblock::LITE_JS == 0);
+                }
+            }
+            let _ = v.reload();
+        }
+        self.save();
+        self.push();
+    }
+
+    /// Statistiques (#6) : compteurs par jour (heure locale), jamais envoyés.
+    fn stat_add(&mut self, k: &str, n: f64) {
+        if self.cfg["stats"] != true {
+            return;
+        }
+        let day = today();
+        let e = &mut self.stats["days"][&day];
+        e[k] = json!(e[k].as_f64().unwrap_or(0.0) + n);
+        self.stats_dirty = true;
+    }
+
+    fn push_stats(&self) {
+        self.js_all(&format!("STATS({})", self.stats));
     }
 
     fn refocus(&self) {
@@ -1083,7 +1570,9 @@ impl App {
             .iter()
             .map(|t| {
                 json!({"id": t.id, "t": t.title, "u": t.url, "f": t.fav, "l": t.loading, "p": t.private, "g": t.group, "pin": t.pinned,
-                       "s": t.view.is_none() && !t.url.is_empty()})
+                       "s": t.view.is_none() && !t.url.is_empty(), "ram": t.ram,
+                       "ns": self.cfg["sleepWl"] == true && strs(&self.cfg["sleepList"]).contains(&import::host_of(&t.url)),
+                       "nt": self.has_note(&t.url), "c": t.cont, "au": t.audio, "mu": t.muted, "pip": t.pip})
             })
             .collect();
         let t = &self.tabs[self.active];
@@ -1098,10 +1587,15 @@ impl App {
             "asleep": self.tabs.iter().filter(|t| t.view.is_none() && !t.url.is_empty()).count(),
             "info": t.info, "priv": t.private, "blocked": t.blocked, "speaking": t.speaking, "host": host,
             "abSite": !adblock::allowed(&host), "darkSite": self.dark_on(&host),
-            "vault": {"exists": self.vault.exists(), "unlocked": self.vault.unlocked(), "n": self.vault.items.len()},
+            "vault": {"exists": self.vault.exists(), "unlocked": self.vault.unlocked(), "n": self.vault.items.len(), "hello": self.hello_ready()},
             "dl": self.downloads.iter().filter(|d| d["state"] == "run").count(), "dlAny": !self.downloads.is_empty(),
             "exts": exts, "extOn": self.ext_on, "restart": self.needs_restart(), "adlist": adblock::count(),
-            "dev": self.dev.height() > 0.0, "lang": self.lang(), "version": VERSION, "repo": REPO, "installed": setup::installed(), "sidep": self.sidep_ext, "sideR": self.side_r, "popup": self.popup.is_some(),
+            "dev": self.dev.height() > 0.0, "lang": self.lang(), "version": VERSION, "repo": REPO, "installed": setup::installed(), "batt": self.batt,
+            "spaces": self.spaces_json(), "space": self.x.space, "notesLocked": self.notes.is_none(),
+            "split": self.x.split.map(|sp| json!({"a": sp.a, "b": sp.b, "r": sp.ratio})),
+            "tint": if self.cfg["adaptive"] == true { json!(t.tint) } else { Value::Null }, "zen": self.x.zen, "pageFs": self.x.page_fs,
+            "fs": self.window.fullscreen().is_some(), "daily": if self.cfg["ntpBg"] == "daily" { self.daily.clone() } else { Value::Null },
+            "ntpV": self.ntp_v, "ccList": self.cc_list(), "focus": self.focus, "peek": self.x.peek_url, "lite": adblock::lite(&host), "liteSite": self.cfg["liteSites"].get(&host).is_some(), "sidep": self.sidep_ext, "sideR": self.side_r, "popup": self.popup.is_some(),
         });
         self.js(&format!("U({state})"));
     }
@@ -1130,7 +1624,8 @@ impl App {
     }
 
     fn needs_restart(&self) -> bool {
-        self.cfg["ext"].as_bool() != Some(self.ext_on) || (self.cfg["eco"].as_bool() != Some(self.eco) && !std::env::args().any(|a| a == "--eco"))
+        let forced_eco = std::env::args().any(|a| a == "--eco");
+        settings::items().iter().any(|i| i.rs && self.cfg[&i.k] != self.boot[&i.k] && !(i.k == "eco" && forced_eco))
     }
 
     fn dark_on(&self, host: &str) -> bool {
@@ -1143,21 +1638,29 @@ impl App {
 
     fn save(&self) {
         let Some(f) = &self.file else { return };
-        let win = |tabs: &[Tab], a: usize| {
+        let win = |tabs: &[Tab], a: usize, x: &WinX| {
             let keep = |t: &&Tab| !t.url.is_empty() && !t.private;
-            let s: Vec<Value> = tabs.iter().filter(keep).map(|t| json!({"u": t.url, "t": t.title, "f": t.fav, "g": t.group, "pin": t.pinned})).collect();
-            json!({"session": s, "active": tabs[..a.min(tabs.len())].iter().filter(keep).count()})
+            let one = |t: &Tab, sp: u32| json!({"u": t.url, "t": t.title, "f": t.fav, "g": t.group, "pin": t.pinned, "lv": t.lv, "sp": sp, "c": t.cont});
+            let mut s: Vec<Value> = tabs.iter().filter(keep).map(|t| one(t, x.space)).collect();
+            for (sp, st, _) in &x.stash {
+                s.extend(st.iter().filter(keep).map(|t| one(t, *sp)));
+            }
+            json!({"session": s, "active": tabs[..a.min(tabs.len())].iter().filter(keep).count(), "space": x.space})
         };
-        let mut wins: Vec<Value> = std::iter::once(win(&self.tabs, self.active))
-            .chain(self.others.iter().map(|w| win(&w.tabs, w.active)))
+        let mut wins: Vec<Value> = std::iter::once(win(&self.tabs, self.active, &self.x))
+            .chain(self.others.iter().map(|w| win(&w.tabs, w.active, &w.x)))
             .filter(|w| w["session"].as_array().is_some_and(|s| !s.is_empty()))
             .collect();
         let first = if wins.is_empty() { json!({"session": [], "active": 0}) } else { wins.remove(0) };
         let data = json!({"bookmarks": self.bookmarks, "history": self.history, "session": first["session"], "windows": wins,
-                          "groups": self.groups, "active": first["active"], "cfg": self.cfg, "pwhosts": self.pw_hosts});
+                          "groups": self.groups, "active": first["active"], "space": first["space"], "cfg": self.cfg, "pwhosts": self.pw_hosts,
+                          "spaces": self.spaces});
         let tmp = f.with_extension("tmp");
         if std::fs::write(&tmp, data.to_string()).is_ok() {
             let _ = std::fs::rename(&tmp, f);
+        }
+        if self.stats_dirty {
+            let _ = std::fs::write(f.with_file_name("stats.json"), self.stats.to_string());
         }
     }
 
@@ -1184,7 +1687,12 @@ impl App {
             self.bookmarks.remove(p);
         } else {
             let title = if t.title.is_empty() { t.url.clone() } else { t.title.clone() };
-            self.bookmarks.push(json!({"u": t.url, "t": title, "f": t.fav}));
+            let mut b = json!({"u": t.url, "t": title, "f": t.fav});
+            // favoris séparés par espace (#7)
+            if self.cfg["spaces"] == true && self.cfg["spacesBm"] == "separate" {
+                b["sp"] = json!(self.x.space);
+            }
+            self.bookmarks.push(b);
         }
         self.save();
         self.push();
@@ -1224,7 +1732,7 @@ impl App {
             Cmd::Private => self.want_window.push(WinReq { url: None, private: true, tab: None, restore: vec![], active: 0 }),
             Cmd::Close => self.close_tab(self.active),
             Cmd::Reopen => {
-                if let Some(u) = self.closed.pop() {
+                if let Some(u) = self.closed.pop().map(|c| str_of(&c["u"])) {
                     self.new_tab(Some(u), true, false)
                 }
             }
@@ -1258,6 +1766,26 @@ impl App {
                 self.js("openPanel('dl')");
             }
             Cmd::Reader => self.reader(),
+            Cmd::Tasks => {
+                let _ = self.ui.focus();
+                self.js("openPage('tasks')");
+            }
+            Cmd::Palette => {
+                let _ = self.ui.focus();
+                self.js("openPalette()");
+            }
+            Cmd::TabSearch => {
+                let _ = self.ui.focus();
+                self.js("openTabSearch()");
+            }
+            Cmd::Split => self.split_toggle(),
+            Cmd::Zen => self.toggle_zen(),
+            Cmd::Fullscreen => self.toggle_fullscreen(),
+            Cmd::Space(n) => {
+                if self.cfg["spaces"] == true {
+                    self.space_nth(n)
+                }
+            }
         }
     }
 
@@ -1279,7 +1807,56 @@ impl App {
 
     fn set_cfg(&mut self, k: &str, v: Value) {
         self.cfg[k] = v;
+        self.cfg_effect(k);
+        if matches!(k, "ab" | "allow" | "dark" | "light" | "darkAll") {
+            self.push_page_cfg();
+        }
+        self.save();
+        self.push();
+    }
+
+    /// Effet immédiat d'un réglage (au-delà de l'interface, qui lit la config à chaque état).
+    fn cfg_effect(&mut self, k: &str) {
+        if matches!(k, "palette" | "palKey" | "tabSearch" | "tsKey" | "split" | "splitKey" | "zen" | "zenKey") {
+            self.sync_keys();
+        }
+        if k == "split" && self.cfg["split"] != true {
+            self.unsplit();
+        }
+        if k == "notesScope" || k == "notes" {
+            self.push();
+        }
+        if k.starts_with("ram") || k == "ram" {
+            self.poller();
+        }
+        if k.starts_with("lite") {
+            self.sync_lite();
+            self.push_page_cfg();
+        }
+        if k.starts_with("prefetch") || k.starts_with("sleep") || k.starts_with("peek") || k.starts_with("gest") || k.starts_with("nav") || k.starts_with("pw")
+            || matches!(k, "adaptive" | "customCss" | "ccMode")
+        {
+            self.push_page_cfg();
+        }
+        if k.starts_with("batt") {
+            self.update_power();
+        }
         match k {
+            "zen" if self.cfg["zen"] == "off" || (self.cfg["zen"] == "fullscreen" && self.window.fullscreen().is_none()) => {
+                self.x.zen = false;
+                self.relayout();
+            }
+            "ntpBg" => self.daily_check(),
+            "focus" if self.cfg["focus"] != true => self.focus_stop(),
+            "focusSites" => {
+                if let Ok(mut f) = tools07::FOCUS.write() {
+                    if let Some(f) = f.as_mut() {
+                        f.sites = strs(&self.cfg["focusSites"]);
+                    }
+                }
+            }
+            "hello" => self.hello_toggle(),
+            "containers" | "contList" | "privReport" | "prCount" => self.push(),
             "ab" => adblock::ON.store(self.cfg["ab"].as_bool().unwrap_or(true), Ordering::Relaxed),
             "allow" => *adblock::ALLOW.write().unwrap() = strs(&self.cfg["allow"]),
             "tracking" | "theme" => {
@@ -1303,9 +1880,14 @@ impl App {
             }
             _ => {}
         }
-        if matches!(k, "ab" | "allow" | "dark" | "light" | "darkAll") {
-            self.push_page_cfg();
+    }
+
+    /// Après un changement de mode ou une réinitialisation : réapplique tout.
+    fn cfg_effect_all(&mut self) {
+        for k in ["ab", "allow", "tracking", "uiScale", "pageZoom", "ram", "lite", "batt", "palette", "zen", "ntpBg"] {
+            self.cfg_effect(k);
         }
+        self.push_page_cfg();
         self.save();
         self.push();
     }
@@ -1454,6 +2036,13 @@ impl App {
     /* ---------- Mots de passe ---------- */
 
     fn fill(&mut self, i: usize, item: &Value) {
+        if self.hello_gate(i, item) {
+            return; // Windows Hello d'abord (#24)
+        }
+        self.fill_now(i, item);
+    }
+
+    fn fill_now(&mut self, i: usize, item: &Value) {
         self.pw_used = Instant::now();
         self.eval_tab(i, &format!("window.__plume&&__plume.fill({},{})", item["u"], item["p"]));
     }
@@ -1476,11 +2065,14 @@ impl App {
     }
 
     fn after_unlock(&mut self) {
+        self.load_notes();
         self.pw_used = Instant::now();
         if let Some(p) = self.pending_pw.take() {
+            let pw = str_of(&p["p"]);
             if self.vault.upsert(p) {
                 let _ = self.vault.save();
                 self.toast("pw-saved");
+                self.pw_hibp_one(&pw);
             }
         }
         self.sync_pw_hosts();
@@ -1658,7 +2250,7 @@ impl App {
         let ok = match &ev {
             Ev::Ui(w, _) | Ev::Active(w, _) | Ev::Cmd(Who::Win(w), _) | Ev::PopupSize(w, ..) => self.focus_win(*w),
             Ev::Page(id, ..) | Ev::Title(id, _) | Ev::Url(id, _) | Ev::Loading(id, _) | Ev::Fav(id, _) | Ev::Nav(id, ..)
-            | Ev::Blocked(id) | Ev::Open(id, ..) | Ev::Cmd(Who::Tab(id), _) => self.focus_tab(*id),
+            | Ev::Blocked(id, _) | Ev::PageFs(id, _) | Ev::Audio(id, _) | Ev::FocusBlock(id, _) | Ev::Open(id, ..) | Ev::Cmd(Who::Tab(id), _) => self.focus_tab(*id),
             Ev::Dev(m) => self.focus_tab(m.tab()),
             _ => true,
         };
@@ -1687,9 +2279,32 @@ impl App {
                 }
             }
             Ev::Page(id, uri, body) => self.on_page(id, &uri, &body),
+            Ev::Cmd(Who::Tab(id), Cmd::PageFocus) => {
+                if self.x.split.is_some_and(|sp| sp.a == id || sp.b == id) && self.tabs.get(self.active).is_some_and(|t| t.id != id) {
+                    if let Some(i) = self.idx(id) {
+                        self.active = i;
+                        self.tabs[i].last = Instant::now();
+                        self.tabs[i].lv = now_ms();
+                        self.dev_retarget();
+                        self.push();
+                    }
+                }
+                self.cmd(Cmd::PageFocus)
+            }
             Ev::Cmd(_, c) => self.cmd(c),
-            Ev::Tick => self.discard_idle(),
-            Ev::Open(_, u, private) => self.new_tab(Some(u), true, private),
+            Ev::Tick => {
+                self.discard_idle();
+                self.daily_check();
+            }
+            Ev::RamTick => self.poll_procs(),
+            Ev::Procs(list) => self.on_procs(list),
+            Ev::Power => self.update_power(),
+            Ev::Open(oid, u, private) => {
+                // un lien ouvert depuis un conteneur y reste, sauf site associé à un autre conteneur (#19)
+                let oc = self.idx(oid).map_or(0, |k| self.tabs[k].cont);
+                self.open_cont = self.cont_site(&u).or((oc > 0).then_some(oc));
+                self.new_tab(Some(u), true, private)
+            }
             Ev::Dev(m) => {
                 if let Some(js) = self.dev.on_msg(m) {
                     self.js(&js);
@@ -1700,9 +2315,20 @@ impl App {
                     let _ = v.set_memory_usage_level(if on { MemoryUsageLevel::Normal } else { MemoryUsageLevel::Low });
                 }
             }
-            Ev::Blocked(id) => {
+            Ev::Do(f) => f(self),
+            Ev::PageFs(id, on) => self.page_fullscreen(id, on),
+            Ev::Audio(id, on) => self.on_audio(id, on),
+            Ev::FocusBlock(id, u) => self.focus_block(id, &u),
+            Ev::Blocked(id, h) => {
+                self.stat_add("b", 1.0);
                 if let Some(i) = self.idx(id) {
                     self.tabs[i].blocked += 1;
+                    let bl = &mut self.tabs[i].bl;
+                    match bl.iter().position(|x| x.0 == h) {
+                        Some(k) => bl[k].1 += 1,
+                        None if bl.len() < 300 => bl.push((h, 1)),
+                        None => {}
+                    }
                     if i == self.active {
                         self.js(&format!("blk({})", self.tabs[i].blocked));
                     }
@@ -1727,10 +2353,18 @@ impl App {
                 // page « nouvel onglet » interne de Chromium → onglet vide de Plume
                 let u = if u.starts_with("chrome-search://") || u.starts_with("edge://newtab") { String::new() } else { u };
                 if let Some(i) = self.idx(id) {
+                    if !self.tabs[i].private {
+                        let c = self.tabs[i].cont;
+                        self.note_visit(c, &u);
+                    }
                     if u != "about:blank" || self.tabs[i].url.is_empty() {
                         if host_of(&u) != host_of(&self.tabs[i].url) {
                             self.tabs[i].fav.clear();
                             self.tabs[i].info = None;
+                            self.tabs[i].tint = None;
+                            if self.tabs[i].audio == 2 {
+                                self.tabs[i].audio = 0;
+                            }
                         }
                         // Chrome Web Store : proposer d'ajouter l'extension à Plume
                         if (u.contains("chromewebstore.google.com/detail/") || u.contains("chrome.google.com/webstore/detail/"))
@@ -1748,6 +2382,7 @@ impl App {
                     self.tabs[i].loading = l;
                     if l {
                         self.tabs[i].blocked = 0;
+                        self.tabs[i].bl.clear();
                         self.tabs[i].speaking = false;
                     } else {
                         self.record_history(i);
@@ -1912,7 +2547,19 @@ impl App {
                 self.cfg["readerTheme"] = v["theme"].clone();
             }
             "speak" => self.tabs[i].speaking = v["on"] == true,
-            _ => return,
+            "form" => {
+                self.tabs[i].dirty = v["on"] == true;
+                return;
+            }
+            "call" => {
+                self.tabs[i].call = v["on"] == true;
+                return;
+            }
+            other => {
+                let c = other.to_string();
+                self.on_page07(i, &c, &v);
+                return;
+            }
         }
         if i == self.active {
             self.push();
@@ -1938,6 +2585,64 @@ impl App {
                 }
             }
             "update-check" => self.update_check(),
+            // --- Performance (0.7) ---
+            "tasks" => {
+                self.tasks_open = v["open"] == true;
+                self.poller();
+                if self.tasks_open {
+                    self.poll_procs();
+                }
+            }
+            "proc-end" => {
+                let pid = v["pid"].as_u64().unwrap_or(0) as u32;
+                // jamais le processus principal de WebView2, le GPU ni Plume lui-même
+                let ok = self.procs.as_array().into_iter().flatten().any(|p| p["pid"] == pid && (p["kind"] == "renderer" || p["kind"] == "utility") && p["ui"] != true);
+                if ok && perf::kill(pid) {
+                    self.poll_procs();
+                }
+            }
+            "tab-unload" => {
+                if let Some(i) = self.idx(id).filter(|i| *i != self.active) {
+                    let t = &mut self.tabs[i];
+                    t.view = None;
+                    t.ram = 0;
+                    self.push();
+                    self.poll_procs();
+                }
+            }
+            "lite-set" => {
+                let bit = match s("k").as_str() {
+                    "js" => adblock::LITE_JS,
+                    "img" => adblock::LITE_IMG,
+                    "font" => adblock::LITE_FONT,
+                    _ => adblock::LITE_AUTO,
+                };
+                self.lite_set(bit, v["on"] == true);
+            }
+            "lite-rm" => {
+                if let Some(m) = self.cfg["liteSites"].as_object_mut() {
+                    m.remove(&s("host"));
+                }
+                self.sync_lite();
+                self.push_page_cfg();
+                self.save();
+                self.push();
+            }
+            "stats-get" => self.push_stats(),
+            "stats-reset" => {
+                self.stats = json!({"days": {}});
+                self.stats_dirty = true;
+                self.save();
+                self.push_stats();
+            }
+            "nosleep" => {
+                if let Some(i) = self.idx(id) {
+                    let h = import::host_of(&self.tabs[i].url);
+                    if !h.is_empty() {
+                        self.toggle_list("sleepList", &h);
+                    }
+                }
+            }
             "update-install" => self.update_install(),
             "update-restart" => self.update_restart(),
             "go" => self.go(&s("u")),
@@ -2268,6 +2973,8 @@ impl App {
                         }
                     }
                     "store" => self.install_ext(&str_of(&info["id"])),
+                    // mot de passe solide proposé sur un formulaire d'inscription (#22)
+                    "gen" => self.eval_tab(i, &format!("window.__plume&&__plume.fillNew&&__plume.fillNew({})", info["pw"])),
                     "ext-enable" => {
                         self.cfg["ext"] = json!(true);
                         self.restart();
@@ -2278,6 +2985,8 @@ impl App {
             }
             // --- coffre ---
             "vault-create" => {
+                let _ = std::fs::remove_file(self.vault.hello_path()); // nouvelle clé : l'ancienne protection Hello ne vaut plus
+                self.cfg["hello"] = json!(false);
                 let r = self.vault.create(&s("pw"));
                 self.js(&format!("vaultRes({})", json!({"ok": r.is_ok(), "err": r.err()})));
                 if self.vault.unlocked() {
@@ -2324,6 +3033,7 @@ impl App {
                     if !host.is_empty() && !s("p").is_empty() {
                         self.vault.upsert(json!({"o": host, "u": s("u"), "p": s("p"), "t": now_ms()}));
                         let _ = self.vault.save();
+                        self.pw_hibp_one(&s("p"));
                         self.sync_pw_hosts();
                     }
                 }
@@ -2332,6 +3042,8 @@ impl App {
             }
             "vault-reset" => {
                 let _ = self.vault.delete();
+                let _ = std::fs::remove_file(self.vault.hello_path());
+                self.cfg["hello"] = json!(false);
                 self.pw_hosts.clear();
                 self.save();
                 self.push_vault();
@@ -2493,29 +3205,26 @@ impl App {
             // --- réglages ---
             "set" => {
                 let k = s("k");
-                if !k.is_empty() && k != "onboarded" {
+                if !k.is_empty() && k != "onboarded" && k != "mod" && k != "cfgV" {
+                    settings::mark(&mut self.cfg, &k);
                     self.set_cfg(&k, v["v"].clone());
                 }
             }
             "onboard" => {
                 self.cfg["name"] = json!(s("name").chars().take(40).collect::<String>());
-                for (k, x) in preset(&s("mode")).as_object().unwrap() {
-                    self.cfg[k] = x.clone();
-                }
+                settings::apply_mode(&mut self.cfg, &s("mode"));
                 self.cfg["onboarded"] = json!(true);
-                self.apply_profile();
-                adblock::ON.store(true, Ordering::Relaxed);
-                self.save();
-                self.push();
+                self.cfg_effect_all();
             }
             "mode" => {
-                for (k, x) in preset(&s("mode")).as_object().unwrap() {
-                    self.cfg[k] = x.clone();
-                }
-                adblock::ON.store(true, Ordering::Relaxed);
-                self.apply_profile();
-                self.save();
-                self.push();
+                settings::apply_mode(&mut self.cfg, &s("mode"));
+                self.cfg_effect_all();
+            }
+            // « Réinitialiser » une section, ou tout (sec vide)
+            "reset" => {
+                let sec = s("sec");
+                settings::reset(&mut self.cfg, (!sec.is_empty()).then_some(sec.as_str()));
+                self.cfg_effect_all();
             }
             "restart" => self.restart(),
             // --- DevTools intégrés ---
@@ -2532,7 +3241,10 @@ impl App {
                     w.open_devtools();
                 }
             }
-            _ => {}
+            other => {
+                let c = other.to_string();
+                self.on_ui07(&c, &v);
+            }
         }
     }
 }
@@ -2568,7 +3280,15 @@ fn make_window(target: &EventLoopWindowTarget<Ev>, pos: Option<tao::dpi::Physica
 fn build_ui(window: &Window, base: WebViewBuilder<'_>, proxy: &EventLoopProxy<Ev>, wid: u32) -> WebView {
     let p = proxy.clone();
     let ui = base
-        .with_custom_protocol("plume".into(), |_, _| {
+        .with_custom_protocol("plume".into(), |_, req| {
+            // images de la nouvelle page (#27) : plume://ui/ntp/image, plume://ui/ntp/daily
+            if let Some((data, mime)) = req.uri().path().strip_prefix("/ntp/").and_then(look07::ntp_file) {
+                return wry::http::Response::builder()
+                    .header("Content-Type", mime)
+                    .header("Cache-Control", "no-store")
+                    .body(std::borrow::Cow::Owned(data))
+                    .unwrap();
+            }
             wry::http::Response::builder()
                 .header("Content-Type", "text/html; charset=utf-8")
                 .header("Cache-Control", "no-store")
@@ -2597,6 +3317,22 @@ fn build_ui(window: &Window, base: WebViewBuilder<'_>, proxy: &EventLoopProxy<Ev
 /// Demande de fenêtre avec dimensions ou position = popup (et non un nouvel onglet).
 fn is_popup(f: &wry::NewWindowFeatures) -> bool {
     f.size.is_some() || f.position.is_some()
+}
+
+/// Identifiant du cadre principal d'une page (relie les processus WebView2 aux onglets).
+fn main_frame(v: &WebView) -> Option<u32> {
+    unsafe {
+        let c = v.webview().cast::<ICoreWebView2_20>().ok()?;
+        let mut id = 0u32;
+        c.FrameId(&mut id).ok()?;
+        Some(id)
+    }
+}
+
+/// Date locale « AAAA-MM-JJ » (statistiques par jour).
+fn today() -> String {
+    let t = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+    format!("{:04}-{:02}-{:02}", t.wYear, t.wMonth, t.wDay)
 }
 
 fn host_of(u: &str) -> &str {
@@ -2646,7 +3382,11 @@ fn open_file(owner: HWND) -> Option<PathBuf> {
 
 /// Raccourcis clavier façon Chrome (interceptés avant la page).
 fn accel(vk: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Cmd> {
+    if let Some(c) = tabs07::custom_accel(vk, ctrl, shift, alt) {
+        return Some(c);
+    }
     Some(match (ctrl, shift, alt, vk) {
+        (true, false, true, 0x31..=0x39) => Cmd::Space((vk - 0x31) as usize), // Ctrl+Alt+1…9 : espaces
         (true, false, false, 0x54) => Cmd::NewTab,                     // Ctrl+T
         (true, false, false, 0x4E) => Cmd::NewWindow,                  // Ctrl+N
         (true, true, false, 0x4E) => Cmd::Private,                     // Ctrl+Maj+N
@@ -2664,6 +3404,8 @@ fn accel(vk: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Cmd> {
         (true, false, false, 0x48) => Cmd::History,                    // Ctrl+H
         (true, false, false, 0x4A) => Cmd::Downloads,                  // Ctrl+J
         (false, false, false, 0x78) => Cmd::Reader,                    // F9 (comme Edge)
+        (false, false, false, 0x7A) => Cmd::Fullscreen,                // F11
+        (false, true, false, 0x1B) => Cmd::Tasks,                      // Maj+Échap (gestionnaire de tâches)
         (true, true, false, 0x4A) if cfg!(debug_assertions) => Cmd::UiDev,
         (false, false, false, 0x7B) | (true, true, false, 0x49) => Cmd::Dev, // F12 / Ctrl+Maj+I
         _ => return None,
@@ -2730,10 +3472,21 @@ unsafe fn hook_tab(v: &WebView, id: u32, proxy: &EventLoopProxy<Ev>) -> Result<(
                 if ctx == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT {
                     return Ok(()); // on ne bloque jamais la page elle-même
                 }
+                if ctx == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE || ctx == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FONT {
+                    let mut src = PWSTR::null();
+                    s.Source(&mut src)?;
+                    let f = adblock::lite(&import::host_of(&webview2_com::take_pwstr(src)));
+                    let bit = if ctx == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE { adblock::LITE_IMG } else { adblock::LITE_FONT };
+                    if f & bit != 0 {
+                        a.SetResponse(&env.CreateWebResourceResponse(None, 403, w!("Lite"), w!(""))?)?;
+                        return Ok(());
+                    }
+                }
                 let mut u = PWSTR::null();
                 a.Request()?.Uri(&mut u)?;
                 let u = webview2_com::take_pwstr(u);
-                if !adblock::listed(host_of(&u).split(':').next().unwrap_or("")) {
+                let bh = host_of(&u).split(':').next().unwrap_or("").to_string();
+                if !adblock::listed(&bh) {
                     return Ok(());
                 }
                 let mut src = PWSTR::null();
@@ -2743,7 +3496,46 @@ unsafe fn hook_tab(v: &WebView, id: u32, proxy: &EventLoopProxy<Ev>) -> Result<(
                 }
                 let r = env.CreateWebResourceResponse(None, 403, w!("Blocked"), w!(""))?;
                 a.SetResponse(&r)?;
-                let _ = p.send_event(Ev::Blocked(id));
+                let _ = p.send_event(Ev::Blocked(id, bh));
+                Ok(())
+            })),
+            &mut tok,
+        )?;
+        // une vidéo passe en plein écran → la fenêtre aussi (#30)
+        let pf = proxy.clone();
+        core.add_ContainsFullScreenElementChanged(
+            &ContainsFullScreenElementChangedEventHandler::create(Box::new(move |s, _| {
+                if let Some(s) = s {
+                    let mut on = BOOL(0);
+                    s.ContainsFullScreenElement(&mut on)?;
+                    let _ = pf.send_event(Ev::PageFs(id, on.as_bool()));
+                }
+                Ok(())
+            })),
+            &mut tok,
+        )?;
+        let pfb = proxy.clone();
+        core.add_NavigationStarting(
+            &NavigationStartingEventHandler::create(Box::new(move |s, args| {
+                if let (Some(s), Some(args)) = (s, args) {
+                    let mut u = PWSTR::null();
+                    args.Uri(&mut u)?;
+                    let uri = webview2_com::take_pwstr(u);
+                    let host = import::host_of(&uri);
+                    // session de focus : site bloqué → page de blocage douce (#34)
+                    if uri.starts_with("http") && tools07::focus_blocked(&host) {
+                        args.SetCancel(true)?;
+                        let _ = pfb.send_event(Ev::FocusBlock(id, uri));
+                        return Ok(());
+                    }
+                    let js_off = adblock::lite(&host) & adblock::LITE_JS != 0;
+                    let st = s.Settings()?;
+                    let mut on = BOOL(1);
+                    st.IsScriptEnabled(&mut on)?;
+                    if on.as_bool() == js_off {
+                        st.SetIsScriptEnabled(!js_off)?;
+                    }
+                }
                 Ok(())
             })),
             &mut tok,
@@ -2886,6 +3678,9 @@ unsafe extern "system" fn parent_proc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM,
                 FillRect(HDC(wp.0 as _), &rc, br);
                 let _ = DeleteObject(br.into());
                 return LRESULT(1);
+            }
+            WM_POWERBROADCAST => {
+                let _ = proxy.send_event(Ev::Power);
             }
             WM_ACTIVATE => {
                 let _ = proxy.send_event(Ev::Active(*wid, (wp.0 & 0xffff) as u32 != WA_INACTIVE));

@@ -2,6 +2,76 @@
 
 All notable changes to Plume. Each `## x.y.z` section becomes the release notes when you run `.\release.ps1 x.y.z`.
 
+## 0.7.0
+
+36 new features. Every one of them can be switched off, and a switched-off feature does no work in the background: no timer, no page script, no network call. In **Ultra-light** mode with its default settings, Plume uses about as much memory as 0.6.1.
+
+Defaults are written *Ultra-light / Full*. 🌐 = contacts an online service, only when you turn it on.
+
+### Settings
+- Rebuilt settings: every option has a one-line description and its own default in Ultra-light and Full mode. Options you change yourself are remembered, so switching modes never overwrites them.
+- Search across all settings, reset one section or everything, and new sections: Performance, Tabs, Navigation, Privacy, Appearance, Tools.
+- Your 0.6 profile is migrated automatically.
+
+### Performance
+- **Memory badge and task manager** (off / on): RAM used by each tab. `Shift+Esc` opens a task manager listing tabs, extensions and WebView2 processes with their CPU and RAM, with *End process* and *Unload*.
+- **Battery saver** (on / on): as soon as you unplug, tabs fall asleep sooner and interface animations stop; a leaf shows in the toolbar. It can wait for a battery level instead.
+- **Never-sleep list** (on / on): chosen sites, tabs playing sound, tabs with an unsent form and tabs in a call are never put to sleep.
+- **Smart preloading** (off / on): hovering a link warms up the connection (or the whole page) so it opens faster; paused on battery or metered connections.
+- **Lite mode per site** (available, nothing blocked by default): turn off JavaScript, images, web fonts or video autoplay for one site, with a badge in the address bar.
+- **"Plume saved you" statistics** (on / on): memory freed, trackers blocked, data and time saved, on the new tab page and in `plume://stats`. Everything stays on your PC.
+
+### Tabs
+- **Workspaces** (off / on): separate sets of tabs (Work, Personal…) with their own icon and color, `Ctrl+Alt+1…9`, optionally their own favorites and a container.
+- **Close inactive tabs** (off / off): tabs not visited for a while move to an archive (`plume://archive`) that you can reopen.
+- **Split screen** (on / on): two tabs side by side or stacked, adjustable divider, optional synchronized scrolling (`Ctrl+Shift+S`).
+- **Tab search** (on / on): fuzzy search in open tabs, recently closed tabs and the archive (`Ctrl+Shift+A`).
+- **Peek** (off / on): `Shift`+click (or long press) opens a link in a floating preview without leaving the page.
+- **Sessions** (on / on): save a window or a tab group as a session, reopen, rename, export and import it; the last session is kept automatically.
+- **Tab notes** (off / on): a note per page or per site, encrypted with your password vault when you have one.
+
+### Navigation
+- **Command palette** (on / on): `Ctrl+K` for actions, tabs, favorites, history and settings in one place.
+- **Calculator and conversions in the address bar** (on / on): `12*7`, `10 km in miles`, `20 °C to F`; currencies 🌐 (daily rates from frankfurter.app).
+- **Search a site with Tab** (on / on): type the start of a site such as `yout`, press `Tab`, and the address bar searches YouTube directly. Works with about 20 popular sites (Wikipedia, Amazon, GitHub, Reddit, Twitch…).
+- **Mouse gestures** (off / off): right-click and draw to go back, forward, reload, close or reopen a tab, with a visible trail.
+- **Mouse side buttons and touchpad swipe** (on / on) for back and forward.
+
+### Privacy
+- **Containers** (off / on): tabs with their own cookies and sign-ins, to use two accounts at once. A colored line marks them; right-click a tab to reopen it in a container or to always open a site in one; a workspace can use a container; extensions are added to each container.
+- **Clear data when closing** (off / off): cookies, site storage, cache and history deleted when Plume closes, or when the last tab of a site closes, except for the sites you keep.
+- **Privacy report** (on / on): click the shield to see the trackers blocked on this site (with their company), other sites contacted, cookies, permissions granted and HTTPS.
+- **Password generator and audit** (on / on): a strong password (or passphrase) is offered on sign-up forms; Passwords shows weak and reused ones.
+- **Data breach check** 🌐 (off / off): Have I Been Pwned with k-anonymity, so only 5 characters of a SHA-1 hash leave your PC; optional check when a password is saved.
+- **Windows Hello** (off / off): unlock your passwords with your PIN, fingerprint or face, once per unlock or before every autofill. The master password always works too.
+- **Secure DNS** 🌐 (off / off): DNS over HTTPS with Cloudflare, Quad9, NextDNS, Google or your own server, applied at the next start.
+
+### Appearance
+- **Adaptive tint** (off / on): the toolbar takes the color of the site. **Glass effect** intensity can be adjusted.
+- **New tab background**: gradient (default), animated gradient (stops on battery), solid color, your own picture with blur and dimming, or picture of the day 🌐 (Bing, off by default).
+- **New tab widgets** (none / clock and most visited sites): clock, weather 🌐 (Open-Meteo, only with a city you enter), to-do list and most visited sites; add, remove and reorder them.
+- **Custom CSS and JavaScript per site** (off / off): page menu › *Customize this site*. CSS applies as the page loads, even on sites with a strict security policy. JavaScript must be allowed separately and shows a clear warning. Export and import.
+- **Compact density** and **Zen mode** (off / off): Zen hides the tabs and address bar; they come back when the mouse touches the top of the window, with `Ctrl+Shift+Z`, or automatically in full screen.
+- **Full screen**: `F11`, and videos that go full screen now fill the whole screen.
+
+### Tools
+- **Automatic picture-in-picture** (off / on): leave a tab playing a video and it keeps playing in a floating window; it returns when you come back. Sites can be excluded.
+- **Media control** (on / on): a toolbar button appears when a tab plays sound (play / pause, next, go to tab), a speaker icon on tabs mutes them, and tabs opened in the background can start muted.
+- **Background tabs**: `Ctrl`+click or middle-click on a link now opens it in the background, as in Chrome.
+- **Focus mode and Pomodoro** (off / off): blocks a list of sites for 25 minutes with a timer in the toolbar and a gentle "come back in 12 min" page, breaks in between, *5 more minutes* if allowed, and a sound at the end.
+- **Quick developer tools** (on / on): color picker with a magnifier (copied as HEX, RGB or HSL) and ruler, from the command palette and Plume DevTools.
+- **QR code of the page** (on / on): generated on your PC, no online service, from an icon in the address bar, with *Copy image*.
+- **Save as PDF or Markdown** (on / on): from the page menu; Markdown uses the reader-mode text.
+- **Read later** (on / on): saves the article text and pictures for offline reading in `plume://reading-list`, with read / unread and automatic cleanup.
+
+### Fixes
+- The shield, reader and other icons in the address bar now respond to the first click (the bar used to hide them as it took focus).
+- Open menus, settings and pages no longer replay their animation or miss a click when a tab updates in the background.
+
+### Under the hood
+- Plume now builds with a small patched copy of wry (`vendor/wry`) that adds WebView2 profiles, used by containers.
+- Unit tests for settings migration, calculator and conversions, fuzzy search, password generation, k-anonymity, QR codes, secure DNS and containers: `cargo test --release` and `node --test tests/ui07.test.js`.
+
 ## 0.6.1
 
 - **Fix**: Windows Defender wrongly flagged `PlumeSetup.exe` 0.6.0 as `Trojan:Win32/Bearfoos.A!ml` (a machine-learning false positive) and deleted it. The installer no longer checks for a running Plume through a named mutex, the pattern that triggered it.
