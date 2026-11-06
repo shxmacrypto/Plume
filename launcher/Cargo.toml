@@ -1,0 +1,18 @@
+[package]
+name = "plume-launcher"
+version = "0.5.0"
+edition = "2024"
+build = "build.rs"
+
+[[bin]]
+name = "Plume"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

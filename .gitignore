@@ -1,0 +1,15 @@
+# Rust build output (huge — never commit)
+/target/
+/launcher/target/
+
+# Release binaries go to GitHub Releases, not to git
+/dist/
+
+# Temporary / editor files
+*.part
+*.tmp
+*.log
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

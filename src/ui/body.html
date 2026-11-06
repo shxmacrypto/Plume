@@ -1,0 +1,44 @@
+<div id="hdr" role="banner">
+  <i class="rz n" data-d="n"></i><i class="rz nw" data-d="nw"></i><i class="rz ne" data-d="ne"></i>
+  <div id="top">
+    <div class="brand" id="brand"></div>
+    <div id="tabs" role="tablist" aria-label="Tabs"></div>
+    <button id="new" data-t="t.new"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></button>
+    <div id="spacer"></div>
+    <div class="caption">
+      <button data-c="min" data-t="t.min">&#xE921;</button>
+      <button data-c="max" id="maxBtn" data-t="t.max">&#xE922;</button>
+      <button data-c="quit" class="cl" data-t="t.close">&#xE8BB;</button>
+    </div>
+  </div>
+  <div id="bar" role="toolbar">
+    <button class="nb" id="back" data-t="t.back"><svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg></button>
+    <button class="nb" id="fwd" data-t="t.fwd"><svg viewBox="0 0 16 16"><path d="m6 3 5 5-5 5"/></svg></button>
+    <button class="nb" id="reload" data-t="t.reload"></button>
+    <div id="omni" role="search">
+      <button class="ob" id="shield" data-t="t.shield"><svg viewBox="0 0 16 16"><path d="M8 1.8 13 3.6v4c0 3.2-2.2 5.6-5 6.6-2.8-1-5-3.4-5-6.6v-4z"/></svg><span id="blk"></span></button>
+      <span class="ob hide" id="lock" aria-hidden="true"><svg viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1.6"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg></span>
+      <input id="q" spellcheck="false" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="ov">
+      <button class="ob" id="mediaBtn" data-t="t.media"><svg viewBox="0 0 16 16"><rect x="1.5" y="3" width="9" height="10" rx="2"/><path d="m10.5 7 4-2v6l-4-2M6 6v4M4.5 8.5 6 10l1.5-1.5"/></svg></button>
+      <button class="ob" id="readerBtn" data-t="t.reader"><svg viewBox="0 0 16 16"><path d="M2 3.5h4.5A1.5 1.5 0 0 1 8 5v8a1.5 1.5 0 0 0-1.5-1.5H2zM14 3.5H9.5A1.5 1.5 0 0 0 8 5v8a1.5 1.5 0 0 1 1.5-1.5H14z"/></svg></button>
+      <button class="ob" id="star" data-t="t.star"><svg viewBox="0 0 16 16"><path d="m8 2 1.8 3.8 4.2.5-3.1 2.9.8 4.1L8 11.3l-3.7 2 .8-4.1L2 6.3l4.2-.5z"/></svg></button>
+      <i id="prog"></i>
+    </div>
+    <span id="pinx" style="display:contents"></span>
+    <button class="nb" id="extBtn" data-t="t.exts" hidden><svg viewBox="0 0 16 16"><path d="M6 2.5h2.5a1 1 0 0 1 1 1V5h1.3a1.6 1.6 0 1 1 0 3.2H9.5V10H8.2a1.6 1.6 0 1 0-3.2 0H2.5V7.2h1.3a1.6 1.6 0 1 0 0-3.2H2.5v-.5a1 1 0 0 1 1-1z"/></svg></button>
+    <button class="nb" id="dlBtn" data-t="t.dl" hidden><svg viewBox="0 0 16 16"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/></svg></button>
+    <button class="nb" id="menuBtn" data-t="t.menu" aria-haspopup="menu"><svg viewBox="0 0 16 16"><circle cx="3.5" cy="8" r=".6"/><circle cx="8" cy="8" r=".6"/><circle cx="12.5" cy="8" r=".6"/></svg></button>
+  </div>
+  <div id="info" role="alert"></div>
+  <div id="bmb" role="toolbar"></div>
+</div>
+<aside id="side" aria-label="Tabs"><div class="list" id="vlist" role="tablist" aria-orientation="vertical"></div>
+  <div class="foot2"><button id="vnew"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg><span></span></button><button id="vcol"><svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg></button></div>
+</aside>
+<div id="sidep" aria-label="Side panel"></div>
+<div id="ov"></div>
+<div id="sug"></div>
+<section id="dt" aria-label="DevTools"></section>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="onb" role="dialog" aria-modal="true"></div>
+<div id="splash"><div class="in"><i id="splashLogo"></i><h1 id="splashTxt">Plume</h1><i class="ld"></i></div></div>
