@@ -63,6 +63,17 @@ if (-not $DryRun) {
     if ($LASTEXITCODE) { Write-Host "Build failed, nothing published." -ForegroundColor Red; exit 1 }
 } else { Write-Host "(skipped) .\build.ps1 -> dist\PlumeSetup.exe + dist\PlumeSetup.exe.sha256" }
 
+# Website (web\PlumeSite, its own repository): the version and size it shows when GitHub does not answer
+$siteCfg = "..\..\PlumeSite\js\config.js"
+if (Test-Path (Join-Path $PSScriptRoot $siteCfg)) {
+    $setup = Join-Path $PSScriptRoot "dist\PlumeSetup.exe"
+    $bytes = if (Test-Path $setup) { (Get-Item $setup).Length } else { 0 }
+    $js = ([regex]"version: '[^']*'").Replace((Read-Text $siteCfg), "version: '$Version'", 1)
+    if ($bytes) { $js = ([regex]"bytes: \d+").Replace($js, "bytes: $bytes", 1) }
+    Write-Text $siteCfg $js
+    Write-Host "$(if ($DryRun) { '(skipped) ' })Website js\config.js -> $Version, $bytes bytes. Also update its What's new section, then commit and push PlumeSite with GitHub Desktop." -ForegroundColor Yellow
+}
+
 Step "4/5 Commit, tag, push"
 if (-not $isGit) {
     Write-Host "Not a git repository yet: skipped. (git init; git remote add origin https://github.com/$repo.git)" -ForegroundColor Yellow
