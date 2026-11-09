@@ -237,3 +237,29 @@ Object.assign(TXT.fr, {
   'k.rlImages': 'Télécharger les images', 'k.rlPurge': 'Supprimer les articles lus après', 'k.rlPurge.0': 'Jamais', 'k.rlReader': 'Ouvrir en mode lecture',
   'k.rlOpen': 'Liste de lecture', 'k.rlOpen.b': 'Ouvrir',
 });
+
+/* ---------- Téléchargements (« Enregistrer sous », bulle) et navigateur par défaut ---------- */
+Object.assign(TXT.en, {
+  'dl.all': 'All downloads',
+  'k.dlAsk': 'Ask where to save each file', 'k.dlAsk.d': 'Choose the folder and the name before each download. Off: files go straight to your Downloads folder.',
+  'def.title': 'Default browser', 'def.yes': 'Plume is your default browser', 'def.yesSub': 'Links you open from other apps open in Plume.',
+  'def.no': 'Plume isn’t your default browser', 'def.noSub': 'Links from your email, chats and documents open in another browser.',
+  'def.inst': 'Available in the installed version of Plume (PlumeSetup.exe).', 'def.btn': 'Make default',
+  'k.defAsk': 'Suggest making Plume the default browser', 'k.defAsk.d': 'A small bar asks about once a week, until Plume is your default browser.',
+  'def.bar': 'Make Plume your default browser? Links from your other apps will open here.', 'def.later': 'Not now', 'def.never': 'Don’t ask again',
+  'toast.def.done': 'Plume is now your default browser',
+  'onb.defT': 'Make Plume your default browser?', 'onb.defSub': 'Links from your email, chats and documents will open in Plume. Windows opens its settings: click “Set default”, then come back here.',
+  'onb.defBtn': 'Open Windows settings',
+});
+Object.assign(TXT.fr, {
+  'dl.all': 'Tous les téléchargements',
+  'k.dlAsk': 'Demander où enregistrer chaque fichier', 'k.dlAsk.d': 'Avant chaque téléchargement, choisissez le dossier et le nom. Désactivé : les fichiers vont directement dans Téléchargements.',
+  'def.title': 'Navigateur par défaut', 'def.yes': 'Plume est votre navigateur par défaut', 'def.yesSub': 'Les liens ouverts depuis vos autres applications s’ouvrent dans Plume.',
+  'def.no': 'Plume n’est pas votre navigateur par défaut', 'def.noSub': 'Les liens de vos e-mails, messageries et documents s’ouvrent dans un autre navigateur.',
+  'def.inst': 'Disponible dans la version installée de Plume (PlumeSetup.exe).', 'def.btn': 'Définir par défaut',
+  'k.defAsk': 'Proposer de faire de Plume le navigateur par défaut', 'k.defAsk.d': 'Une petite barre le propose environ une fois par semaine, tant que Plume n’est pas votre navigateur par défaut.',
+  'def.bar': 'Faire de Plume votre navigateur par défaut ? Les liens de vos autres applications s’ouvriront ici.', 'def.later': 'Plus tard', 'def.never': 'Ne plus demander',
+  'toast.def.done': 'Plume est maintenant votre navigateur par défaut',
+  'onb.defT': 'Faire de Plume votre navigateur par défaut ?', 'onb.defSub': 'Les liens de vos e-mails, messageries et documents s’ouvriront dans Plume. Windows ouvre ses paramètres : cliquez sur « Définir par défaut », puis revenez ici.',
+  'onb.defBtn': 'Ouvrir les paramètres Windows',
+});

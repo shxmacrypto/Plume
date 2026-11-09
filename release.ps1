@@ -87,7 +87,24 @@ if ($DryRun) {
     Write-Host "Published: https://github.com/$repo/releases/tag/$tag" -ForegroundColor Green
 } else {
     # Without the GitHub CLI: open the prefilled release page, the user drops the two files from dist\
-    $url = "https://github.com/$repo/releases/new?tag=$tag&title=" + [uri]::EscapeDataString("Plume $Version") + "&body=" + [uri]::EscapeDataString($Notes)
+    $url = "https://github.com/$repo/releases/new?tag=$tag&title=" + [uri]::EscapeDataString("Plume $Version")
+    $full = $null
+    try { $full = $url + "&body=" + [uri]::EscapeDataString($Notes) } catch { }   # .NET refuses very long strings
+    if ($full -and $full.Length -le 7000) {
+        $url = $full
+    } else {
+        # Notes too long for an address (GitHub refuses it): tag + title in the page, notes on the clipboard
+        try {
+            Set-Clipboard -Value $Notes
+            Write-Host "The release notes are too long for the page address, so they are NOT in the page." -ForegroundColor Yellow
+            Write-Host "They are on the clipboard: click in the description box and press Ctrl+V." -ForegroundColor Yellow
+        } catch {
+            $nf = Join-Path $PSScriptRoot "dist\release-notes-$Version.md"
+            [IO.File]::WriteAllText($nf, $Notes, $utf8)
+            Write-Host "The release notes are too long for the page address and the clipboard is not available." -ForegroundColor Yellow
+            Write-Host "Copy them from $nf into the description box." -ForegroundColor Yellow
+        }
+    }
     Start-Process $url
     Start-Process explorer.exe (Join-Path $PSScriptRoot "dist")
     Write-Host "GitHub CLI (gh) not installed: the release page is open - drag PlumeSetup.exe and PlumeSetup.exe.sha256 from the dist folder, then click 'Publish release'." -ForegroundColor Yellow

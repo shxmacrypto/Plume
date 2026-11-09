@@ -43,6 +43,8 @@ And much more, each feature optional and free when switched off:
 - **Appearance** — adaptive tint, new tab backgrounds and widgets (clock, weather, to-do), custom CSS/JS per site, compact and Zen modes, full screen.
 - **Tools** — automatic picture-in-picture, media control, focus mode with Pomodoro, color picker and ruler, QR code, save as PDF or Markdown, read later offline.
 - **Performance** — memory badge and task manager (`Shift+Esc`), battery saver, never-sleep list, smart preloading, Lite mode per site, statistics.
+- **Downloads** — choose where to save each file, a downloads bubble with progress, *Open* and *Show in folder*, and downloads that keep going when you close their tab.
+- **Default browser** — make Plume your default browser from the welcome setup or Settings; links and `.html` files from other apps then open in a new tab of your open Plume window.
 
 ## Install
 
@@ -93,7 +95,7 @@ Plume builds with the **GNU** Rust toolchain, so Visual Studio is not needed.
 
 Run the tests with `cargo test --release` (Rust) and `node --test tests/ui07.test.js` (interface functions: calculator, fuzzy search, QR codes). Tests that need the network are marked `#[ignore]`.
 
-`vendor/wry` is a copy of wry 0.53.5 with one addition, the WebView2 profile name used by containers (see `vendor/wry/PLUME.md`). `Cargo.toml` points to it with `[patch.crates-io]`.
+`vendor/wry` is a copy of wry 0.53.5 with two small changes: the WebView2 profile name used by containers, and page messages from addresses that `http::Uri` can't parse (such as local `file:///` pages) no longer crash Plume (see `vendor/wry/PLUME.md`). `Cargo.toml` points to it with `[patch.crates-io]`.
 
 ## Publish a new version
 
@@ -103,7 +105,7 @@ Run the tests with `cargo test --release` (Rust) and `node --test tests/ui07.tes
 ```
 
 1. Describe the changes under a `## 0.6.0` heading in [`CHANGELOG.md`](CHANGELOG.md). That text becomes the release notes.
-2. Run the script. It publishes with the [GitHub CLI](https://cli.github.com/) (`gh`) if it is installed. Otherwise it opens the prefilled release page and the `dist` folder, and you drop in the two files.
+2. Run the script. It publishes with the [GitHub CLI](https://cli.github.com/) (`gh`) if it is installed. Otherwise it opens the prefilled release page and the `dist` folder, and you drop in the two files. When the notes are too long for the page address, the script copies them to the clipboard instead: paste them into the description.
 3. The download link `releases/latest/download/PlumeSetup.exe` always points to the newest release, so the website never changes. Installed copies of Plume see the new version within a day and install it in one click.
 
 The version number has a single source: `version` in `Cargo.toml`.
@@ -132,6 +134,7 @@ src/ext.rs         Chrome Web Store download + CRX/ZIP unpacking        src/bico
 src/adblock.rs     blocker (assets/adlist.txt)                          src/media.rs  yt-dlp / FFmpeg downloads
 src/devtools.rs    bridge to the Chrome DevTools Protocol for Plume DevTools
 src/setup.rs       installed Plume: shortcuts, Settings › Apps entry, uninstall
+src/defbrowser.rs  default browser: Windows registration, links handed to the Plume window already open
 src/update.rs      in-app updates: GitHub release, download, SHA-256 check
 launcher/          PlumeSetup.exe: embeds plume.exe + WebView2Loader.dll and installs them
 assets/            logo, icon, ad list

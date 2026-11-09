@@ -4,6 +4,8 @@
     {"k":"lang","s":"general","t":"sel","d":"auto","ui":0},
     {"k":"search","s":"general","t":"sel","d":"google","ui":0},
     {"k":"restore","s":"general","t":"sw","d":true,"ui":0},
+    {"k":"dlAsk","s":"general","t":"sw","d":true,"ui":0},
+    {"k":"defAsk","s":"general","t":"sw","d":true,"ui":0},
     {"k":"accent","s":"look","t":"color","d":"#0a84ff","ui":0},
     {"k":"tabs","s":"look","t":"seg","d":"h","ui":0},
     {"k":"bmbar","s":"look","t":"sw","d":false,"ui":0},

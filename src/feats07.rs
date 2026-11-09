@@ -41,12 +41,17 @@ impl App {
                 // ses onglets reviennent au profil normal (page rechargée, tout de suite pour l'onglet actif)
                 let a = self.active;
                 let mut rebuild = false;
+                let mut old = vec![];
                 for (k, t) in self.tabs.iter_mut().enumerate() {
                     if t.cont as u64 == cid {
                         t.cont = 0;
-                        t.view = None;
+                        old.push((t.id, t.view.take()));
                         rebuild |= k == a;
                     }
+                }
+                // une page qui télécharge reste ouverte (cachée) jusqu'à la fin de son téléchargement
+                for (id, v) in old {
+                    self.release_view(id, v);
                 }
                 if rebuild {
                     self.active = usize::MAX;

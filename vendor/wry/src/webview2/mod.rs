@@ -905,7 +905,28 @@ impl InnerWebView {
 
         #[cfg(feature = "tracing")]
         let _span = tracing::info_span!(parent: None, "wry::ipc::handle").entered();
-        ipc_handler(Request::builder().uri(url).body(js).unwrap());
+        // Plume: http::Uri refuses file:/// (empty host), about:, data:... ; never panic on a page's message.
+        // Keep the scheme (file://localhost/... when possible) so the handler still knows it isn't a web page.
+        let req = Request::builder().uri(url.as_str()).body(js.clone()).or_else(|_| {
+          let scheme: String = url
+            .split(':')
+            .next()
+            .unwrap_or("")
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+            .collect();
+          let local = url
+            .strip_prefix("file:///")
+            .map(|p| format!("file://localhost/{p}"))
+            .filter(|u| u.parse::<http::Uri>().is_ok());
+          let fallback = local.unwrap_or_else(|| {
+            format!("{}://unparsed/", if scheme.is_empty() { "invalid" } else { scheme.as_str() })
+          });
+          Request::builder().uri(fallback).body(js)
+        });
+        if let Ok(req) = req {
+          ipc_handler(req);
+        }
 
         Ok(())
       })),

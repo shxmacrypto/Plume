@@ -43,6 +43,9 @@ const selx = (k, label, opts, sub) => `<div class="opt"><div class="lbl"><b id="
 const rng = (k, label, min, max, step, fmt, sub) => `<div class="opt"><div class="lbl"><b id="l-${k}">${label}</b>${sub ? `<span>${sub}</span>` : ''}</div><input type="range" min="${min}" max="${max}" step="${step}" value="${C()[k]}" aria-labelledby="l-${k}" aria-valuetext="${fmt(C()[k])}" data-sk="${k}" data-num="1"><span style="width:48px;text-align:right;color:var(--t2)" aria-hidden="true">${fmt(C()[k])}</span></div>`;
 const head = (k, lead) => `<h3>${t(SECNAME[k])}</h3><p class="lead">${lead}</p>`;
 const box = (inner, title) => `${title ? `<div class="ghd">${title}</div>` : ''}<div class="group">${inner}</div>`;
+// navigateur par défaut : état + bouton (la version installée seulement peut s'inscrire auprès de Windows)
+const defRow = () => `<div class="opt"><div class="lbl"><b>${t(S.isDefault ? 'def.yes' : 'def.no')}</b><span>${t(S.isDefault ? 'def.yesSub' : S.installed ? 'def.noSub' : 'def.inst')}</span></div>`
+  + (S.isDefault ? `<span class="defok" aria-hidden="true">${I.check}</span>` : `<button class="pill pri" data-sa="def-set"${S.installed ? '' : ' disabled'}>${t('def.btn')}</button>`) + '</div>';
 const restartNote = () => S.restart ? `<div class="note warn">${I.gear}<span>${t('s.restartNote')}</span><button class="pill pri" data-sa="restart">${t('b.restart')}</button></div>` : '';
 
 const SECTION = {
@@ -50,7 +53,9 @@ const SECTION = {
     + box(`<div class="opt"><div class="lbl"><b><label for="sname">${t('g.name2')}</label></b></div><input class="inp" id="sname" maxlength="40" value="${esc(C().name || '')}" style="width:220px"></div>`
       + selx('lang', t('g.lang'), [['auto', t('g.auto')], ['fr', 'Français'], ['en', 'English']])
       + selx('search', t('g.search'), Object.entries(ENGINES))
-      + sw('restore', t('g.restore'), t('g.restoreSub'))) + secReset('general'),
+      + sw('restore', t('g.restore'), t('g.restoreSub')))
+    + box(defRow() + sw('defAsk', t('k.defAsk'), t('k.defAsk.d')), t('def.title'))
+    + box(sw('dlAsk', t('k.dlAsk'), t('k.dlAsk.d')), t('dl.title')) + secReset('general'),
   look: () => head('look', t('l.lead'))
     + box(seg('theme', t('l.theme'), [['dark', t('l.dark')], ['light', t('l.light')], ['system', t('l.system')]])
       + `<div class="opt"><div class="lbl"><b>${t('l.accent')}</b></div><div class="sw2" role="radiogroup" aria-label="${esc(t('l.accent'))}">${['#0a84ff', '#5e5ce6', '#bf5af2', '#ff375f', '#ff9f0a', '#30d158', '#40c8e0', '#8e8e93'].map((c) => `<button style="--c:${c}" role="radio" aria-label="${c}" aria-checked="${(C().accent || '#0a84ff') === c}" data-sk="accent" data-sv='"${c}"'></button>`).join('')}</div></div>`
@@ -309,6 +314,7 @@ $('ov').addEventListener('click', (e) => {
     case 'onb-again': setMode(null); send('ov', { v: true }); Object.assign(ONB, { on: true, step: 0, name: C().name || '', mode: C().mode || 'full' }); $('onb').classList.add('on'); return renderOnb();
     case 'clear': if (!SET.clear) { SET.clear = true; return renderSettings(); } SET.clear = false; send('clear'); return renderSettings();
     case 'private': return send('private');
+    case 'def-set': return send('def-set');
     case 'mode': return send('mode', { mode: d.v });
     case 'vault-reset': if (!SET.reset) { SET.reset = true; return renderSettings(); } SET.reset = false; return send('vault-reset');
     case 'vault-lock': SET.P = []; SET.asked = false; return send('vault-lock');

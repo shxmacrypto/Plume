@@ -4,7 +4,9 @@ All notable changes to Plume. Each `## x.y.z` section becomes the release notes 
 
 ## 0.7.0
 
-36 new features. Every one of them can be switched off, and a switched-off feature does no work in the background: no timer, no page script, no network call. In **Ultra-light** mode with its default settings, Plume uses about as much memory as 0.6.1.
+36 new features, reworked downloads, and Plume can now be your default browser. Every feature can be switched off, and a switched-off feature does no work in the background: no timer, no page script, no network call. In **Ultra-light** mode with its default settings, Plume uses about as much memory as 0.6.1.
+
+Already on Plume 0.6? It installs this update by itself: accept the bar, then *Restart now*.
 
 Defaults are written *Ultra-light / Full*. 🌐 = contacts an online service, only when you turn it on.
 
@@ -64,12 +66,26 @@ Defaults are written *Ultra-light / Full*. 🌐 = contacts an online service, on
 - **Save as PDF or Markdown** (on / on): from the page menu; Markdown uses the reader-mode text.
 - **Read later** (on / on): saves the article text and pictures for offline reading in `plume://reading-list`, with read / unread and automatic cleanup.
 
+### Downloads
+- **Save as each time** (on / on): choose the folder and the name of each file before it downloads; Plume remembers the last folder you picked. Turn it off in Settings › General to save straight to your Downloads folder.
+- **Downloads bubble**: the toolbar button opens your latest downloads right under it, with their progress, *Open*, *Show in folder*, *Cancel* and *All downloads*. It also opens for a moment when a download starts.
+- **No more empty tabs**: a link that only downloads a file no longer leaves an empty tab behind.
+- **Downloads keep going** when you close their tab or when Plume puts the tab to sleep (they used to stay stuck at *in progress*).
+- **Closing Plume** while a download is running now asks you first.
+
+### Default browser
+- **Make Plume your default browser**: offered at the end of the welcome setup. Windows opens its settings on Plume, where you click *Set default*.
+- **Reminder** (on / on): a small bar suggests it about once a week until Plume is your default browser, with *Don't ask again*.
+- **Settings › General** shows whether Plume is your default browser, with a button to make it so (installed version).
+- **Links from other apps**: links and `.html` files opened from other apps open in a new tab of the Plume window that is already open, instead of starting a second Plume.
+
 ### Fixes
 - The shield, reader and other icons in the address bar now respond to the first click (the bar used to hide them as it took focus).
 - Open menus, settings and pages no longer replay their animation or miss a click when a tab updates in the background.
+- Opening a local `.html` file could crash Plume.
 
 ### Under the hood
-- Plume now builds with a small patched copy of wry (`vendor/wry`) that adds WebView2 profiles, used by containers.
+- Plume now builds with a small patched copy of wry (`vendor/wry`) that adds WebView2 profiles (used by containers) and no longer crashes on messages from local pages.
 - Unit tests for settings migration, calculator and conversions, fuzzy search, password generation, k-anonymity, QR codes, secure DNS and containers: `cargo test --release` and `node --test tests/ui07.test.js`.
 
 ## 0.6.1

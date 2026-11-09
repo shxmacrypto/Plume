@@ -5,6 +5,7 @@
 
 mod adblock;
 mod bicon;
+mod defbrowser;
 mod devtools;
 mod ext;
 mod import;
@@ -194,17 +195,27 @@ pub(crate) enum Ev {
     Audio(u32, bool),
     /// Navigation vers un site bloqué pendant une session de focus (#34)
     FocusBlock(u32, String),
+    /// Téléchargement en attente du choix du dossier (« Enregistrer sous »)
+    DlAsk(u32),
+    /// Lien passé par un autre lancement de Plume (lien cliqué dans une autre application) : (fenêtre, adresse)
+    Remote(u32, String),
 }
 
 /// Fréquence du relevé mémoire (s) ; 0 = arrêté. Un seul fil, créé seulement quand on en a besoin.
 static RAM_EVERY: AtomicU32 = AtomicU32::new(0);
 static POLLER: AtomicBool = AtomicBool::new(false);
 
+/// Téléchargement qui attend « Enregistrer sous » : arguments de l'événement, report, opération, entrée de la liste.
+type DlWait = (ICoreWebView2DownloadStartingEventArgs, ICoreWebView2Deferral, ICoreWebView2DownloadOperation, Value);
+
 thread_local! {
     /// Téléchargements en cours (objets COM, thread UI uniquement).
     static DLS: RefCell<HashMap<u32, ICoreWebView2DownloadOperation>> = RefCell::new(HashMap::new());
+    static DL_WAIT: RefCell<HashMap<u32, DlWait>> = RefCell::new(HashMap::new());
 }
 pub static DL_ID: AtomicU32 = AtomicU32::new(0);
+/// Demander où enregistrer chaque fichier (réglage dlAsk), lu par l'événement DownloadStarting.
+static DL_ASK: AtomicBool = AtomicBool::new(true);
 
 struct Tab {
     id: u32,
@@ -243,6 +254,8 @@ struct Tab {
     auto_muted: bool,
     /// vidéo en Picture-in-Picture (#32) : l'onglet ne doit pas être suspendu
     pip: bool,
+    /// onglet ouvert par un lien d'un autre onglet (fermé s'il ne sert qu'à un téléchargement)
+    opener: u32,
 }
 
 impl Tab {
@@ -251,6 +264,7 @@ impl Tab {
             id, view: None, url, title, fav, loading: false, back: false, fwd: false, last: Instant::now(),
             private: false, group: 0, blocked: 0, info: None, speaking: false, pinned: false,
             dirty: false, call: false, ram: 0, lv: now_ms(), cont: 0, bl: vec![], tint: None, audio: 0, muted: false, auto_muted: false, pip: false,
+            opener: 0,
         }
     }
 }
@@ -374,11 +388,20 @@ struct App {
     tasks_open: bool,
     cpu_prev: HashMap<u32, (u64, Instant)>,
     procs: Value,
+    /// Plume ouvre les liens https (navigateur par défaut), relu quand une fenêtre reprend le focus
+    is_default: bool,
+    /// onglet d'origine du prochain onglet ouvert par un lien
+    next_opener: u32,
+    /// pages d'onglets fermés gardées (cachées) jusqu'à la fin de leurs téléchargements : (fenêtre, onglet, vue)
+    dl_keep: Vec<(u32, u32, WebView)>,
     _ctx: WebContext,
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // Lien ou fichier ouvert depuis une autre application : tout ce qui suit --single-argument est l'adresse,
+    // et aucune option n'est lue (un lien piégé ne peut pas déclencher --uninstall)
+    let single = defbrowser::single_argument();
+    let args: Vec<String> = if single.is_some() { vec![] } else { std::env::args().skip(1).collect() };
     let flag = |f: &str| args.iter().any(|a| a == f);
     // Lancé par PlumeSetup.exe ou par Paramètres › Applications : rien d'autre à faire
     if flag("--register") {
@@ -387,14 +410,20 @@ fn main() {
     if flag("--uninstall") {
         std::process::exit(setup::uninstall(flag("--quiet")));
     }
+    let cli_url = single.or_else(|| args.iter().find(|a| !a.starts_with("--")).cloned()).filter(|u| !u.trim().is_empty());
+    // un seul démarrage à la fois par profil : si un autre Plume démarre, on attend que sa fenêtre soit prête
+    let start = defbrowser::start_lock();
+    // Plume déjà ouvert sur ce profil : il ouvre le lien (ou passe au premier plan) et ce lancement s'arrête
+    if !flag("--restarted") && defbrowser::hand_off(cli_url.as_deref().unwrap_or("")) {
+        return;
+    }
     setup::mark_running();
     if setup::installed() {
         std::thread::spawn(setup::cleanup);
     }
-    if args.iter().any(|a| a == "--restarted") {
+    if flag("--restarted") {
         std::thread::sleep(Duration::from_millis(1500)); // laisse l'ancienne instance libérer le profil
     }
-    let cli_url = args.iter().find(|a| !a.starts_with("--")).cloned();
 
     let dir = std::env::var("LOCALAPPDATA").map(|p| PathBuf::from(p).join("Plume")).unwrap_or_else(|_| std::env::temp_dir().join("Plume"));
     let _ = std::fs::create_dir_all(&dir);
@@ -420,6 +449,7 @@ fn main() {
     let ext_on = cfg["ext"].as_bool().unwrap_or(true);
     adblock::ON.store(cfg["ab"].as_bool().unwrap_or(true), Ordering::Relaxed);
     *adblock::ALLOW.write().unwrap() = strs(&cfg["allow"]);
+    DL_ASK.store(cfg["dlAsk"] != false, Ordering::Relaxed);
 
     let event_loop = EventLoopBuilder::<Ev>::with_user_event().build();
     let proxy = event_loop.create_proxy();
@@ -522,6 +552,9 @@ AutofillServerCommunication,InterestFeedContentSuggestions \
         tasks_open: false,
         cpu_prev: HashMap::new(),
         procs: json!([]),
+        is_default: defbrowser::is_default(),
+        next_opener: 0,
+        dl_keep: vec![],
         cfg,
         _ctx: ctx,
     };
@@ -564,7 +597,7 @@ AutofillServerCommunication,InterestFeedContentSuggestions \
     let restored_active = saved["active"].as_u64().unwrap_or(0) as usize;
     match cli_url {
         Some(u) => {
-            let u = app.to_url(&u);
+            let u = app.open_arg(&u);
             app.new_tab(Some(u), true, false)
         }
         None if !app.tabs.is_empty() => app.activate(restored_active.min(app.tabs.len() - 1)),
@@ -592,6 +625,8 @@ AutofillServerCommunication,InterestFeedContentSuggestions \
         }
     });
 
+    // fenêtre prête et boucle sur le point de tourner : les lancements en attente peuvent lui passer leur lien
+    drop(start);
     event_loop.run(move |event, target, flow| {
         *flow = ControlFlow::Wait; // ~0 % CPU au repos
         match event {
@@ -600,6 +635,7 @@ AutofillServerCommunication,InterestFeedContentSuggestions \
                     match event {
                         WindowEvent::CloseRequested => app.close_window(),
                         WindowEvent::Focused(true) => {
+                            app.check_default(); // retour des Paramètres Windows : Plume est peut-être devenu le navigateur par défaut
                             app.refocus();
                             app.push();
                         }
@@ -736,17 +772,40 @@ impl App {
     /// Ferme la fenêtre courante (la dernière ferme Plume).
     fn close_window(&mut self) {
         if self.others.is_empty() {
+            // les téléchargements en cours s'arrêteraient avec Plume : on demande d'abord
+            if self.dl_count() > 0 && !self.confirm_quit() {
+                return;
+            }
             self.quit = true;
             return;
         }
         self.dev.close();
+        // téléchargements lancés dans cette fenêtre (tous ses espaces) : leurs pages passent, cachées, dans la fenêtre suivante
+        let busy: Vec<u32> = self.tabs.iter().chain(self.x.stash.iter().flat_map(|s| s.1.iter())).map(|t| t.id).filter(|id| self.dl_running(*id)).collect();
+        let mut moving: Vec<(u32, WebView)> = vec![];
+        for t in self.tabs.iter_mut().chain(self.x.stash.iter_mut().flat_map(|s| s.1.iter_mut())).filter(|t| busy.contains(&t.id)) {
+            if let Some(v) = t.view.take() {
+                moving.push((t.id, v));
+            }
+        }
         for t in self.tabs.drain(..) {
             if !t.url.is_empty() && !t.private {
                 self.closed.push(json!({"u": t.url, "t": t.title, "f": t.fav}));
             }
         }
+        let gone = self.wid;
         let mut o = self.others.pop().unwrap();
         self.swap_fields(&mut o);
+        let (to, hwnd) = (self.wid, self.window.hwnd() as isize);
+        for k in self.dl_keep.iter_mut().filter(|k| k.0 == gone) {
+            let _ = k.2.reparent(hwnd);
+            k.0 = to;
+        }
+        for (id, v) in moving {
+            let _ = v.set_visible(false);
+            let _ = v.reparent(hwnd);
+            self.dl_keep.push((to, id, v));
+        }
         drop(o); // libère l'interface puis la fenêtre
         self.gc_groups();
         self.relayout();
@@ -1095,9 +1154,60 @@ impl App {
                 || (c["sleepCalls"] == true && t.call))
     }
 
+    /// Téléchargement en cours lancé depuis cet onglet : sa page doit rester ouverte, sinon on ne le suit plus.
+    fn dl_running(&self, tab: u32) -> bool {
+        self.downloads.iter().any(|d| d["tab"].as_u64() == Some(tab as u64) && d["state"] == "run")
+    }
+
+    fn dl_count(&self) -> usize {
+        self.downloads.iter().filter(|d| d["state"] == "run").count()
+    }
+
+    /// Page d'un onglet qui disparaît : libérée tout de suite (processus de rendu), sauf si un téléchargement
+    /// en cours en dépend : elle reste alors cachée et muette jusqu'à la fin, sinon on ne le suivrait plus.
+    fn release_view(&mut self, id: u32, v: Option<WebView>) {
+        match v {
+            Some(v) if self.dl_running(id) => {
+                let _ = v.set_visible(false);
+                unsafe {
+                    if let Ok(c8) = v.webview().cast::<ICoreWebView2_8>() {
+                        let _ = c8.SetIsMuted(true);
+                    }
+                }
+                self.dl_keep.push((self.wid, id, v));
+            }
+            v => drop(v),
+        }
+    }
+
+    /// Retire de la fenêtre les onglets choisis, en passant leurs pages par release_view.
+    fn drop_tabs(&mut self, gone: impl Fn(&Tab) -> bool) {
+        let mut i = 0;
+        while i < self.tabs.len() {
+            if gone(&self.tabs[i]) {
+                let t = self.tabs.remove(i);
+                self.release_view(t.id, t.view);
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    /// Fermeture de Plume pendant un téléchargement : Oui ferme quand même.
+    fn confirm_quit(&self) -> bool {
+        let n = self.dl_count();
+        let msg = match (self.lang() == "fr", n) {
+            (true, 1) => "Un téléchargement est en cours. Il s'arrêtera si vous fermez Plume.\n\nFermer Plume quand même ?".to_string(),
+            (true, _) => format!("{n} téléchargements sont en cours. Ils s'arrêteront si vous fermez Plume.\n\nFermer Plume quand même ?"),
+            (false, 1) => "A download is in progress. It will stop if you close Plume.\n\nClose Plume anyway?".to_string(),
+            (false, _) => format!("{n} downloads are in progress. They will stop if you close Plume.\n\nClose Plume anyway?"),
+        };
+        unsafe { MessageBoxW(Some(HWND(self.window.hwnd() as _)), &HSTRING::from(msg), w!("Plume"), MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES }
+    }
+
     /// Onglet en arrière-plan : caché + suspendu (scripts et rendu arrêtés) + mémoire minimale.
     fn sleep(&mut self, i: usize) {
-        let keep = self.protected(&self.tabs[i]) || self.tabs[i].pip;
+        let keep = self.protected(&self.tabs[i]) || self.tabs[i].pip || self.dl_running(self.tabs[i].id);
         let t = &mut self.tabs[i];
         t.last = Instant::now();
         if let Some(v) = &t.view {
@@ -1170,6 +1280,7 @@ impl App {
         let pos = if self.tabs.is_empty() { 0 } else { (self.active + 1).max(pins) };
         let mut t = Tab::new(id, url.clone().unwrap_or_default(), String::new(), String::new());
         t.private = private;
+        t.opener = std::mem::take(&mut self.next_opener);
         t.cont = if private { 0 } else { self.cont_for(url.as_deref()) };
         // un onglet ouvert depuis un groupe reste dans le groupe
         t.group = self.tabs.get(self.active).map_or(0, |a| if url.is_some() { a.group } else { 0 });
@@ -1205,7 +1316,7 @@ impl App {
         if self.dev.target == t.id {
             self.dev_close();
         }
-        drop(t.view); // libère immédiatement le processus de rendu
+        self.release_view(t.id, t.view);
         self.gc_groups();
         if self.tabs.is_empty() {
             if !self.others.is_empty() {
@@ -1270,7 +1381,7 @@ impl App {
                 let skip = {
                     let t = &self.tabs[i];
                     i == self.active || t.view.is_none() || t.last.elapsed() < limit || t.private || t.id == dev || self.protected(t) || t.pip
-                        || self.x.split.is_some_and(|sp| sp.a == t.id || sp.b == t.id)
+                        || self.x.split.is_some_and(|sp| sp.a == t.id || sp.b == t.id) || self.dl_running(t.id)
                 };
                 if skip {
                     continue;
@@ -1590,7 +1701,7 @@ impl App {
             "vault": {"exists": self.vault.exists(), "unlocked": self.vault.unlocked(), "n": self.vault.items.len(), "hello": self.hello_ready()},
             "dl": self.downloads.iter().filter(|d| d["state"] == "run").count(), "dlAny": !self.downloads.is_empty(),
             "exts": exts, "extOn": self.ext_on, "restart": self.needs_restart(), "adlist": adblock::count(),
-            "dev": self.dev.height() > 0.0, "lang": self.lang(), "version": VERSION, "repo": REPO, "installed": setup::installed(), "batt": self.batt,
+            "dev": self.dev.height() > 0.0, "lang": self.lang(), "version": VERSION, "repo": REPO, "installed": setup::installed(), "isDefault": self.is_default, "batt": self.batt,
             "spaces": self.spaces_json(), "space": self.x.space, "notesLocked": self.notes.is_none(),
             "split": self.x.split.map(|sp| json!({"a": sp.a, "b": sp.b, "r": sp.ratio})),
             "tint": if self.cfg["adaptive"] == true { json!(t.tint) } else { Value::Null }, "zen": self.x.zen, "pageFs": self.x.page_fs,
@@ -1607,6 +1718,137 @@ impl App {
 
     fn push_downloads(&self) {
         self.js(&format!("D({})", Value::Array(self.downloads.clone())));
+    }
+
+    /// « Enregistrer sous » avant un téléchargement (réglage dlAsk) : dossier et nom au choix, ou annulation.
+    /// La boîte s'ouvre ici, dans la boucle, et non pendant l'événement de WebView2 (qui attend grâce au report).
+    fn dl_ask(&mut self, did: u32) {
+        let Some((args, wait, op, mut start)) = DL_WAIT.with(|m| m.borrow_mut().remove(&did)) else { return };
+        let path = PathBuf::from(str_of(&start["path"]));
+        let name = path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_else(|| "download".into());
+        // dernier dossier choisi, sinon celui de Windows (Téléchargements)
+        let dir = self.cfg["dlLastDir"].as_str().map(PathBuf::from).filter(|d| d.is_dir()).or_else(|| path.parent().map(PathBuf::from)).unwrap_or_default();
+        let ext = std::path::Path::new(&name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+        let all = if self.lang() == "fr" { "Tous les fichiers" } else { "All files" };
+        let filter = if ext.is_empty() { format!("{all} (*.*)\0*.*\0\0") } else { format!("{} (*.{ext})\0*.{ext}\0{all} (*.*)\0*.*\0\0", ext.to_uppercase()) };
+        let chosen = tools07::save_dialog(HWND(self.window.hwnd() as _), &dir.join(&name).to_string_lossy(), &filter, &ext);
+        let origin = json!({"tab": start["tab"], "url": start["url"]});
+        let cancelled = chosen.is_none();
+        // InPrivate : le dossier choisi n'est pas retenu
+        let private = start["tab"].as_u64().and_then(|t| self.idx(t as u32)).is_some_and(|i| self.tabs[i].private);
+        unsafe {
+            match chosen {
+                Some(f) => {
+                    let _ = args.SetResultFilePath(&HSTRING::from(f.as_path()));
+                    if let Some(d) = f.parent().filter(|_| !private) {
+                        self.cfg["dlLastDir"] = json!(d.to_string_lossy());
+                    }
+                    let fs = f.to_string_lossy().into_owned();
+                    start["name"] = json!(dl_name(&fs));
+                    start["path"] = json!(fs);
+                    let _ = track_dl(&op, did, &self.proxy, start);
+                }
+                None => {
+                    let _ = args.SetCancel(true);
+                }
+            }
+            let _ = wait.Complete();
+        }
+        // annulé : l'onglet vide ouvert par le lien n'a plus de raison d'être
+        if cancelled {
+            self.dl_tab_cleanup(&origin);
+        }
+    }
+
+    /// Lien ouvert dans un nouvel onglet qui n'était qu'un téléchargement : l'onglet vide se ferme et on revient
+    /// à l'onglet d'origine, comme dans Chrome (sa page reste ouverte, cachée, jusqu'à la fin du téléchargement).
+    fn dl_tab_cleanup(&mut self, s: &Value) {
+        let Some(i) = s["tab"].as_u64().and_then(|t| self.idx(t as u32)) else { return };
+        let t = &self.tabs[i];
+        let empty = t.opener != 0 && !t.back && (t.url == str_of(&s["url"]) || t.title.is_empty() || t.title == t.url);
+        if !empty || self.tabs.len() < 2 {
+            return;
+        }
+        let (id, opener, url) = (t.id, t.opener, t.url.clone());
+        if i != self.active {
+            // ouvert en arrière-plan (clic du milieu) : il disparaît sans toucher à l'onglet affiché
+            if self.x.split.is_some_and(|sp| sp.a == id || sp.b == id) {
+                self.unsplit();
+            }
+            let t = self.tabs.remove(i);
+            if i < self.active {
+                self.active -= 1;
+            }
+            self.release_view(t.id, t.view);
+            self.gc_groups();
+            self.push();
+            return;
+        }
+        self.close_tab(i);
+        // pas dans « Rouvrir l'onglet fermé » : ce n'était qu'un lien de téléchargement
+        if self.closed.last().is_some_and(|c| c["u"] == url.as_str()) {
+            self.closed.pop();
+        }
+        if let Some(k) = self.idx(opener) {
+            self.activate(k);
+        }
+    }
+
+    /// Argument de lancement → adresse : un fichier existant (page .html ouverte depuis l'Explorateur) devient file:///.
+    fn open_arg(&self, s: &str) -> String {
+        let p = std::path::Path::new(s);
+        if p.is_absolute() && p.is_file() {
+            let mut u = String::from("file:///");
+            for c in p.to_string_lossy().chars() {
+                match c {
+                    '\\' => u.push('/'),
+                    ' ' => u.push_str("%20"),
+                    '%' => u.push_str("%25"),
+                    '#' => u.push_str("%23"),
+                    '?' => u.push_str("%3F"),
+                    c => u.push(c),
+                }
+            }
+            return u;
+        }
+        self.to_url(s)
+    }
+
+    /// Lien reçu d'un autre lancement de Plume (lien cliqué dans une autre application) : nouvel onglet au premier plan.
+    fn remote_open(&mut self, u: &str) {
+        let url = self.open_arg(u.trim());
+        // jamais dans une fenêtre InPrivate : une fenêtre normale déjà ouverte le reçoit (sinon une nouvelle, plus bas)
+        if !url.is_empty() && self.private_win && let Some(i) = self.others.iter().position(|w| !w.private_win) {
+            self.bring(i);
+        }
+        self.window.set_minimized(false);
+        self.window.set_visible(true);
+        self.window.set_focus();
+        unsafe {
+            let _ = SetForegroundWindow(HWND(self.window.hwnd() as _));
+        }
+        if url.is_empty() {
+            return; // Plume relancé sans lien : la fenêtre passe simplement devant
+        }
+        if self.private_win {
+            self.want_window.push(WinReq { url: Some(url), private: false, tab: None, restore: vec![], active: 0 });
+        } else {
+            // un panneau ouvert (réglages, menu) se referme : la page du lien s'affiche dessous
+            self.js("mode && setMode(null)");
+            self.open_cont = self.cont_site(&url);
+            self.new_tab(Some(url), true, false);
+        }
+    }
+
+    /// Relu quand une fenêtre reprend le focus (retour des Paramètres Windows).
+    fn check_default(&mut self) {
+        let d = defbrowser::is_default();
+        if d != self.is_default {
+            self.is_default = d;
+            if d {
+                self.toast("def.done");
+            }
+        }
     }
 
     fn push_exts(&self) {
@@ -1856,6 +2098,7 @@ impl App {
                 }
             }
             "hello" => self.hello_toggle(),
+            "dlAsk" => DL_ASK.store(self.cfg["dlAsk"] != false, Ordering::Relaxed),
             "containers" | "contList" | "privReport" | "prCount" => self.push(),
             "ab" => adblock::ON.store(self.cfg["ab"].as_bool().unwrap_or(true), Ordering::Relaxed),
             "allow" => *adblock::ALLOW.write().unwrap() = strs(&self.cfg["allow"]),
@@ -1884,7 +2127,7 @@ impl App {
 
     /// Après un changement de mode ou une réinitialisation : réapplique tout.
     fn cfg_effect_all(&mut self) {
-        for k in ["ab", "allow", "tracking", "uiScale", "pageZoom", "ram", "lite", "batt", "palette", "zen", "ntpBg"] {
+        for k in ["ab", "allow", "tracking", "uiScale", "pageZoom", "ram", "lite", "batt", "palette", "zen", "ntpBg", "dlAsk"] {
             self.cfg_effect(k);
         }
         self.push_page_cfg();
@@ -1941,10 +2184,16 @@ impl App {
     }
 
     fn restart(&mut self) {
+        // un téléchargement en cours s'arrêterait : on demande d'abord
+        if self.dl_count() > 0 && !self.confirm_quit() {
+            return;
+        }
         self.save();
         // version installée : toujours le plume.exe du dossier (une mise à jour a pu le remplacer)
         if let Ok(exe) = if setup::installed() { Ok(setup::exe()) } else { std::env::current_exe() } {
-            let mut a: Vec<String> = std::env::args().skip(1).filter(|a| a != "--restarted" && a != "--eco").collect();
+            // sans le lien d'un lancement « --single-argument » (la session rouvre les onglets)
+            let mut a: Vec<String> =
+                std::env::args().skip(1).take_while(|a| a != "--single-argument").filter(|a| a != "--restarted" && a != "--eco").collect();
             a.push("--restarted".into());
             if std::process::Command::new(exe).args(a).spawn().is_ok() {
                 self.quit = true;
@@ -2248,10 +2497,23 @@ impl App {
     fn on_event(&mut self, ev: Ev) {
         // chaque événement est traité dans la fenêtre qu'il concerne
         let ok = match &ev {
-            Ev::Ui(w, _) | Ev::Active(w, _) | Ev::Cmd(Who::Win(w), _) | Ev::PopupSize(w, ..) => self.focus_win(*w),
+            Ev::Ui(w, _) | Ev::Active(w, _) | Ev::Cmd(Who::Win(w), _) | Ev::PopupSize(w, ..) | Ev::Remote(w, _) => self.focus_win(*w),
             Ev::Page(id, ..) | Ev::Title(id, _) | Ev::Url(id, _) | Ev::Loading(id, _) | Ev::Fav(id, _) | Ev::Nav(id, ..)
             | Ev::Blocked(id, _) | Ev::PageFs(id, _) | Ev::Audio(id, _) | Ev::FocusBlock(id, _) | Ev::Open(id, ..) | Ev::Cmd(Who::Tab(id), _) => self.focus_tab(*id),
             Ev::Dev(m) => self.focus_tab(m.tab()),
+            // téléchargement : traité dans la fenêtre de son onglet (boîte « Enregistrer sous », onglet vide), toujours traité
+            Ev::Dl(v) => {
+                if let Some(t) = v["tab"].as_u64() {
+                    self.focus_tab(t as u32);
+                }
+                true
+            }
+            Ev::DlAsk(did) => {
+                if let Some(t) = DL_WAIT.with(|m| m.borrow().get(did).and_then(|w| w.3["tab"].as_u64())) {
+                    self.focus_tab(t as u32);
+                }
+                true
+            }
             _ => true,
         };
         if !ok {
@@ -2303,6 +2565,7 @@ impl App {
                 // un lien ouvert depuis un conteneur y reste, sauf site associé à un autre conteneur (#19)
                 let oc = self.idx(oid).map_or(0, |k| self.tabs[k].cont);
                 self.open_cont = self.cont_site(&u).or((oc > 0).then_some(oc));
+                self.next_opener = oid;
                 self.new_tab(Some(u), true, private)
             }
             Ev::Dev(m) => {
@@ -2358,6 +2621,10 @@ impl App {
                         self.note_visit(c, &u);
                     }
                     if u != "about:blank" || self.tabs[i].url.is_empty() {
+                        // un document s'affiche (site, PDF, image) : l'onglet n'est plus un simple lien de téléchargement
+                        if !u.is_empty() && u != "about:blank" {
+                            self.tabs[i].opener = 0;
+                        }
                         if host_of(&u) != host_of(&self.tabs[i].url) {
                             self.tabs[i].fav.clear();
                             self.tabs[i].info = None;
@@ -2411,22 +2678,37 @@ impl App {
             }
             Ev::Dl(v) => {
                 let id = v["id"].as_u64();
+                let mut started = false;
                 match self.downloads.iter_mut().find(|d| d["id"].as_u64() == id) {
                     Some(d) => {
                         for (k, x) in v.as_object().into_iter().flatten() {
                             d[k] = x.clone();
                         }
                     }
-                    None => {
+                    // une mise à jour d'un téléchargement retiré de la liste n'en recrée pas un sans nom
+                    None if v.get("name").is_some() => {
                         self.downloads.insert(0, v.clone());
-                        self.js(&format!("dlStarted({})", v["name"]));
+                        started = true;
                     }
+                    None => return,
+                }
+                if matches!(v["state"].as_str(), Some("done" | "fail")) {
+                    // pages d'onglets fermés gardées pour ce téléchargement : libérées une fois tout terminé
+                    let alive: Vec<u32> = self.dl_keep.iter().map(|k| k.1).filter(|t| self.dl_running(*t)).collect();
+                    self.dl_keep.retain(|k| alive.contains(&k.1));
                 }
                 if v["state"] != "run" || v.get("recv").is_none() {
                     self.push();
                 }
                 self.push_downloads();
+                if started {
+                    // l'onglet vide d'abord (changer d'onglet referme les petits panneaux), puis la bulle
+                    self.dl_tab_cleanup(&v);
+                    self.js(&format!("dlStarted({},{})", v["name"], v["id"]));
+                }
             }
+            Ev::DlAsk(did) => self.dl_ask(did),
+            Ev::Remote(_, u) => self.remote_open(&u),
             Ev::Imported(r) => {
                 let (mut nb, mut nh) = (0, 0);
                 for b in r["bookmarks"].as_array().into_iter().flatten() {
@@ -2602,7 +2884,7 @@ impl App {
                 }
             }
             "tab-unload" => {
-                if let Some(i) = self.idx(id).filter(|i| *i != self.active) {
+                if let Some(i) = self.idx(id).filter(|i| *i != self.active && !self.dl_running(id)) {
                     let t = &mut self.tabs[i];
                     t.view = None;
                     t.ram = 0;
@@ -2746,7 +3028,7 @@ impl App {
                 if let Some(i) = self.idx(id) {
                     let right = v["c"] == "close-right";
                     let keep: Vec<u32> = self.tabs.iter().enumerate().filter(|(k, _)| *k == i || (right && *k < i)).map(|(_, t)| t.id).collect();
-                    self.tabs.retain(|t| keep.contains(&t.id));
+                    self.drop_tabs(|t| !keep.contains(&t.id));
                     self.active = usize::MAX;
                     self.gc_groups();
                     let a = self.idx(id).unwrap_or(0);
@@ -2795,7 +3077,7 @@ impl App {
                 if v["c"] == "grp-close" {
                     let aid = self.tabs[self.active].id;
                     let closing_active = self.tabs[self.active].group == g;
-                    self.tabs.retain(|t| t.group != g);
+                    self.drop_tabs(|t| t.group == g);
                     if self.tabs.is_empty() {
                         self.groups.clear();
                         self.new_tab(None, true, false);
@@ -3177,13 +3459,14 @@ impl App {
                 if media::cancel(id) {
                     return;
                 }
-                DLS.with(|m| {
-                    if let Some(op) = m.borrow().get(&id) {
-                        unsafe {
-                            let _ = op.Cancel();
-                        }
-                    }
-                });
+                let op = DLS.with(|m| m.borrow().get(&id).cloned());
+                let ok = op.is_some_and(|op| unsafe { op.Cancel().is_ok() });
+                // plus d'opération à annuler (suivi perdu) : l'entrée passe en échec, la liste peut alors être vidée
+                if !ok && let Some(d) = self.downloads.iter_mut().find(|d| d["id"].as_u64() == Some(id as u64) && d["state"] == "run") {
+                    d["state"] = json!("fail");
+                    self.push_downloads();
+                    self.push();
+                }
             }
             "dl-open" | "dl-show" => {
                 if let Some(d) = self.downloads.iter().find(|d| d["id"].as_u64() == Some(id as u64)) {
@@ -3201,6 +3484,26 @@ impl App {
                 self.downloads.retain(|d| d["state"] == "run");
                 self.push_downloads();
                 self.push();
+            }
+            // --- navigateur par défaut ---
+            "def-set" => {
+                // version installée : (ré)inscrite dans Applications par défaut, puis la page des Paramètres Windows
+                if setup::installed() {
+                    defbrowser::register(&setup::exe());
+                }
+                defbrowser::open_settings();
+                self.cfg["defLast"] = json!(now_ms());
+                self.save();
+                self.push();
+            }
+            "def-later" => {
+                self.cfg["defLast"] = json!(now_ms());
+                self.save();
+                self.push();
+            }
+            "def-never" => {
+                settings::mark(&mut self.cfg, "defAsk");
+                self.set_cfg("defAsk", json!(false));
             }
             // --- réglages ---
             "set" => {
@@ -3273,6 +3576,8 @@ fn make_window(target: &EventLoopWindowTarget<Ev>, pos: Option<tao::dpi::Physica
         let data = Box::into_raw(Box::new((proxy.clone(), wid))) as usize;
         let _ = SetWindowSubclass(hwnd, Some(parent_proc), 1, data);
     }
+    // un lien ouvert depuis une autre application trouve cette fenêtre (même profil)
+    defbrowser::mark_window(hwnd);
     window
 }
 
@@ -3600,7 +3905,7 @@ unsafe fn hook_tab(v: &WebView, id: u32, proxy: &EventLoopProxy<Ev>) -> Result<(
                 &mut tok,
             )?;
         }
-        // Téléchargements : notre propre panneau au lieu de la bulle d'Edge
+        // Téléchargements : notre propre panneau au lieu de la bulle d'Edge, « Enregistrer sous » si demandé
         if let Ok(c4) = core.cast::<ICoreWebView2_4>() {
             let p = proxy.clone();
             c4.add_DownloadStarting(
@@ -3616,55 +3921,87 @@ unsafe fn hook_tab(v: &WebView, id: u32, proxy: &EventLoopProxy<Ev>) -> Result<(
                     let mut total = 0i64;
                     op.TotalBytesToReceive(&mut total)?;
                     let did = DL_ID.fetch_add(1, Ordering::Relaxed) + 1;
-                    let name = std::path::Path::new(&path).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
-                    let _ = p.send_event(Ev::Dl(json!({"id": did, "name": name, "path": path, "url": webview2_com::take_pwstr(uri),
-                        "total": total, "recv": 0, "state": "run", "t": now_ms()})));
-                    let mut t2 = 0i64;
-                    let (p2, last) = (p.clone(), Cell::new(Instant::now()));
-                    op.add_BytesReceivedChanged(
-                        &BytesReceivedChangedEventHandler::create(Box::new(move |s, _| {
-                            if let Some(s) = s.filter(|_| last.get().elapsed() > Duration::from_millis(300)) {
-                                last.set(Instant::now());
-                                let (mut r, mut t) = (0i64, 0i64);
-                                s.BytesReceived(&mut r)?;
-                                s.TotalBytesToReceive(&mut t)?;
-                                let _ = p2.send_event(Ev::Dl(json!({"id": did, "recv": r, "total": t})));
-                            }
-                            Ok(())
-                        })),
-                        &mut t2,
-                    )?;
-                    let p3 = p.clone();
-                    op.add_StateChanged(
-                        &StateChangedEventHandler::create(Box::new(move |s, _| {
-                            if let Some(s) = s {
-                                let mut st = COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS;
-                                s.State(&mut st)?;
-                                let (mut r, mut t) = (0i64, 0i64);
-                                s.BytesReceived(&mut r)?;
-                                s.TotalBytesToReceive(&mut t)?;
-                                let state = match st {
-                                    COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED => "done",
-                                    COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED => "fail",
-                                    _ => "run",
-                                };
-                                let _ = p3.send_event(Ev::Dl(json!({"id": did, "state": state, "recv": r, "total": t})));
-                                if state != "run" {
-                                    DLS.with(|m| m.borrow_mut().remove(&did));
-                                }
-                            }
-                            Ok(())
-                        })),
-                        &mut t2,
-                    )?;
-                    DLS.with(|m| m.borrow_mut().insert(did, op));
-                    Ok(())
+                    // "tab" : l'onglet d'origine garde sa page ouverte tant que le téléchargement dure
+                    let start = json!({"id": did, "name": dl_name(&path), "path": path, "url": webview2_com::take_pwstr(uri),
+                        "total": total, "recv": 0, "state": "run", "t": now_ms(), "tab": id});
+                    if DL_ASK.load(Ordering::Relaxed) {
+                        // la boîte « Enregistrer sous » s'ouvre depuis la boucle ; le téléchargement attend grâce au report
+                        let wait = a.GetDeferral()?;
+                        DL_WAIT.with(|m| m.borrow_mut().insert(did, (a, wait, op, start)));
+                        let _ = p.send_event(Ev::DlAsk(did));
+                        return Ok(());
+                    }
+                    track_dl(&op, did, &p, start)
                 })),
                 &mut tok,
             )?;
         }
         Ok(())
     }
+}
+
+fn dl_name(path: &str) -> String {
+    std::path::Path::new(path).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// Téléchargement accepté : il entre dans la liste, sa progression et sa fin arrivent à la boucle,
+/// et l'opération est gardée pour pouvoir l'annuler.
+unsafe fn track_dl(op: &ICoreWebView2DownloadOperation, did: u32, p: &EventLoopProxy<Ev>, start: Value) -> Result<()> {
+    let _ = p.send_event(Ev::Dl(start));
+    let mut tok = 0i64;
+    let (p2, last) = (p.clone(), Cell::new(Instant::now()));
+    unsafe {
+        op.add_BytesReceivedChanged(
+            &BytesReceivedChangedEventHandler::create(Box::new(move |s, _| {
+                if let Some(s) = s.filter(|_| last.get().elapsed() > Duration::from_millis(300)) {
+                    last.set(Instant::now());
+                    let (mut r, mut t) = (0i64, 0i64);
+                    s.BytesReceived(&mut r)?;
+                    s.TotalBytesToReceive(&mut t)?;
+                    let _ = p2.send_event(Ev::Dl(json!({"id": did, "recv": r, "total": t})));
+                }
+                Ok(())
+            })),
+            &mut tok,
+        )?;
+        let p3 = p.clone();
+        op.add_StateChanged(
+            &StateChangedEventHandler::create(Box::new(move |s, _| {
+                if let Some(s) = s {
+                    let mut st = COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS;
+                    s.State(&mut st)?;
+                    let (mut r, mut t) = (0i64, 0i64);
+                    s.BytesReceived(&mut r)?;
+                    s.TotalBytesToReceive(&mut t)?;
+                    let state = match st {
+                        COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED => "done",
+                        COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED => "fail",
+                        _ => "run",
+                    };
+                    let mut m = json!({"id": did, "state": state, "recv": r, "total": t});
+                    if state == "done" {
+                        // chemin final (Windows a pu ajouter « (1) » au nom)
+                        let mut fp = PWSTR::null();
+                        if s.ResultFilePath(&mut fp).is_ok() {
+                            let f = webview2_com::take_pwstr(fp);
+                            if !f.is_empty() {
+                                m["name"] = json!(dl_name(&f));
+                                m["path"] = json!(f);
+                            }
+                        }
+                    }
+                    let _ = p3.send_event(Ev::Dl(m));
+                    if state != "run" {
+                        DLS.with(|m| m.borrow_mut().remove(&did));
+                    }
+                }
+                Ok(())
+            })),
+            &mut tok,
+        )?;
+    }
+    DLS.with(|m| m.borrow_mut().insert(did, op.clone()));
+    Ok(())
 }
 
 unsafe extern "system" fn parent_proc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM, _id: usize, data: usize) -> LRESULT {
@@ -3685,6 +4022,14 @@ unsafe extern "system" fn parent_proc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM,
             WM_ACTIVATE => {
                 let _ = proxy.send_event(Ev::Active(*wid, (wp.0 & 0xffff) as u32 != WA_INACTIVE));
             }
+            // lien envoyé par un autre lancement de Plume (navigateur par défaut)
+            WM_COPYDATA => {
+                if let Some(u) = defbrowser::received(lp) {
+                    let _ = proxy.send_event(Ev::Remote(*wid, u));
+                    return LRESULT(1);
+                }
+            }
+            WM_NCDESTROY => defbrowser::unmark_window(h),
             _ => {}
         }
         DefSubclassProc(h, msg, wp, lp)

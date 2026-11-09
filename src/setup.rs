@@ -153,6 +153,8 @@ pub fn register(with_desktop: bool) -> bool {
         && reg_dword("EstimatedSize", dir_kb(&dir))
         && reg_dword("NoModify", 1)
         && reg_dword("NoRepair", 1);
+    // proposé comme navigateur dans Applications par défaut (l'utilisateur choisit lui-même)
+    crate::defbrowser::register(&exe);
     ok
 }
 
@@ -209,6 +211,7 @@ pub fn uninstall(quiet: bool) -> i32 {
     unsafe {
         let _ = RegDeleteTreeW(HKEY_CURRENT_USER, &HSTRING::from(UNINSTALL_KEY));
     }
+    crate::defbrowser::unregister();
     let data = data_dir();
     if wipe {
         let _ = std::fs::remove_dir_all(&data);

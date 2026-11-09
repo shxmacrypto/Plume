@@ -97,7 +97,22 @@ function applyLang() {
 /* ---------- État poussé par Rust ---------- */
 window.U = (s) => { S = s; applyCfg(); render(); if (mode === 'ext') renderPanel(); if (window.onState) onState(); };
 window.L = (l) => { H = l.hist || []; if (mode === 'hist' || (!mode && isBlank()) || (mode === 'omni' && !typed.trim())) renderPanel(); };
-window.D = (l) => { DLS = l; renderDlBtn(); if (mode === 'dl') renderPanel(); };
+window.D = (l) => {
+  const prev = DLS; DLS = l; renderDlBtn();
+  if (mode !== 'dl' && !dlPopOpen()) return;
+  // seule la progression change : lignes mises à jour sur place (la barre glisse, un clic en cours n'est pas perdu)
+  const onlyProgress = prev.length === l.length && l.every((d, i) => prev[i].id === d.id && prev[i].state === d.state && prev[i].name === d.name);
+  if (onlyProgress && document.querySelector('#ov .dlr')) {
+    for (const d of l) {
+      const r = document.querySelector(`#ov .dlr[data-dlid="${d.id}"]`);
+      if (!r) continue;
+      r.querySelector('.meta span').textContent = dlStatus(d);
+      const b = r.querySelector('.bar2 i'); if (b) b.style.width = dlPct(d) + '%';
+    }
+    return;
+  }
+  renderPanel();
+};
 // Barre d'adresse : jamais volée à un panneau ouvert, sauf demande explicite (Ctrl+L)
 window.focusBar = (force) => { if (!force && ['set', 'hist', 'dl', 'media', 'unlock', 'menu', 'ctx', 'ext', 'pg', 'modal', 'pop'].includes(mode)) return; $('q').focus(); $('q').select(); };
 window.openPanel = (m, sub) => { if (sub) SET.sec = sub; setMode(mode === m && !sub ? null : m, true); };
@@ -121,7 +136,8 @@ const ovrSoon = () => { cancelAnimationFrame(ovrRaf); ovrRaf = requestAnimationF
 new MutationObserver(ovrSoon).observe(document.body, { childList: true, subtree: true });
 document.addEventListener('animationend', ovrSoon, true);
 window.blk = (n) => { S.blocked = n; renderShield(); };
-window.dlStarted = (n) => toast('dl.started', { n });
+// début d'un téléchargement : la bulle s'ouvre sous le bouton, sauf si un autre panneau est ouvert (simple message)
+window.dlStarted = (n) => { if (!mode || dlPopOpen() || (mode === 'omni' && !typed.trim() && !prevMode)) openDlPop(true); else toast(t('dl.started', { n })); };
 window.extAdded = (n) => { toast('extAdded', { n }); act().info = null; };
 window.extErr = (e) => toast(String(e).slice(0, 160));
 // Fin d'import : on laisse l'animation se jouer au moins 2,4 s pour qu'on la voie
@@ -196,7 +212,10 @@ function renderDlBtn() {
   const run = DLS.filter((d) => d.state === 'run');
   const tot = run.reduce((a, d) => a + (d.total || 0), 0), got = run.reduce((a, d) => a + (d.recv || 0), 0);
   const pct = run.length ? (tot ? Math.round(got / tot * 100) : 30) : 0;
-  b.innerHTML = svg('<path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/>') + (run.length ? `<i class="ring" style="--p:${pct}"></i>` : '');
+  // progression seule : l'anneau avance sur place (remplacer le bouton pendant un clic le ferait perdre)
+  const ring = b.querySelector('.ring');
+  if (run.length && ring) ring.style.setProperty('--p', pct);
+  else if (run.length || ring) b.innerHTML = svg('<path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/>') + (run.length ? `<i class="ring" style="--p:${pct}"></i>` : '');
   b.classList.toggle('on', run.length > 0);
 }
 
@@ -262,7 +281,7 @@ function renderSide() {
 /* ---------- Barre d'information ---------- */
 function renderInfo() {
   const el = $('info'), i = S.info;
-  const ub = i ? '' : updBar();
+  const ub = i ? '' : updBar() || defBar();
   el.classList.toggle('on', !!i || !!ub);
   if (!i) { el.innerHTML = ub; return; }
   const close = `<button class="icb" data-info="dismiss" aria-label="${esc(t('b.close'))}">${I.x}</button>`;
@@ -302,10 +321,21 @@ function setMode(m, focusPage) {
 /* Panneau affiché dans #ov : on ne remplace le contenu que s'il a changé. Une mise à jour du même panneau
    ne rejoue pas son animation d'entrée, et un clic en cours n'atterrit pas sur un élément qui vient d'être remplacé. */
 let ovLast = { mode: null, html: '', node: null };
+// bouton pressé dans le panneau : le remplacer maintenant ferait perdre le clic, il est redessiné juste après
+let ovHeldAt = 0, ovSkipped = false;
+$('ov').addEventListener('mousedown', () => { ovHeldAt = performance.now(); }, true);
+const ovRelease = () => {
+  if (!ovHeldAt) return;
+  ovHeldAt = 0;
+  if (ovSkipped) { ovSkipped = false; setTimeout(() => { if (mode || isBlank()) renderPanel(); }, 0); }
+};
+for (const ev of ['mouseup', 'dragend', 'drop']) document.addEventListener(ev, ovRelease, true);
+window.addEventListener('blur', ovRelease);
 function ovSet(html) {
   const ov = $('ov');
   const same = ovLast.mode === mode && ovLast.node && ovLast.node.isConnected && ov.firstElementChild === ovLast.node;
   if (same && ovLast.html === html) return false;
+  if (same && ovHeldAt && performance.now() - ovHeldAt < 1500) { ovSkipped = true; return false; }
   ov.classList.toggle('again', same);
   ov.innerHTML = html;
   ovLast = { mode, html, node: ov.firstElementChild };
@@ -536,15 +566,42 @@ function dayLabel(d) {
 }
 
 const fmtB = (b) => b > 1e9 ? (b / 1e9).toFixed(1) + ' GB' : b > 1e6 ? (b / 1e6).toFixed(1) + ' MB' : b > 1e3 ? Math.round(b / 1e3) + ' kB' : (b || 0) + ' B';
+const dlBtnHtml = (a, id, label, ic, cls) => `<button class="icb${cls || ''}" data-dl="${a}" data-id="${id}" aria-label="${esc(label)}" title="${esc(label)}">${ic}</button>`;
+const dlPct = (d) => d.total > 0 ? Math.min(100, d.recv / d.total * 100) : 0;
+const dlStatus = (d) => (d.state === 'run' ? `${fmtB(d.recv)}${d.total > 0 ? ' / ' + fmtB(d.total) : ''}` : d.state === 'done' ? `${t('dl.done')} · ${fmtB(d.total || d.recv)}` : t('dl.fail')) + ' · ' + host(d.url);
+function dlRow(d) {
+  const acts = d.state === 'run' ? dlBtnHtml('cancel', d.id, t('dl.cancel'), I.x, ' red')
+    : d.state === 'done' ? dlBtnHtml('open', d.id, t('dl.open'), I.file) + dlBtnHtml('show', d.id, t('dl.show'), I.folder) : '';
+  return `<div class="row dlr" data-dlid="${d.id}" style="height:auto;padding:10px 12px">${I.file}<div class="meta"><b>${esc(d.name)}</b><span>${esc(dlStatus(d))}</span>${d.state === 'run' ? `<div class="bar2"><i style="width:${dlPct(d)}%"></i></div>` : ''}</div>${acts}</div>`;
+}
 function renderDl() {
-  const rows = DLS.map((d) => {
-    const pct = d.total > 0 ? Math.min(100, d.recv / d.total * 100) : 0;
-    const st = d.state === 'run' ? `${fmtB(d.recv)}${d.total > 0 ? ' / ' + fmtB(d.total) : ''}` : d.state === 'done' ? `${t('dl.done')} · ${fmtB(d.total || d.recv)}` : t('dl.fail');
-    const acts = d.state === 'run' ? `<button class="icb red" data-dl="cancel" data-id="${d.id}" aria-label="${esc(t('dl.cancel'))}">${I.x}</button>`
-      : d.state === 'done' ? `<button class="icb" data-dl="open" data-id="${d.id}" aria-label="${esc(t('dl.open'))}">${I.file}</button><button class="icb" data-dl="show" data-id="${d.id}" aria-label="${esc(t('dl.show'))}">${I.folder}</button>` : '';
-    return `<div class="row dlr" style="height:auto;padding:10px 12px">${I.file}<div class="meta"><b>${esc(d.name)}</b><span>${esc(st)} · ${esc(host(d.url))}</span>${d.state === 'run' ? `<div class="bar2"><i style="width:${pct}%"></i></div>` : ''}</div>${acts}</div>`;
-  }).join('');
-  $('ov').innerHTML = `<div class="page"><div class="pgw"><div class="pgh"><h2>${t('dl.title')}</h2><button class="pill" data-m="dl-clear"${DLS.length ? '' : ' disabled'}>${t('dl.clear')}</button><button class="icb" data-m="close-ov" aria-label="${esc(t('b.close'))}">${I.x}</button></div><div class="group">${rows || `<div class="empty">${t('dl.empty')}</div>`}</div></div></div>`;
+  ovSet(`<div class="page"><div class="pgw"><div class="pgh"><h2>${t('dl.title')}</h2><button class="pill" data-m="dl-clear"${DLS.length ? '' : ' disabled'}>${t('dl.clear')}</button><button class="icb" data-m="close-ov" aria-label="${esc(t('b.close'))}">${I.x}</button></div><div class="group">${DLS.map(dlRow).join('') || `<div class="empty">${t('dl.empty')}</div>`}</div></div></div>`);
+}
+/* Bulle des téléchargements sous le bouton : les 4 derniers, ouverte au début d'un téléchargement ou par le bouton.
+   Ouverte toute seule, elle se referme seule (vite une fois tout terminé), jamais pendant qu'on la survole. */
+const DLP = { auto: false, t0: 0, timer: 0 };
+const dlPop = () => `<div class="dlpop"><h3 class="ph3">${t('dl.title')}</h3><div class="group">${DLS.slice(0, 4).map(dlRow).join('') || `<div class="empty">${t('dl.empty')}</div>`}</div>`
+  + `<button class="dlall" data-m="dl">${t('dl.all')}<kbd>Ctrl+J</kbd></button></div>`;
+const dlPopOpen = () => mode === 'pop' && POP.html === dlPop;
+function openDlPop(auto) {
+  Object.assign(DLP, { auto, t0: Date.now() });
+  openPop(dlPop);
+  clearTimeout(DLP.timer);
+  const tick = () => {
+    if (!dlPopOpen()) return;
+    const age = Date.now() - DLP.t0, run = DLS.some((d) => d.state === 'run');
+    if (DLP.auto && !document.querySelector('#ov .pop:hover') && (age > 8000 || (!run && age > 3500))) return setMode(null);
+    DLP.timer = setTimeout(tick, 600);
+  };
+  DLP.timer = setTimeout(tick, 600);
+}
+// rappel « navigateur par défaut » : version installée, pas encore par défaut, au plus une fois par semaine
+function defBar() {
+  const c = C();
+  if (!S.installed || S.isDefault || c.defAsk === false || !c.onboarded || ONB.on || act().p) return '';
+  if (Date.now() - (+c.defLast || 0) < 7 * 864e5) return '';
+  return `<span class="ii">${I.globe}</span><span class="msg">${t('def.bar')}</span><button class="pill pri" data-m="def-set">${t('def.btn')}</button>`
+    + `<button class="pill" data-m="def-later">${t('def.later')}</button><button class="pill" data-m="def-never">${t('def.never')}</button>`;
 }
 
 function go(u) {
@@ -631,7 +688,7 @@ document.addEventListener('click', (e) => {
   if (d.hrm) return send('histrm', { u: d.hrm });
   if (d.info) return send('info', { a: d.info, i: +(d.i || 0) });
   if (d.upd) return updAct(d.upd);
-  if (d.dl) return send('dl-' + d.dl, { id: +d.id });
+  if (d.dl) { send('dl-' + d.dl, { id: +d.id }); if (d.dl !== 'cancel' && dlPopOpen()) setMode(null); return; }
   if (d.xo) {
     const anchor = el.classList.contains('xpin') ? el : $('extBtn');
     if (mode) setMode(null);
@@ -654,7 +711,7 @@ document.addEventListener('click', (e) => {
     case 'readerBtn': return send('reader');
     case 'mediaBtn': return openMedia();
     case 'extBtn': return setMode(mode === 'ext' ? null : 'ext', true);
-    case 'dlBtn': return setMode(mode === 'dl' ? null : 'dl');
+    case 'dlBtn': return dlPopOpen() || mode === 'dl' ? setMode(null) : openDlPop(false);
     case 'menuBtn': return setMode(mode === 'menu' ? null : 'menu', true);
   }
 });
@@ -674,6 +731,7 @@ function menuAction(m, d) {
     case 'clear': if (!confirmClear) { confirmClear = true; return renderPanel(); } break;
     case 'histdel': return send('histdel');
     case 'dl-clear': return send('dl-clear');
+    case 'def-set': case 'def-later': case 'def-never': return send(m);
     case 'ctx-new': close(); send('act', { id }); return send('new');
     case 'reload-tab': case 'dup': case 'close-others': case 'close-right': case 'grp-new': case 'tab-window': case 'pin': close(); return send(m, { id });
     case 'close': close(); return send('close', { id });
@@ -791,11 +849,16 @@ matchMedia('(prefers-color-scheme: light)').addEventListener('change', applyCfg)
 const IMP = { list: null, sel: new Set(), h: true, b: true, busy: false, done: null };
 window.IMPL = (l) => { IMP.list = l; IMP.sel = new Set(l.map((x) => x.id)); if (ONB.on) renderOnb(); if (window.renderImp) renderImp(); };
 const ONB = { on: false, step: 0, name: '', mode: 'full' };
+// dernière étape : navigateur par défaut (version installée, pas déjà par défaut)
+const onbDef = () => !!S.installed && !S.isDefault;
 function renderOnb() {
   const el = $('onb');
-  const dots = `<div class="steps" aria-hidden="true">${[0, 1, 2].map((i) => `<i class="${i === ONB.step ? 'on' : ''}"></i>`).join('')}</div>`;
+  const dots = `<div class="steps" aria-hidden="true">${[0, 1, 2, ...(onbDef() ? [3] : [])].map((i) => `<i class="${i === ONB.step ? 'on' : ''}"></i>`).join('')}</div>`;
   let html = '';
-  if (ONB.step === 0) {
+  if (ONB.step === 3) {
+    html = `<div class="defbig" aria-hidden="true">${I.globe}</div><h1>${t('onb.defT')}</h1><p class="l">${t('onb.defSub')}</p>`
+      + `<div class="acts"><button class="pill" data-o="def-later">${t('def.later')}</button><button class="pill pri" data-o="def-set">${t('onb.defBtn')}</button></div>`;
+  } else if (ONB.step === 0) {
     html = `<div class="seg" role="radiogroup" aria-label="Langue / Language" style="display:inline-flex;margin-bottom:26px;background:rgba(118,118,128,.24)">${[['fr', 'Français'], ['en', 'English']].map(([k, l]) => `<button role="radio" aria-checked="${LANG === k}" data-olang="${k}" style="color:#fff">${l}</button>`).join('')}</div><br>${logo()}<h1>${t('onb.hi')}</h1><p class="l">${t('onb.hiSub')}</p>`
       + `<form id="onbf"><label class="sr" for="onbn">${t('onb.name')}</label><input class="inp" id="onbn" maxlength="40" placeholder="${esc(t('onb.name'))}" value="${esc(ONB.name)}" autocomplete="given-name"></form>`
       + `<div class="acts" style="margin-top:22px"><button class="pill pri" data-o="next">${t('b.next')}</button></div>`;
@@ -850,7 +913,9 @@ $('onb').addEventListener('click', (e) => {
   if (o === 'next') ONB.step++;
   if (o === 'back') ONB.step--;
   if (o === 'imp') { IMP.busy = true; IMP.done = null; IMP.t0 = performance.now(); send('imp-run', { ids: [...IMP.sel], h: true, b: true }); }
-  if (o === 'finish') return finishOnb();
+  if (o === 'finish') { if (ONB.step !== 2 || !onbDef()) return finishOnb(); ONB.step = 3; }
+  // Paramètres Windows › Applications par défaut › Plume (ou plus tard) : l'assistant se termine
+  if (o === 'def-set' || o === 'def-later') { send(o); return finishOnb(); }
   renderOnb();
 });
 $('onb').addEventListener('change', (e) => { const id = e.target.dataset.imp; if (id != null) { e.target.checked ? IMP.sel.add(+id) : IMP.sel.delete(+id); renderOnb(); } });

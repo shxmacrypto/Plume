@@ -236,3 +236,16 @@ body.qrhover #omni:hover #qrBtn{display:flex}
 .kwchip{flex:none;display:flex;align-items:center;height:22px;margin-left:6px;padding:0 9px;border-radius:7px;background:var(--acc);color:#fff;font-size:12px;font-weight:600;white-space:nowrap}
 .kwchip[hidden]{display:none}
 #omni.kw #q{text-align:left}
+
+/* ===== bulle des téléchargements, navigateur par défaut ===== */
+.dlpop .group{margin:8px 0 4px}
+.dlpop .row.dlr{padding:8px 8px!important}
+.dlall{display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px;border:0;border-radius:9px;background:none;color:var(--acc);font:inherit;font-weight:600;cursor:pointer}
+.dlall:hover,.dlall:focus-visible{background:var(--fill)}
+.dlall kbd{color:var(--t3);font-family:inherit;font-size:12px;font-weight:500}
+/* barre d'information dans une fenêtre étroite : les boutons passent à la ligne */
+@media (max-width:720px){#info{flex-wrap:wrap}#info .msg{flex:1 1 calc(100% - 40px)}}
+.defok{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--green);color:#fff;flex:none}
+.defok svg{width:15px;height:15px;stroke-width:2.4}
+.defbig{width:88px;height:88px;border-radius:50%;background:linear-gradient(145deg,#409cff,#0a84ff);display:grid;place-items:center;margin:0 auto 18px;box-shadow:0 10px 30px rgba(10,132,255,.35)}
+.defbig svg{width:46px;height:46px;stroke:#fff;stroke-width:1.5}

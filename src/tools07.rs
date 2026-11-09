@@ -110,8 +110,9 @@ fn html_esc(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
-/// Boîte « Enregistrer sous » (PDF / Markdown).
-fn save_dialog(owner: HWND, name: &str, filter: &str, ext: &str) -> Option<std::path::PathBuf> {
+/// Boîte « Enregistrer sous » (PDF / Markdown / téléchargements). `name` peut être un chemin complet :
+/// la boîte s'ouvre alors dans ce dossier.
+pub fn save_dialog(owner: HWND, name: &str, filter: &str, ext: &str) -> Option<std::path::PathBuf> {
     use windows::Win32::UI::Controls::Dialogs::{GetSaveFileNameW, OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT, OPENFILENAMEW};
     let mut buf = [0u16; 1024];
     for (i, c) in name.encode_utf16().take(1000).enumerate() {
@@ -125,7 +126,8 @@ fn save_dialog(owner: HWND, name: &str, filter: &str, ext: &str) -> Option<std::
         lpstrFilter: PCWSTR(filter.as_ptr()),
         lpstrFile: PWSTR(buf.as_mut_ptr()),
         nMaxFile: buf.len() as u32,
-        lpstrDefExt: PCWSTR(ext.as_ptr()),
+        // fichier sans extension : rien n'est ajouté au nom choisi
+        lpstrDefExt: if ext.len() > 1 { PCWSTR(ext.as_ptr()) } else { PCWSTR::null() },
         Flags: OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR,
         ..Default::default()
     };
@@ -586,6 +588,7 @@ impl App {
                 if u.starts_with("http") {
                     let (oc, p) = (self.tabs[i].cont, self.tabs[i].private);
                     self.open_cont = self.cont_site(&u).or((oc > 0).then_some(oc));
+                    self.next_opener = self.tabs[i].id;
                     self.new_tab(Some(u), false, p);
                     self.push();
                 }

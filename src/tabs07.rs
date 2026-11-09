@@ -149,7 +149,8 @@ impl App {
             if let Some(v) = &t.view {
                 let _ = v.set_visible(false);
             }
-            if unload {
+            // un onglet qui télécharge garde sa page (sinon on ne suit plus le téléchargement)
+            if unload && !self.dl_running(t.id) {
                 t.view = None;
                 t.ram = 0;
             }
@@ -199,8 +200,10 @@ impl App {
         let limit = ms_of(self.cfg["autoCloseAfter"].as_str().unwrap_or("7d"));
         let skip = self.cfg["autoCloseSkip"] != false;
         let split = self.x.split.map(|s| [s.a, s.b]).unwrap_or_default();
+        // jamais un onglet dont un téléchargement est en cours
         let old = |app: &App, t: &Tab| {
             !t.url.is_empty() && !t.private && t.lv + limit < now && !split.contains(&t.id) && !(skip && (t.pinned || t.group > 0 || app.protected(t)))
+                && !app.dl_running(t.id)
         };
         let mut gone: Vec<Value> = vec![];
         let ids: Vec<u32> = self.tabs.iter().enumerate().filter(|(i, t)| *i != self.active && old(self, t)).map(|(_, t)| t.id).collect();
@@ -573,7 +576,7 @@ impl App {
                     if let Some(w) = &t.view {
                         let _ = w.set_visible(false);
                     }
-                    if self.cfg["spacesUnload"] == true {
+                    if self.cfg["spacesUnload"] == true && !self.dl_running(t.id) {
                         t.view = None;
                     }
                     match self.x.stash.iter_mut().find(|s| s.0 == sp) {
