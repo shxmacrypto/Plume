@@ -18,6 +18,10 @@
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
+<p align="center">
+  <img src="docs/screens/home.png" width="860" alt="Plume's new tab page: tabs, address bar, search, a clock, favorites and frequent sites">
+</p>
+
 ---
 
 ## Features
@@ -32,7 +36,7 @@
 - **Reading** — reader mode, read aloud, page translation, dark mode per site.
 - **Video & audio download** — MP4, WEBM, MKV, MP3, WAV, FLAC… via yt-dlp + FFmpeg, installed on demand.
 - **Plume DevTools** — a docked panel with console, elements, network, storage and performance.
-- **Updates in one click** — Plume checks GitHub once a day, then downloads, verifies (SHA-256) and installs new versions itself.
+- **Updates in one click** — Plume checks GitHub once a day (or right away with *Settings › About › Check now*), then downloads, verifies (SHA-256) and installs new versions itself.
 - **For everyone** — French & English, light/dark themes, text size, high contrast, reduced motion, full keyboard support.
 
 And much more, each feature optional and free when switched off:
@@ -45,6 +49,11 @@ And much more, each feature optional and free when switched off:
 - **Performance** — memory badge and task manager (`Shift+Esc`), battery saver, never-sleep list, smart preloading, Lite mode per site, statistics.
 - **Downloads** — choose where to save each file, a downloads bubble with progress, *Open* and *Show in folder*, and downloads that keep going when you close their tab.
 - **Default browser** — make Plume your default browser from the welcome setup or Settings; links and `.html` files from other apps then open in a new tab of your open Plume window.
+
+<p align="center">
+  <img src="docs/screens/split.png" width="420" alt="Split screen: a Wikipedia article next to the Plume website">
+  <img src="docs/screens/downloads.png" width="420" alt="The downloads bubble under the toolbar button">
+</p>
 
 ## Install
 
@@ -100,13 +109,14 @@ Run the tests with `cargo test --release` (Rust) and `node --test tests/ui07.tes
 ## Publish a new version
 
 ```powershell
-.\release.ps1 0.6.0            # bump the version, build, commit, tag, push and publish the release
-.\release.ps1 0.6.0 -DryRun    # preview, change nothing
+.\release.ps1 0.7.0            # bump the version, build, commit, tag, push and publish the release
+.\release.ps1 0.7.0 -DryRun    # preview, change nothing
 ```
 
-1. Describe the changes under a `## 0.6.0` heading in [`CHANGELOG.md`](CHANGELOG.md). That text becomes the release notes.
+1. Describe the changes under a `## 0.7.0 - YYYY-MM-DD` heading in [`CHANGELOG.md`](CHANGELOG.md), and the same in French in [`CHANGELOG.fr.md`](CHANGELOG.fr.md). The English text becomes the GitHub release notes; both are shown on the website's *Release notes* page (`site-notes.ps1`, run by the script, copies them there).
 2. Run the script. It publishes with the [GitHub CLI](https://cli.github.com/) (`gh`) if it is installed. Otherwise it opens the prefilled release page and the `dist` folder, and you drop in the two files. When the notes are too long for the page address, the script copies them to the clipboard instead: paste them into the description.
-3. The download link `releases/latest/download/PlumeSetup.exe` always points to the newest release, so the website never changes. Installed copies of Plume see the new version within a day and install it in one click.
+3. The download link `releases/latest/download/PlumeSetup.exe` always points to the newest release. The script also writes the new version into the website's `js/config.js` (`..\..\PlumeSite`); refresh the site's *What's new* section, its screenshots and this README (`docs/screens`), then push the site.
+4. Installed copies of Plume see the new version within a day (right away with *Settings › About › Check now*) and install it in one click.
 
 The version number has a single source: `version` in `Cargo.toml`.
 

@@ -2,7 +2,7 @@
 
 All notable changes to Plume. Each `## x.y.z` section becomes the release notes when you run `.\release.ps1 x.y.z`.
 
-## 0.7.0
+## 0.7.0 - 2026-11-09
 
 36 new features, reworked downloads, and Plume can now be your default browser. Every feature can be switched off, and a switched-off feature does no work in the background: no timer, no page script, no network call. In **Ultra-light** mode with its default settings, Plume uses about as much memory as 0.6.1.
 
@@ -88,13 +88,13 @@ Defaults are written *Ultra-light / Full*. 🌐 = contacts an online service, on
 - Plume now builds with a small patched copy of wry (`vendor/wry`) that adds WebView2 profiles (used by containers) and no longer crashes on messages from local pages.
 - Unit tests for settings migration, calculator and conversions, fuzzy search, password generation, k-anonymity, QR codes, secure DNS and containers: `cargo test --release` and `node --test tests/ui07.test.js`.
 
-## 0.6.1
+## 0.6.1 - 2026-11-06
 
 - **Fix**: Windows Defender wrongly flagged `PlumeSetup.exe` 0.6.0 as `Trojan:Win32/Bearfoos.A!ml` (a machine-learning false positive) and deleted it. The installer no longer checks for a running Plume through a named mutex, the pattern that triggered it.
 - `PlumeSetup.exe` and `plume.exe` now show their name, publisher and version in Properties › Details, and declare that they run without admin rights.
 - Plume 0.6.0 installs this update by itself: accept the bar, then *Restart now*.
 
-## 0.6.0
+## 0.6.0 - 2026-11-06
 
 - **Installer**: `PlumeSetup.exe` replaces the single-file `Plume.exe`. Plume installs for your account in `%LOCALAPPDATA%\Programs\Plume` without admin rights, adds Start menu and desktop shortcuts, and appears in Windows Settings › Apps, where you can uninstall it (keeping your data or not).
 - **Updates in one click**: when a new version is out, a bar tells you. Plume downloads the installer from GitHub, checks its SHA-256, installs it in the background, and *Restart now* reopens your tabs in the new version.

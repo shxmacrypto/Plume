@@ -55,6 +55,11 @@ if ($Notes.Contains($placeholder)) {
     Write-Host "Write what's new under '## $Version' in CHANGELOG.md (replace the placeholder line), then run this again." -ForegroundColor Yellow
     if (-not $DryRun) { exit 1 }
 }
+# French notes (CHANGELOG.fr.md) feed the website's release notes page in French
+$frNotes = Join-Path $PSScriptRoot "CHANGELOG.fr.md"
+if ((Test-Path $frNotes) -and -not ([IO.File]::ReadAllText($frNotes) -match "(?m)^## \[?$([regex]::Escape($Version))\]?")) {
+    Write-Host "CHANGELOG.fr.md has no '## $Version' section yet: the French release notes page will not show this version." -ForegroundColor Yellow
+}
 Write-Host $Notes
 
 Step "3/5 Build"
@@ -72,6 +77,8 @@ if (Test-Path (Join-Path $PSScriptRoot $siteCfg)) {
     if ($bytes) { $js = ([regex]"bytes: \d+").Replace($js, "bytes: $bytes", 1) }
     Write-Text $siteCfg $js
     Write-Host "$(if ($DryRun) { '(skipped) ' })Website js\config.js -> $Version, $bytes bytes. Also update its What's new section, then commit and push PlumeSite with GitHub Desktop." -ForegroundColor Yellow
+    # its "Release notes" page: CHANGELOG.md + CHANGELOG.fr.md (write the French notes before releasing)
+    & (Join-Path $PSScriptRoot "site-notes.ps1") -DryRun:$DryRun
 }
 
 Step "4/5 Commit, tag, push"
