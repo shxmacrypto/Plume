@@ -534,4 +534,7 @@ table.nt tr.bad td{color:var(--red)}
 #info .ii.up{background:var(--green)}
 .upbar{display:block;flex:none;width:120px;height:6px;border-radius:3px;background:var(--fill);overflow:hidden}
 .upbar i{display:block;height:100%;border-radius:3px;background:var(--green);transition:width .25s var(--ease)}
+.upbar.wait i{width:35%!important;animation:upwait 1.3s ease-in-out infinite}
+@keyframes upwait{from{transform:translateX(-100%)}to{transform:translateX(290%)}}
+.updb{display:flex;align-items:center;gap:8px;flex:none}
 #menuBtn.updready::after{background:var(--green)}

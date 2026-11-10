@@ -2,6 +2,20 @@
 
 Toutes les nouveautés de Plume, version après version (en anglais : [CHANGELOG.md](CHANGELOG.md)). Le site les affiche sur sa page « Notes de version ».
 
+## 0.7.1 - 2026-11-10
+
+Les mises à jour fonctionnent même quand GitHub est lent, et on voit toujours ce qu'elles font.
+
+Déjà sur Plume 0.6 ou 0.7 ? Il installe cette mise à jour tout seul : acceptez la barre, puis *Redémarrer*.
+
+### Mises à jour
+- **Vérifiées à chaque démarrage** : Plume compare sa version à la dernière publiée à chaque lancement, au lieu de réutiliser une réponse vieille d'un jour au plus : une nouvelle version apparaît tout de suite. La vérification lit vers où pointe la page « dernière version » de GitHub : une seule requête légère, sans passer par l'API de GitHub (limitée pour les visiteurs anonymes, et la première à lâcher quand GitHub est surchargé). L'API ne sert qu'au moment d'installer.
+- **Plus de blocage silencieux** : les requêtes à GitHub abandonnent après environ 15 s sans connexion ou 30 s sans réponse, et sont refaites une fois après une erreur du serveur (5xx), un délai dépassé ou une connexion coupée. Un téléchargement incomplet est repéré et recommencé. La vérification SHA-256 de l'installeur ne change pas.
+- **On voit ce qui se passe** : « Recherche de mises à jour… » et « Connexion à GitHub… » dans la barre de mise à jour et dans Réglages › À propos. Après 10 secondes sans progrès : « GitHub tarde à répondre… » avec un bouton *Télécharger sur GitHub*.
+- **Les échecs s'affichent** : une vérification ou une installation qui échoue affiche la raison, avec *Réessayer* et *Télécharger sur GitHub*. Avant, une installation ratée faisait disparaître la barre : on avait l'impression qu'il ne se passait rien.
+- Une vérification qui se termine pendant une installation ne cache plus sa progression ni le bouton *Redémarrer*.
+- La météo, l'image du jour, la vérification des mots de passe divulgués et les autres fonctions en ligne profitent des mêmes délais.
+
 ## 0.7.0 - 2026-11-09
 
 36 nouvelles fonctions, des téléchargements repensés, et Plume peut maintenant être votre navigateur par défaut. Chaque fonction se coupe, et une fonction coupée ne travaille pas en arrière-plan : aucun minuteur, aucun script dans les pages, aucun appel réseau. En mode **Ultra-léger** avec ses réglages par défaut, Plume utilise à peu près autant de mémoire que la 0.6.1.

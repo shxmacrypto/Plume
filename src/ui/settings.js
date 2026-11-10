@@ -155,20 +155,19 @@ function searchHtml() {
   return `<h3>${t('s.results')}</h3>` + (out || `<div class="empty">${t('s.noResult')}</div>`);
 }
 
+// Réglages › À propos : même état que la barre (vérification, lenteur de GitHub, échec avec deux issues)
 function updBox() {
   const st = UPD.state;
-  let sub, btn;
-  if (UPD.tag && ['available', 'downloading', 'installing', 'ready', 'failed'].includes(st)) {
-    sub = updLabel();
-    btn = st === 'ready' ? `<button class="pill pri" data-sa="update-restart">${t('u.restart')}</button>`
-      : st === 'failed' ? `<button class="pill pri" data-sa="update">${t('u.retry')}</button>`
-      : updBusy() ? `<span class="upbar" aria-hidden="true"><i style="width:${UPD.pct || 0}%"></i></span>`
-      : `<button class="pill pri" data-sa="update">${t(S.installed ? 'u.install' : 'u.get')}</button>`;
-  } else {
-    sub = st === 'latest' ? t('u.latest') : st === 'checking' ? t('u.checking') : st === 'error' ? t('u.error') : t('u.sub');
-    btn = `<button class="pill" data-sa="check-upd"${st === 'checking' ? ' disabled' : ''}>${t('u.check')}</button>`;
-  }
-  return box(`<div class="opt"><div class="lbl"><b>${t('u.title')}</b><span>${sub}</span></div>${btn}</div>` + sw('updates', t('u.auto'), t('u.autoSub')));
+  const known = UPD.tag && ['available', 'downloading', 'installing', 'ready', 'failed'].includes(st);
+  const sub = known || ['checking', 'error', 'latest'].includes(st) ? updLabel() : t('u.sub');
+  const gh = `<button class="pill" data-sa="update-page">${t('u.manual')}</button>`;
+  const btn = st === 'ready' ? `<button class="pill pri" data-sa="update-restart">${t('u.restart')}</button>`
+    : st === 'failed' ? `<button class="pill pri" data-sa="update">${t('u.retry')}</button>${gh}`
+    : st === 'error' ? `<button class="pill pri" data-sa="check-upd">${t('u.retry')}</button>${gh}`
+    : updBusy() ? (UPD.slow ? gh : '') + updProg()
+    : known ? `<button class="pill pri" data-sa="update">${t(S.installed ? 'u.install' : 'u.get')}</button>`
+    : (UPD.slow ? gh : '') + `<button class="pill" data-sa="check-upd"${st === 'checking' ? ' disabled' : ''}>${t('u.check')}</button>`;
+  return box(`<div class="opt"><div class="lbl"><b>${t('u.title')}</b><span>${sub}</span></div><div class="updb">${btn}</div></div>` + sw('updates', t('u.auto'), t('u.autoSub')));
 }
 
 function chipsBox(k, title) {
@@ -311,6 +310,7 @@ $('ov').addEventListener('click', (e) => {
     case 'check-upd': return checkUpdate(true);
     case 'update': return updInstall();
     case 'update-restart': return send('update-restart');
+    case 'update-page': return updAct('page');
     case 'onb-again': setMode(null); send('ov', { v: true }); Object.assign(ONB, { on: true, step: 0, name: C().name || '', mode: C().mode || 'full' }); $('onb').classList.add('on'); return renderOnb();
     case 'clear': if (!SET.clear) { SET.clear = true; return renderSettings(); } SET.clear = false; send('clear'); return renderSettings();
     case 'private': return send('private');

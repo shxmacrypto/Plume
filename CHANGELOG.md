@@ -2,6 +2,20 @@
 
 All notable changes to Plume. Each `## x.y.z` section becomes the release notes when you run `.\release.ps1 x.y.z`.
 
+## 0.7.1 - 2026-11-10
+
+Updates now work when GitHub is slow, and you can always see what they are doing.
+
+Already on Plume 0.6 or 0.7? It installs this update by itself: accept the bar, then *Restart now*.
+
+### Updates
+- **Checked at every start**: Plume compares its version with the latest release each time it starts, instead of reusing an answer up to a day old, so a new version shows up right away. The check reads where GitHub's "latest release" page points: one light request that doesn't use GitHub's API (limited for anonymous users, and the first part to fail when GitHub is overloaded). The API is only used when you install.
+- **No more silent hangs**: requests to GitHub give up after about 15 s without a connection or 30 s without an answer, and are retried once after a server error (5xx), a timeout or a cut connection. An incomplete download is detected and started again. The SHA-256 check of the installer is unchanged.
+- **You can see what is happening**: "Checking for updates…" and "Connecting to GitHub…" in the update bar and in Settings › About. After 10 seconds without progress: "GitHub is slow to answer…" with a *Download from GitHub* button.
+- **Failures are shown**: a failed check or installation shows the reason, with *Try again* and *Download from GitHub*. Before, a failed installation hid the update bar, so it looked like nothing had happened.
+- A check that finishes while an update is installing no longer hides its progress or the *Restart now* button.
+- The weather, the image of the day, the leaked-password check and the other online features get the same timeouts.
+
 ## 0.7.0 - 2026-11-09
 
 36 new features, reworked downloads, and Plume can now be your default browser. Every feature can be switched off, and a switched-off feature does no work in the background: no timer, no page script, no network call. In **Ultra-light** mode with its default settings, Plume uses about as much memory as 0.6.1.

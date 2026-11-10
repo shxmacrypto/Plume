@@ -977,58 +977,85 @@ document.addEventListener('dragend', () => {
   document.querySelectorAll('[data-bi].over,[data-bi].dragging').forEach((x) => x.classList.remove('over', 'dragging'));
 });
 
-/* ---------- Mises à jour : Plume vérifie GitHub au plus une fois par jour (désactivable),
-   puis télécharge, vérifie (SHA-256) et installe la nouvelle version en un clic ---------- */
-const UPD = { tag: '', page: '', state: '', pct: 0, err: '', hide: false };
+/* ---------- Mises à jour : à chaque démarrage (désactivable), Plume compare sa version à la dernière publiée
+   sur GitHub, puis télécharge, vérifie (SHA-256) et installe la nouvelle version en un clic.
+   Sans nouvelles depuis 10 s (GitHub surchargé), la barre et les réglages le disent et proposent GitHub. ---------- */
+const UPD = { tag: '', page: '', state: '', pct: 0, err: '', hide: false, recv: false, slow: false, manual: false };
+const UPD_SLOW = 1e4;
 const verNum = (v) => String(v || '').replace(/^v/, '').split(/[.-]/).slice(0, 3).map((x) => parseInt(x, 10) || 0);
 const newer = (a, b) => { const x = verNum(a), y = verNum(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; };
 const updBusy = () => UPD.state === 'downloading' || UPD.state === 'installing';
+const updTag = (v) => String(v || '').replace(/^v/i, '').replace(/[^\w.+-]/g, ''); // affiché tel quel : « Plume 0.6.1 »
+const updPage = () => UPD.page || `https://github.com/${S.repo}/releases/latest`;
+function updRender() { render(); if (mode === 'set') renderSettings(true); }
+// chien de garde : rien de neuf depuis 10 s pendant une vérification ou un téléchargement → « GitHub tarde »
+function updWatch() {
+  clearTimeout(updWatch.t); UPD.slow = false;
+  if (UPD.state === 'checking' || UPD.state === 'downloading') updWatch.t = setTimeout(() => { UPD.slow = true; updRender(); }, UPD_SLOW);
+}
+// force : « Vérifier » / « Réessayer » ; sinon la vérification du démarrage (une seule par lancement de Plume)
 function checkUpdate(force) {
   if (!S.version || updBusy() || UPD.state === 'ready' || (!force && C().updates === false)) return;
-  if (!force && Date.now() - store.get('updChecked', 0) < 864e5) {
-    const c = store.get('updLatest', null);
-    if (c && newer(c.tag, S.version)) { Object.assign(UPD, { tag: String(c.tag).replace(/^v/i, '').replace(/[^\w.+-]/g, ''), page: c.page || c.url || '', state: 'available' }); render(); }
-    return;
-  }
-  UPD.state = 'checking'; if (mode === 'set') renderSettings(true);
-  send('update-check');
+  if (force) Object.assign(UPD, { manual: true, hide: false });
+  if (force || !UPD.tag) { UPD.state = 'checking'; UPD.err = ''; updWatch(); updRender(); }
+  send('update-check', force ? {} : { auto: true });
 }
 window.UPDS = (o) => {
-  o.tag = String(o.tag || '').replace(/^v/i, '').replace(/[^\w.+-]/g, ''); // affiché tel quel : « Plume 0.6.1 »
-  if (o.state === 'available' || o.state === 'latest') { store.set('updChecked', Date.now()); store.set('updLatest', { tag: o.tag, page: o.page }); }
+  if (o.tag != null) o.tag = updTag(o.tag); // un échec n'apporte pas de version : on garde celle qu'on connaît
+  const check = ['available', 'latest', 'error'].includes(o.state);
+  // vérification finie pendant l'installation (ou après) : elle ne remplace rien
+  if (check && (updBusy() || UPD.state === 'ready')) return;
+  // vérification automatique en échec alors qu'une version est annoncée : on garde l'annonce
+  if (o.state === 'error' && !UPD.manual && UPD.tag) return;
   if (o.state === 'latest') o.tag = '';
   if (o.state === 'ready' && UPD.state !== 'ready') { UPD.hide = false; toast('upd-ready', { v: o.tag }); }
+  if (o.state === 'failed') UPD.hide = false;
+  if (o.state === 'available' || o.state === 'latest') Object.assign(UPD, { manual: false, err: '' });
   Object.assign(UPD, o);
-  render(); if (mode === 'set') renderSettings(true);
+  updWatch(); updRender();
 };
 function updInstall() {
-  if (!S.installed) return send('open', { u: UPD.page || `https://github.com/${S.repo}/releases/latest` });
-  Object.assign(UPD, { state: 'downloading', pct: 0, err: '' }); render(); if (mode === 'set') renderSettings(true);
+  if (!S.installed) return send('open', { u: updPage() });
+  Object.assign(UPD, { state: 'downloading', pct: 0, err: '', recv: false, hide: false });
+  updWatch(); updRender();
   send('update-install');
 }
 function updAct(a) {
   if (a === 'install') return updInstall();
+  if (a === 'check') return checkUpdate(true);
   if (a === 'restart') return send('update-restart');
-  if (a === 'page') return send('open', { u: UPD.page || `https://github.com/${S.repo}/releases/latest` });
+  if (a === 'page') return send('open', { u: updPage() });
   if (a === 'later') {
-    if (UPD.state === 'available') store.set('updLater', UPD.tag);
-    else UPD.hide = true;
-    if (UPD.state === 'failed') UPD.state = 'available';
+    const s = UPD.state;
+    if (s === 'available') store.set('updLater', UPD.tag);
+    else if (s !== 'checking') UPD.hide = true;
+    if (s === 'failed' || s === 'error') UPD.state = UPD.tag ? 'available' : '';
+    UPD.manual = false;
     render();
   }
 }
-const updLabel = () => updBusy() ? t(UPD.state === 'installing' ? 'u.installing' : 'u.downloading', { v: UPD.tag, p: UPD.pct || 0 })
-  : UPD.state === 'ready' ? t('u.ready', { v: UPD.tag }) : UPD.state === 'failed' ? t('u.failed', { e: esc(UPD.err || '') }) : t('u.avail', { v: UPD.tag });
-// barre sous la barre d'adresse : nouvelle version, progression, redémarrage
+function updLabel() {
+  const s = UPD.state, v = UPD.tag, e = esc(UPD.err || '');
+  const txt = s === 'checking' ? t('u.checking') : s === 'error' ? t('u.error', { e }) : s === 'latest' ? t('u.latest')
+    : s === 'downloading' ? (UPD.recv ? t('u.downloading', { v, p: UPD.pct || 0 }) : t('u.connecting'))
+    : s === 'installing' ? t('u.installing', { v }) : s === 'ready' ? t('u.ready', { v }) : s === 'failed' ? t('u.failed', { e }) : t('u.avail', { v });
+  return UPD.slow ? `${txt} <span>${t('u.slow')}</span>` : txt;
+}
+// progression ; avant les premières données (vérification, connexion) la barre va et vient
+const updProg = () => `<span class="upbar${UPD.recv || UPD.state === 'installing' ? '' : ' wait'}" aria-hidden="true"><i style="width:${UPD.pct || 0}%"></i></span>`;
+// barre sous la barre d'adresse : vérification demandée, nouvelle version, progression, échec, redémarrage
 function updBar() {
   const s = UPD.state;
-  if (!UPD.tag || UPD.hide) return '';
+  if (UPD.hide) return '';
+  if (s === 'checking' || s === 'error') { if (!UPD.manual) return ''; }
+  else if (!UPD.tag || !['available', 'downloading', 'installing', 'ready', 'failed'].includes(s)) return '';
   if (s === 'available' && store.get('updLater', '') === UPD.tag) return '';
-  if (!['available', 'downloading', 'installing', 'ready', 'failed'].includes(s)) return '';
+  const gh = `<button class="pill" data-upd="page">${t('u.manual')}</button>`;
   const btns = s === 'ready' ? `<button class="pill pri" data-upd="restart">${t('u.restart')}</button>`
-    : s === 'failed' ? `<button class="pill pri" data-upd="install">${t('u.retry')}</button><button class="pill" data-upd="page">${t('u.manual')}</button>`
+    : s === 'failed' ? `<button class="pill pri" data-upd="install">${t('u.retry')}</button>${gh}`
+    : s === 'error' ? `<button class="pill pri" data-upd="check">${t('u.retry')}</button>${gh}`
     : s === 'available' ? `<button class="pill pri" data-upd="install">${t(S.installed ? 'u.install' : 'u.get')}</button><button class="pill" data-upd="page">${t('u.notes')}</button>`
-    : `<span class="upbar" aria-hidden="true"><i style="width:${UPD.pct || 0}%"></i></span>`;
+    : (UPD.slow ? gh : '') + updProg();
   const close = updBusy() ? '' : `<button class="icb" data-upd="later" aria-label="${esc(t('u.later'))}">${I.x}</button>`;
   return `<span class="ii up">${I.upd}</span><span class="msg">${updLabel()}</span>${btns}${close}`;
 }
@@ -1038,4 +1065,5 @@ function updRow() {
   if (updBusy()) return row('noop', updLabel(), '', true, 'updrow') + hr;
   return UPD.tag ? row('update', t('u.menu', { v: UPD.tag }), '', false, 'updrow') + hr : '';
 }
-setTimeout(() => checkUpdate(false), 8000);
+// une fenêtre ouverte après la vérification du démarrage a déjà reçu son résultat (UPDS au chargement)
+setTimeout(() => { if (!UPD.state) checkUpdate(false); }, 8000);

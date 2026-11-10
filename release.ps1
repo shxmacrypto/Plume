@@ -9,7 +9,7 @@
 #
 # The download link https://github.com/<owner>/<repo>/releases/latest/download/PlumeSetup.exe
 # always points to the newest release, so the website never needs to change.
-# Plume itself checks this release (at most once a day) and installs it in one click.
+# Plume itself checks for it at every start and installs it in one click.
 param(
     [Parameter(Mandatory = $true, Position = 0)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
     [string]$Notes = "",

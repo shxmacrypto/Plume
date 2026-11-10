@@ -377,6 +377,8 @@ struct App {
     /// Dernier état de la mise à jour (rejoué aux fenêtres qui s'ouvrent)
     upd: Value,
     upd_busy: bool,
+    /// la vérification automatique du démarrage a eu lieu
+    upd_auto: bool,
     /// Réglages au démarrage : ceux marqués « rs » ne s'appliquent qu'après un redémarrage
     boot: Value,
     /// Statistiques d'économies (#6), stats.json
@@ -544,6 +546,7 @@ AutofillServerCommunication,InterestFeedContentSuggestions \
         dev: devtools::DevTools::default(),
         upd: Value::Null,
         upd_busy: false,
+        upd_auto: false,
         boot: cfg.clone(),
         stats: std::fs::read_to_string(dir.join("stats.json")).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({"days": {}})),
         stats_dirty: false,
@@ -2203,12 +2206,17 @@ impl App {
 
     /* ---------- Mises à jour (GitHub Releases) ---------- */
 
-    fn update_check(&mut self) {
+    /// Version installée = dernière version publiée ? Vérifié à chaque démarrage (une fois, quel que soit le
+    /// nombre de fenêtres) et sur demande, par la redirection de releases/latest : pas d'appel à l'API.
+    fn update_check(&mut self, auto: bool) {
+        if auto && std::mem::replace(&mut self.upd_auto, true) {
+            return; // le résultat de la première vérification arrive dans toutes les fenêtres
+        }
         let p = self.proxy.clone();
         std::thread::spawn(move || {
-            let v = match update::latest() {
-                Ok(r) if update::newer(&r.tag, VERSION) => json!({"state": "available", "tag": r.tag, "page": r.page, "auto": r.asset.is_some()}),
-                Ok(r) => json!({"state": "latest", "tag": r.tag, "page": r.page}),
+            let v = match update::latest_tag() {
+                Ok((tag, page)) if update::newer(&tag, VERSION) => json!({"state": "available", "tag": tag, "page": page}),
+                Ok((tag, page)) => json!({"state": "latest", "tag": tag, "page": page}),
                 Err(e) => json!({"state": "error", "err": e}),
             };
             let _ = p.send_event(Ev::Upd(v));
@@ -2228,13 +2236,17 @@ impl App {
                 let _ = p.send_event(Ev::Upd(v));
             };
             let res = (|| -> Res<String> {
-                let r = update::latest()?;
+                // fichier et empreinte via l'API ; « Réessayer » reprend sa réponse récente au lieu de la redemander
+                let r = update::latest_cached()?;
                 if !update::newer(&r.tag, VERSION) {
                     return Err("Plume is already up to date".into());
                 }
                 let a = r.asset.ok_or("this release has no installer")?;
                 send(json!({"state": "downloading", "tag": r.tag, "pct": 0, "page": r.page}));
-                let file = update::download(&a, &r.tag, &dir, &mut |pct| send(json!({"state": "downloading", "tag": r.tag, "pct": pct, "page": r.page})))?;
+                // recv : les données arrivent (avant, l'interface affiche « Connexion à GitHub… »)
+                let file = update::download(&a, &r.tag, &dir, &mut |pct| {
+                    send(json!({"state": "downloading", "tag": r.tag, "pct": pct, "page": r.page, "recv": true}))
+                })?;
                 send(json!({"state": "installing", "tag": r.tag, "page": r.page}));
                 update::install(&file)?;
                 let _ = std::fs::remove_file(&file);
@@ -2523,11 +2535,16 @@ impl App {
             Ev::Ui(_, msg) => self.on_ui(&msg),
             Ev::Media(v) => self.js(&format!("MEDIA({v})")),
             Ev::Upd(v) => {
-                if !matches!(v["state"].as_str(), Some("downloading" | "installing")) {
-                    self.upd_busy = false;
+                let st = v["state"].as_str().unwrap_or("");
+                // une vérification qui se termine pendant l'installation (ou après) n'efface pas son état
+                let stale = matches!(st, "available" | "latest" | "error") && (self.upd_busy || self.upd["state"] == "ready");
+                if !stale {
+                    if matches!(st, "ready" | "failed") {
+                        self.upd_busy = false;
+                    }
+                    self.js_all(&format!("UPDS({v})"));
+                    self.upd = v;
                 }
-                self.js_all(&format!("UPDS({v})"));
-                self.upd = v;
             }
             Ev::PopupSize(_, w, h) => {
                 if let Some(p) = &self.popup {
@@ -2866,7 +2883,7 @@ impl App {
                     self.js("focusBar()");
                 }
             }
-            "update-check" => self.update_check(),
+            "update-check" => self.update_check(v["auto"] == true),
             // --- Performance (0.7) ---
             "tasks" => {
                 self.tasks_open = v["open"] == true;
