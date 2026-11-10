@@ -674,7 +674,7 @@ impl App {
                         }
                         self.save_notes();
                     }
-                    self.want_window.push(WinReq { url: None, private: false, tab: None, restore: tabs, active: 0 });
+                    self.want_window.push(WinReq { url: None, private: false, tab: None, restore: tabs, active: 0, pos: None });
                 }
             }
             "sess-rename" => {

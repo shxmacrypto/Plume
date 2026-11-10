@@ -157,14 +157,7 @@ function placeSplit() {
 }
 addEventListener('resize', placeSplit);
 FX.click['split-x'] = () => send('split-close');
-// glisser un onglet sur la page → écran partagé
-const DRAGPT = { x: 0, y: 0 };
-document.addEventListener('pointermove', (e) => { if (drag) { DRAGPT.x = e.clientX; DRAGPT.y = e.clientY; } }, true);
-document.addEventListener('pointerup', () => {
-  if (!drag || !drag.moved || !on('split')) return;
-  const hh = $('hdr').offsetHeight;
-  if (DRAGPT.y > hh + 40 && drag.id !== S.a) send('split-with', { id: drag.id });
-}, true);
+// (un onglet glissé hors de la bande s'ouvre dans une nouvelle fenêtre : app.js ; l'écran partagé passe par son menu)
 
 /* ---------- #10 Recherche dans les onglets (Ctrl+Maj+A) ---------- */
 const TS = { q: '', data: null, sel: 0, items: [] };

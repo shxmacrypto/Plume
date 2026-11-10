@@ -66,6 +66,13 @@ body.vt #tabs,body.vt #new{display:none}
 .tab.pv .ic,.vtab.pv .ic{box-shadow:0 0 0 2px var(--purple)}
 .tab[data-gc]::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2.5px;border-radius:2px;background:var(--gc)}
 .tab.drag{z-index:3;background:var(--solid2);transition:none;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+/* glisser : les autres onglets s'écartent ; tiré hors de la bande, l'onglet pâlit (il partira dans une nouvelle fenêtre) */
+#tabs.sorting .tab:not(.drag),#vlist.sorting .vtab:not(.drag){transition:transform .2s var(--ease)}
+.tab.tear,.vtab.tear{opacity:.5}
+/* onglet d'une autre fenêtre glissé au-dessus : trait à l'endroit où il arriverait */
+#tabins{position:fixed;z-index:20;display:none;width:3px;border-radius:2px;background:var(--acc);box-shadow:0 0 10px var(--acc-ring);pointer-events:none}
+#tabins.v{width:auto;height:3px}
+#tabins.on{display:block}
 .tab.pop{animation:pop .32s var(--ease)}
 @keyframes pop{from{transform:scale(.7);opacity:0}}
 .newic{width:16px;height:16px;color:var(--t3)}

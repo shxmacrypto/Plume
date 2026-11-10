@@ -95,6 +95,8 @@ const PAGE_JS: &str = include_str!("page.js");
 /// Version (une seule source : Cargo.toml) et dépôt GitHub (vérification des mises à jour).
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const REPO: &str = "shxmacrypto/Plume";
+/// Onglet détaché : la souris tombe à cet endroit de la nouvelle fenêtre (px logiques), sur son onglet.
+const TEAR_GRAB: (f64, f64) = (70.0, 18.0);
 
 /// Les extensions peuvent demander le panneau latéral (chrome.sidePanel), absent de WebView2 : on le fournit.
 const SIDE_PANEL_JS: &str = r#"(() => {
@@ -199,6 +201,8 @@ pub(crate) enum Ev {
     DlAsk(u32),
     /// Lien passé par un autre lancement de Plume (lien cliqué dans une autre application) : (fenêtre, adresse)
     Remote(u32, String),
+    /// Fenêtre déplacée à la souris : (fenêtre, fin du déplacement). Sert quand c'est son seul onglet qu'on tire.
+    Moving(u32, bool),
 }
 
 /// Fréquence du relevé mémoire (s) ; 0 = arrêté. Un seul fil, créé seulement quand on en a besoin.
@@ -297,6 +301,8 @@ struct WinReq {
     tab: Option<Tab>,
     restore: Vec<Value>,
     active: usize,
+    /// coin haut-gauche voulu (onglet lâché hors de la bande) ; sinon décalé de la fenêtre courante
+    pos: Option<tao::dpi::PhysicalPosition<i32>>,
 }
 
 struct App {
@@ -379,6 +385,10 @@ struct App {
     upd_busy: bool,
     /// la vérification automatique du démarrage a eu lieu
     upd_auto: bool,
+    /// fenêtre déplacée en tirant son seul onglet (elle peut rejoindre une autre fenêtre)
+    drag_tab: Option<u32>,
+    /// fenêtre qui montre où l'onglet glissé arriverait
+    tab_over: Option<u32>,
     /// Réglages au démarrage : ceux marqués « rs » ne s'appliquent qu'après un redémarrage
     boot: Value,
     /// Statistiques d'économies (#6), stats.json
@@ -547,6 +557,8 @@ AutofillServerCommunication,InterestFeedContentSuggestions \
         upd: Value::Null,
         upd_busy: false,
         upd_auto: false,
+        drag_tab: None,
+        tab_over: None,
         boot: cfg.clone(),
         stats: std::fs::read_to_string(dir.join("stats.json")).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({"days": {}})),
         stats_dirty: false,
@@ -611,7 +623,7 @@ AutofillServerCommunication,InterestFeedContentSuggestions \
         for w in list("windows") {
             let s = w["session"].as_array().cloned().unwrap_or_default();
             if !s.is_empty() {
-                app.want_window.push(WinReq { url: None, private: false, tab: None, restore: s, active: w["active"].as_u64().unwrap_or(0) as usize });
+                app.want_window.push(WinReq { url: None, private: false, tab: None, restore: s, active: w["active"].as_u64().unwrap_or(0) as usize, pos: None });
             }
         }
     }
@@ -733,7 +745,7 @@ impl App {
 
     /// Crée une fenêtre (vide, avec un onglet déplacé, ou restaurée) et en fait la fenêtre courante.
     fn open_window(&mut self, target: &EventLoopWindowTarget<Ev>, req: WinReq) {
-        let pos = self.window.outer_position().ok().map(|p| tao::dpi::PhysicalPosition::new(p.x + 36, p.y + 36));
+        let pos = req.pos.or_else(|| self.window.outer_position().ok().map(|p| tao::dpi::PhysicalPosition::new(p.x + 36, p.y + 36)));
         let wid = self.next_wid;
         self.next_wid += 1;
         let window = make_window(target, pos, self.cfg["theme"] != "light", &self.proxy, wid);
@@ -846,6 +858,103 @@ impl App {
 
     fn ui_scale(&self) -> f64 {
         self.cfg["uiScale"].as_f64().unwrap_or(1.0).clamp(0.8, 2.0)
+    }
+
+    /// Coin de la fenêtre d'un onglet lâché hors de la bande : son onglet arrive sous la souris, et la
+    /// fenêtre reste visible sur l'écran où l'onglet a été lâché.
+    fn tear_pos(&self) -> Option<tao::dpi::PhysicalPosition<i32>> {
+        let k = self.ui_scale() * self.scale();
+        let mut p = POINT::default();
+        unsafe { GetCursorPos(&mut p) }.ok()?;
+        let (mut x, mut y) = (p.x - (TEAR_GRAB.0 * k) as i32, p.y - (TEAR_GRAB.1 * k) as i32);
+        let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        if unsafe { GetMonitorInfoW(MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST), &mut mi) }.as_bool() {
+            let r = mi.rcWork;
+            x = x.clamp(r.left, (r.right - (240.0 * k) as i32).max(r.left));
+            y = y.clamp(r.top, (r.bottom - (120.0 * k) as i32).max(r.top));
+        }
+        Some(tao::dpi::PhysicalPosition::new(x, y))
+    }
+
+    fn win_hwnd(&self, wid: u32) -> Option<isize> {
+        if wid == self.wid {
+            return Some(self.window.hwnd() as isize);
+        }
+        self.others.iter().find(|w| w.wid == wid).map(|w| w.window.hwnd() as isize)
+    }
+
+    /// JS dans l'interface d'une fenêtre précise (courante ou non).
+    fn js_win(&self, wid: u32, code: &str) {
+        if wid == self.wid {
+            self.js(code);
+        } else if let Some(w) = self.others.iter().find(|w| w.wid == wid && w.ui_ready) {
+            let _ = w.ui.evaluate_script(code);
+        }
+    }
+
+    /// Fenêtre (autre que `src`) dont la barre d'onglets est sous la souris et visible à cet endroit :
+    /// (fenêtre, x, y dans son interface, px CSS). `skip` = fenêtre ignorée (celle qu'on déplace), `private` =
+    /// onglet glissé (il ne rejoint qu'une fenêtre du même genre).
+    fn tabs_under_cursor(&self, src: u32, skip: isize, private: bool) -> Option<(u32, f64, f64)> {
+        let mut p = POINT::default();
+        unsafe { GetCursorPos(&mut p) }.ok()?;
+        let top = top_window_at(p, skip)?;
+        let (wid, win, ui_h, side_w, priv_w) = std::iter::once((self.wid, &self.window, self.ui_h, self.side_w, self.private_win))
+            .chain(self.others.iter().map(|w| (w.wid, &w.window, w.ui_h, w.side_w, w.private_win)))
+            .find(|w| w.1.hwnd() as isize == top)?;
+        if wid == src || priv_w != private {
+            return None;
+        }
+        let k = self.ui_scale() * win.scale_factor();
+        let mut o = POINT::default();
+        let _ = unsafe { ClientToScreen(HWND(top as _), &mut o) };
+        let (x, y) = ((p.x - o.x) as f64 / k, (p.y - o.y) as f64 / k);
+        // la barre d'onglets : l'en-tête, ou la colonne de gauche en onglets verticaux
+        let over = y >= 0.0 && (y <= ui_h || (self.cfg["tabs"] == "v" && x >= 0.0 && x <= side_w));
+        over.then_some((wid, x, y))
+    }
+
+    /// Montre dans la fenêtre visée l'endroit où l'onglet glissé arriverait (ou le retire).
+    fn tab_over(&mut self, target: Option<(u32, f64, f64)>) {
+        let prev = std::mem::replace(&mut self.tab_over, target.map(|t| t.0));
+        if let Some(p) = prev.filter(|p| Some(*p) != self.tab_over) {
+            self.js_win(p, "tabOver()");
+        }
+        if let Some((w, x, y)) = target {
+            self.js_win(w, &format!("tabOver({x:.0},{y:.0})"));
+        }
+    }
+
+    /// Onglet lâché sur la barre d'onglets d'une autre fenêtre : il la rejoint sans recharger sa page, à l'endroit
+    /// visé (placé par l'interface d'arrivée). La fenêtre de départ se ferme si elle n'a plus d'onglet.
+    fn tab_join(&mut self, id: u32, to: u32, x: f64, y: f64) -> bool {
+        let Some(i) = self.idx(id) else { return false };
+        if to == self.wid || self.others.iter().find(|w| w.wid == to).is_none_or(|w| w.private_win != self.tabs[i].private) {
+            return false;
+        }
+        let t = self.tabs.remove(i);
+        if let Some(v) = &t.view {
+            let _ = v.set_visible(false);
+        }
+        if self.tabs.is_empty() {
+            self.close_window();
+        } else {
+            let a = if i < self.active { self.active - 1 } else { self.active.min(self.tabs.len() - 1) };
+            self.active = usize::MAX;
+            self.activate(a);
+        }
+        if !self.focus_win(to) {
+            return false; // impossible : la fenêtre visée vient d'être vérifiée
+        }
+        if let Some(v) = &t.view {
+            let _ = v.reparent(self.window.hwnd() as isize);
+        }
+        self.tabs.push(t);
+        self.active = usize::MAX;
+        self.activate(self.tabs.len() - 1);
+        self.js(&format!("tabDropped({id},{x:.0},{y:.0})"));
+        self.window.set_focus();
+        true
     }
 
     fn idx(&self, id: u32) -> Option<usize> {
@@ -1834,7 +1943,7 @@ impl App {
             return; // Plume relancé sans lien : la fenêtre passe simplement devant
         }
         if self.private_win {
-            self.want_window.push(WinReq { url: Some(url), private: false, tab: None, restore: vec![], active: 0 });
+            self.want_window.push(WinReq { url: Some(url), private: false, tab: None, restore: vec![], active: 0, pos: None });
         } else {
             // un panneau ouvert (réglages, menu) se referme : la page du lien s'affiche dessous
             self.js("mode && setMode(null)");
@@ -1973,8 +2082,8 @@ impl App {
                 let p = self.private_win;
                 self.new_tab(None, true, p)
             }
-            Cmd::NewWindow => self.want_window.push(WinReq { url: None, private: false, tab: None, restore: vec![], active: 0 }),
-            Cmd::Private => self.want_window.push(WinReq { url: None, private: true, tab: None, restore: vec![], active: 0 }),
+            Cmd::NewWindow => self.want_window.push(WinReq { url: None, private: false, tab: None, restore: vec![], active: 0, pos: None }),
+            Cmd::Private => self.want_window.push(WinReq { url: None, private: true, tab: None, restore: vec![], active: 0, pos: None }),
             Cmd::Close => self.close_tab(self.active),
             Cmd::Reopen => {
                 if let Some(u) = self.closed.pop().map(|c| str_of(&c["u"])) {
@@ -2533,6 +2642,39 @@ impl App {
         }
         match ev {
             Ev::Ui(_, msg) => self.on_ui(&msg),
+            // fenêtre déplacée en tirant son seul onglet : lâchée sur la barre d'une autre fenêtre, elle la rejoint
+            Ev::Moving(wid, end) if self.drag_tab == Some(wid) => {
+                let me = std::iter::once((self.wid, &self.window, &self.tabs))
+                    .chain(self.others.iter().map(|w| (w.wid, &w.window, &w.tabs)))
+                    .find(|w| w.0 == wid)
+                    .map(|w| (w.1.hwnd() as isize, w.2.first().is_some_and(|t| t.private), w.2.len()));
+                let target = me.filter(|m| m.2 == 1).and_then(|(h, private, _)| self.tabs_under_cursor(wid, h, private));
+                if end {
+                    self.drag_tab = None;
+                    self.tab_over(None);
+                    if let Some((to, x, y)) = target {
+                        if self.focus_win(wid) && self.tabs.len() == 1 {
+                            let id = self.tabs[0].id;
+                            self.tab_join(id, to, x, y);
+                        }
+                    }
+                } else {
+                    // la fenêtre visée passe devant celle qu'on déplace (on voit où l'onglet arrivera), puis
+                    // celle-ci revient devant quand la souris s'en va
+                    let raise = match (target, self.tab_over) {
+                        (Some((to, ..)), prev) if prev != Some(to) => self.win_hwnd(to),
+                        (None, Some(_)) => me.map(|m| m.0),
+                        _ => None,
+                    };
+                    if let Some(h) = raise {
+                        unsafe {
+                            let _ = SetWindowPos(HWND(h as _), Some(HWND_TOP), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                        }
+                    }
+                    self.tab_over(target);
+                }
+            }
+            Ev::Moving(..) => {}
             Ev::Media(v) => self.js(&format!("MEDIA({v})")),
             Ev::Upd(v) => {
                 let st = v["state"].as_str().unwrap_or("");
@@ -2948,9 +3090,22 @@ impl App {
             "new" => self.cmd(Cmd::NewTab),
             "private" => self.cmd(Cmd::Private),
             "window" => self.cmd(Cmd::NewWindow),
-            // déplacer un onglet dans une nouvelle fenêtre
+            // déplacer un onglet dans une nouvelle fenêtre (menu de l'onglet, ou onglet lâché hors de la bande : tear)
             "tab-window" => {
-                if let Some(i) = self.idx(id).filter(|_| self.tabs.len() > 1) {
+                let tear = v["tear"] == true;
+                let mut joined = false;
+                if tear {
+                    // lâché sur la barre d'onglets d'une autre fenêtre : il la rejoint
+                    let private = self.idx(id).is_some_and(|i| self.tabs[i].private);
+                    let target = self.tabs_under_cursor(self.wid, 0, private);
+                    self.tab_over(None);
+                    if let Some((to, x, y)) = target {
+                        joined = self.tab_join(id, to, x, y);
+                    }
+                }
+                if joined {
+                } else if let Some(i) = self.idx(id).filter(|_| self.tabs.len() > 1) {
+                    let pos = if tear { self.tear_pos() } else { None };
                     let t = self.tabs.remove(i);
                     if let Some(v) = &t.view {
                         let _ = v.set_visible(false);
@@ -2959,8 +3114,18 @@ impl App {
                     let a = if i < self.active { self.active - 1 } else { self.active.min(self.tabs.len() - 1) };
                     self.active = usize::MAX;
                     self.activate(a);
-                    self.want_window.push(WinReq { url: None, private, tab: Some(t), restore: vec![], active: 0 });
+                    self.want_window.push(WinReq { url: None, private, tab: Some(t), restore: vec![], active: 0, pos });
                 }
+            }
+            // onglet glissé hors de sa bande : la fenêtre sous la souris montre où il arriverait
+            "tab-over" => {
+                let target = if v["end"] == true {
+                    None
+                } else {
+                    let private = self.idx(id).is_some_and(|i| self.tabs[i].private);
+                    self.tabs_under_cursor(self.wid, 0, private)
+                };
+                self.tab_over(target);
             }
             "media-probe" | "media-install" => {
                 let (u, p, install) = (s("u"), self.proxy.clone(), v["c"] == "media-install");
@@ -3132,6 +3297,8 @@ impl App {
                 }
             },
             "drag" => {
+                // seul onglet tiré hors de sa bande : la fenêtre suit la souris, et peut rejoindre une autre fenêtre
+                self.drag_tab = (v["tab"] == true).then_some(self.wid);
                 let _ = self.window.drag_window();
             }
             "max" => {
@@ -4047,9 +4214,41 @@ unsafe extern "system" fn parent_proc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM,
                 }
             }
             WM_NCDESTROY => defbrowser::unmark_window(h),
+            // déplacement à la souris : un onglet seul lâché sur la barre d'une autre fenêtre la rejoint
+            WM_MOVING => {
+                let _ = proxy.send_event(Ev::Moving(*wid, false));
+            }
+            WM_EXITSIZEMOVE => {
+                let _ = proxy.send_event(Ev::Moving(*wid, true));
+            }
             _ => {}
         }
         DefSubclassProc(h, msg, wp, lp)
+    }
+}
+
+/// Fenêtre de premier niveau visible sous `p`, dans l'ordre d'affichage, sans compter `skip` (la fenêtre qu'on
+/// déplace) ni les fenêtres transparentes aux clics ou masquées (superpositions de jeux, fenêtres « fantômes »).
+fn top_window_at(p: POINT, skip: isize) -> Option<isize> {
+    unsafe {
+        let mut h = GetTopWindow(None).ok()?;
+        loop {
+            let ex = GetWindowLongW(h, GWL_EXSTYLE) as u32;
+            let mut cloaked = 0u32;
+            let _ = DwmGetWindowAttribute(h, DWMWA_CLOAKED, &mut cloaked as *mut u32 as _, 4);
+            let mut r = RECT::default();
+            if h.0 as isize != skip
+                && IsWindowVisible(h).as_bool()
+                && !IsIconic(h).as_bool()
+                && cloaked == 0
+                && ex & WS_EX_TRANSPARENT.0 == 0
+                && GetWindowRect(h, &mut r).is_ok()
+                && PtInRect(&r, p).as_bool()
+            {
+                return Some(h.0 as isize);
+            }
+            h = GetWindow(h, GW_HWNDNEXT).ok()?;
+        }
     }
 }
 

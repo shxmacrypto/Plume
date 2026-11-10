@@ -239,7 +239,7 @@ function tabHtml(x, narrow) {
     + (narrow && !on ? '' : `<button class="x" data-x="${x.id}" aria-label="${esc(t('tab.closeTab'))}" tabindex="-1">${I.x}</button>`) + '</div>';
 }
 function renderTabs() {
-  if (drag && drag.moved) return;
+  if ((drag && drag.moved) || performance.now() < tabsHold) return;
   const el = $('tabs');
   if (C().tabs === 'v') { el.innerHTML = ''; return; }
   const vis = S.tabs.filter((x) => !x.pin && !(x.g && grp(x.g)?.col && x.id !== S.a));
@@ -261,7 +261,7 @@ function renderTabs() {
 
 /* ---------- Onglets verticaux ---------- */
 function renderSide() {
-  if (C().tabs !== 'v') return;
+  if (C().tabs !== 'v' || (drag && drag.moved) || performance.now() < tabsHold) return;
   const pins = S.tabs.filter((x) => x.pin);
   let html = pins.length ? `<div class="vpins">${pins.map((x) => `<div class="vpin${x.id === S.a ? ' on' : ''}" role="tab" tabindex="${x.id === S.a ? 0 : -1}" aria-selected="${x.id === S.a}" data-id="${x.id}" title="${esc(x.t || host(x.u))}">${x.u ? icon(x.u, x.f, true) : I.plusTab}</div>`).join('')}</div>` : '', last = 0;
   for (const x of S.tabs) {
@@ -791,42 +791,150 @@ for (const id of ['top', 'tabs', 'spacer', 'bar', 'bmb', 'brand', 'info']) {
   });
 }
 
-/* ---------- Onglets : activer au clic, réordonner par glisser ---------- */
+/* ---------- Onglets : activer au clic, réordonner par glisser (les autres s'écartent pour montrer la place),
+   ou lâcher hors de la bande pour ouvrir l'onglet dans une nouvelle fenêtre ---------- */
+const TEAR = 32; // px hors de la bande d'onglets à partir desquels l'onglet se détache
+let tabsHold = 0; // fin de l'animation de dépôt : pas de nouveau rendu des onglets avant
+const tabMove = (vert, px) => px ? (vert ? `translateY(${px}px)` : `translateX(${px}px)`) : '';
+// les autres onglets s'écartent devant l'onglet glissé ; c = son centre (Infinity : il quitte la bande, le vide se referme)
+function tabsShift(d, c) {
+  const a = d.vert ? 'top' : 'left', z = d.vert ? 'height' : 'width', r = d.rects;
+  let gap = Infinity;
+  for (let i = 1; i < r.length; i++) { const g = r[i][a] - r[i - 1][a] - r[i - 1][z]; if (g >= 0) gap = Math.min(gap, g); }
+  const size = r[d.from][z] + (gap === Infinity ? 0 : gap);
+  let k = d.from;
+  d.els.forEach((el, i) => {
+    if (i === d.from) return;
+    const mid = r[i][a] + r[i][z] / 2;
+    const px = i > d.from && c > mid ? -size : i < d.from && c < mid ? size : 0;
+    if (px < 0) k = Math.max(k, i); else if (px > 0) k = Math.min(k, i);
+    el.style.transform = tabMove(d.vert, px);
+  });
+  d.k = k;
+}
+// fin de glisser : plus de décalage ni d'état « glissé »
+function tabsDrop(d) {
+  d.list.classList.remove('sorting');
+  d.el.classList.remove('drag', 'tear');
+  for (const c of d.els) c.style.transform = '';
+  d.el.style.transform = '';
+}
+// FLIP : après le nouveau rendu, chaque onglet glisse depuis l'endroit où on le voyait
+function tabsSettle(list, vert, seen) {
+  for (const c of list.querySelectorAll('.tab,.vtab')) {
+    const p = seen.get(c.dataset.id);
+    if (p == null) continue;
+    const r = c.getBoundingClientRect(), px = p - (vert ? r.top : r.left);
+    if (Math.abs(px) < 1) continue;
+    c.style.transition = 'none';
+    c.style.transform = tabMove(vert, px);
+    c.getBoundingClientRect(); // position de départ appliquée
+    c.style.transition = 'transform .2s var(--ease)';
+    c.style.transform = '';
+  }
+  tabsHold = performance.now() + 220;
+  setTimeout(() => { tabsHold = 0; renderTabs(); renderSide(); }, 230);
+}
 for (const listId of ['tabs', 'vlist']) {
   const list = $(listId), vert = listId === 'vlist';
+  const tabsOf = () => [...list.querySelectorAll('.tab,.vtab')];
+  const center = (d, dp) => { const r = d.rects[d.from]; return vert ? r.top + r.height / 2 + dp : r.left + r.width / 2 + dp; };
   list.addEventListener('pointerdown', (e) => {
     const tb = e.target.closest('.tab,.vtab,.vpin');
     if (!tb || e.button !== 0 || e.target.closest('.x')) return;
     const id = +tb.dataset.id;
     if (id !== S.a) send('act', { id });
-    drag = { id, el: tb, p0: vert ? e.clientY : e.clientX, moved: false, vert, list, rects: [...list.querySelectorAll('.tab,.vtab')].map((c) => c.getBoundingClientRect()) };
-    tb.setPointerCapture(e.pointerId);
+    const els = tabsOf();
+    drag = { id, el: tb, p0: vert ? e.clientY : e.clientX, moved: false, vert, list, els, rects: els.map((c) => c.getBoundingClientRect()), from: els.indexOf(tb), out: false, box: list.getBoundingClientRect() };
+    drag.k = drag.from;
+    // capture sur la bande elle-même : l'activation redessine les onglets, et l'onglet capturé disparaîtrait
+    // (on perdrait alors la souris dès qu'elle sort de l'en-tête)
+    list.setPointerCapture(e.pointerId);
   });
+  const isOut = (d, e) => (vert ? Math.max(d.box.left - e.clientX, e.clientX - d.box.right) : Math.max(d.box.top - e.clientY, e.clientY - d.box.bottom)) > TEAR;
   list.addEventListener('pointermove', (e) => {
     if (!drag || drag.list !== list) return;
-    const dp = (vert ? e.clientY : e.clientX) - drag.p0;
-    if (!drag.moved && Math.abs(dp) < 6) return;
-    if (!drag.moved) { drag.el = list.querySelector(`[data-id="${drag.id}"]`) || drag.el; drag.el.classList.add('drag'); }
-    drag.moved = true;
-    drag.el.style.transform = vert ? `translateY(${dp}px)` : `translateX(${dp}px)`;
+    const d = drag, dp = (vert ? e.clientY : e.clientX) - d.p0, out = isOut(d, e);
+    if (!d.moved && Math.abs(dp) < 6 && !out) return;
+    if (!d.moved) {
+      // le clic a pu redessiner les onglets (activation) : on reprend les éléments affichés
+      d.els = tabsOf();
+      d.el = list.querySelector(`[data-id="${d.id}"]`) || d.el;
+      d.from = d.k = d.els.indexOf(d.el);
+      d.el.classList.add('drag');
+      list.classList.add('sorting');
+    }
+    d.moved = true;
+    // seul onglet de la fenêtre : c'est la fenêtre entière qui suit la souris (lâchée sur la barre d'onglets
+    // d'une autre fenêtre, elle la rejoint)
+    if (out && S.tabs.length < 2) { tabsDrop(d); drag = null; send('drag', { tab: true }); return; }
+    if (out !== d.out) { d.out = out; d.el.classList.toggle('tear', out); if (!out) send('tab-over', { id: d.id, end: true }); }
+    // hors de la bande : une autre fenêtre de Plume sous la souris montre où l'onglet arriverait
+    if (out && performance.now() - (d.overAt || 0) > 50) { d.overAt = performance.now(); send('tab-over', { id: d.id }); }
+    d.el.style.transform = tabMove(vert, dp);
+    if (d.from >= 0) tabsShift(d, out ? Infinity : center(d, dp));
   });
-  const endDrag = () => {
+  const endDrag = (e) => {
     if (!drag || drag.list !== list) return;
     const d = drag; drag = null;
     if (!d.moved) return;
-    const r = d.el.getBoundingClientRect(), mid = d.vert ? r.top + r.height / 2 : r.left + r.width / 2;
-    const ids = [...list.querySelectorAll('.tab,.vtab')].map((c) => +c.dataset.id);
-    let k = d.rects.findIndex((rc) => mid < (d.vert ? rc.top + rc.height / 2 : rc.left + rc.width / 2));
-    const fromK = ids.indexOf(d.id);
-    if (k < 0) k = ids.length - 1; else if (k > fromK) k -= 1;
-    d.el.style.transform = '';
-    const target = ids[k], to = S.tabs.findIndex((x) => x.id === target);
-    send('move', { id: d.id, to: to < 0 ? S.tabs.length - 1 : to });
+    // lâché hors de la bande (là où on lâche, pas seulement là où on est passé) : l'onglet rejoint la fenêtre
+    // dont la barre d'onglets est sous la souris, sinon il s'ouvre dans une nouvelle fenêtre, sous la souris
+    const wasOut = d.out;
+    d.out = e.type === 'pointerup' && isOut(d, e);
+    if (wasOut && !d.out) send('tab-over', { id: d.id, end: true });
+    if (d.out && S.tabs.length > 1) {
+      d.el.style.visibility = 'hidden';
+      list.classList.remove('sorting');
+      send('tab-window', { id: d.id, tear: true });
+      setTimeout(() => { renderTabs(); renderSide(); }, 800); // si l'onglet est resté (refusé), il revient
+      return;
+    }
+    const seen = new Map(tabsOf().map((c) => { const r = c.getBoundingClientRect(); return [c.dataset.id, vert ? r.top : r.left]; }));
+    tabsDrop(d);
+    if (d.from >= 0 && d.k !== d.from && !d.out) {
+      const target = +d.els[d.k].dataset.id, i = S.tabs.findIndex((x) => x.id === d.id), to = S.tabs.findIndex((x) => x.id === target);
+      if (i >= 0 && to >= 0) {
+        S.tabs.splice(to, 0, S.tabs.splice(i, 1)[0]); // affiché tout de suite ; Rust confirme (groupes, épinglés)
+        send('move', { id: d.id, to });
+      }
+    }
     renderTabs(); renderSide();
+    tabsSettle(list, vert, seen);
   };
   list.addEventListener('pointerup', endDrag);
   list.addEventListener('pointercancel', endDrag);
 }
+// Onglet d'une autre fenêtre glissé au-dessus de nos onglets : un trait montre où il arriverait. Lâché, il rejoint
+// cette fenêtre : Rust l'ajoute à la fin, puis on le place ici à l'endroit visé.
+const tabSlot = (els, x, y, vert) => els.findIndex((e) => { const r = e.getBoundingClientRect(); return vert ? y < r.top + r.height / 2 : x < r.left + r.width / 2; });
+window.tabOver = (x, y) => {
+  let m = $('tabins');
+  if (x == null) { if (m) m.classList.remove('on'); return; }
+  const vert = C().tabs === 'v', els = [...$(vert ? 'vlist' : 'tabs').querySelectorAll('.tab,.vtab')];
+  if (!els.length) return;
+  if (!m) { m = document.createElement('i'); m.id = 'tabins'; document.body.appendChild(m); }
+  const k = tabSlot(els, x, y, vert), r = els[k < 0 ? els.length - 1 : k].getBoundingClientRect();
+  m.classList.toggle('v', vert);
+  Object.assign(m.style, vert
+    ? { left: r.left + 'px', width: r.width + 'px', top: (k < 0 ? r.bottom + 1 : r.top - 3) + 'px', height: '' }
+    : { top: r.top + 'px', height: r.height + 'px', left: (k < 0 ? r.right + 1 : r.left - 3) + 'px', width: '' });
+  m.classList.add('on');
+};
+window.tabDropped = (id, x, y) => {
+  tabOver();
+  const vert = C().tabs === 'v', list = $(vert ? 'vlist' : 'tabs'), els = [...list.querySelectorAll('.tab,.vtab')];
+  const others = els.filter((e) => +e.dataset.id !== id), k = tabSlot(others, x, y, vert);
+  const i = S.tabs.findIndex((t) => t.id === id);
+  if (i < 0) return;
+  const to = k < 0 ? i : S.tabs.findIndex((t) => t.id === +others[k].dataset.id);
+  const seen = new Map(els.map((e) => { const r = e.getBoundingClientRect(); return [e.dataset.id, vert ? r.top : r.left]; }));
+  seen.set(String(id), vert ? y - 15 : x - 40); // il glisse depuis l'endroit où on l'a lâché
+  if (to !== i) S.tabs.splice(to, 0, S.tabs.splice(i, 1)[0]);
+  send('move', { id, to }); // même à la fin : Rust règle son groupe d'après ses nouveaux voisins
+  renderTabs(); renderSide();
+  tabsSettle(list, vert, seen);
+};
 
 /* ---------- Dimensions de l'en-tête / barre latérale / DevTools → Rust ---------- */
 let lastDim = '';
