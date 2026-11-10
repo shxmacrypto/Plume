@@ -255,6 +255,10 @@ impl App {
         if other == cur || self.cfg["split"] != true {
             return;
         }
+        // une page plume:// (réglages en onglet…) n'a pas de page web à mettre côte à côte
+        if internal(&self.tabs[self.active].url) || self.idx(other).is_some_and(|i| internal(&self.tabs[i].url)) {
+            return;
+        }
         let Some(i) = self.idx(other) else { return };
         if self.tabs[i].view.is_none() && !self.tabs[i].url.is_empty() {
             self.build_view(i);

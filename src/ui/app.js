@@ -56,6 +56,9 @@ const engine = () => ENGINES[C().search] || 'Google';
 
 /* Icône de site : lettre colorée, remplacée par le favicon dès qu'il est chargé */
 function icon(u, f, fb) {
+  // page plume:// : son icône (réglages, historique, téléchargements, autres pages)
+  const pn = pgName(u);
+  if (pn) return `<span class="ic ok pgi" aria-hidden="true">${pn === 'history' ? I.clock : pn === 'downloads' ? I.upd : pn === 'settings' || pn === 'passwords' ? I.gear : I.file}</span>`;
   if (!f && fb && /^https?:/.test(u)) { try { f = new URL(u).origin + '/favicon.ico'; } catch {} }
   const h = host(u), ch = (h[0] || '?').toUpperCase();
   let hu = 0; for (const c of h) hu = (hu * 31 + c.charCodeAt(0)) % 360;
@@ -95,7 +98,7 @@ function applyLang() {
 }
 
 /* ---------- État poussé par Rust ---------- */
-window.U = (s) => { S = s; applyCfg(); render(); if (mode === 'ext') renderPanel(); if (window.onState) onState(); };
+window.U = (s) => { S = s; applyCfg(); render(); if (mode === 'ext') renderPanel(); if (window.onState) onState(); pgSyncTab(); };
 window.L = (l) => { H = l.hist || []; if (mode === 'hist' || (!mode && isBlank()) || (mode === 'omni' && !typed.trim())) renderPanel(); };
 window.D = (l) => {
   const prev = DLS; DLS = l; renderDlBtn();
@@ -168,10 +171,10 @@ function render() {
   $('back').disabled = !S.back; $('fwd').disabled = !S.fwd;
   $('reload').innerHTML = x.l ? I.stop : I.reload;
   const rl = t(x.l ? 't.stop' : 't.reload'); $('reload').title = rl; $('reload').setAttribute('aria-label', rl);
-  $('reload').disabled = !x.u;
+  $('reload').disabled = !x.u || !!pgName(x.u); // une page plume:// n'a rien à recharger
   $('prog').classList.toggle('on', !!x.l);
   $('star').classList.toggle('on', !!S.star);
-  $('star').style.display = x.u ? '' : 'none';
+  $('star').style.display = x.u && !pgName(x.u) ? '' : 'none';
   $('readerBtn').style.display = x.u && x.u.startsWith('http') ? '' : 'none';
   $('mediaBtn').style.display = isVideoSite() ? '' : 'none';
   if (document.activeElement !== $('q')) showUrl();
@@ -228,7 +231,7 @@ function showUrl() {
 /* ---------- Onglets (horizontaux) ---------- */
 function tabHtml(x, narrow) {
   const pop = !known.has(x.id) && known.size ? ' pop' : '';
-  const title = x.t || (x.u ? host(x.u) : t('tab.new'));
+  const title = tabName(x);
   const g = x.g && grp(x.g);
   const on = x.id === S.a;
   if (x.pin) return `<div class="tab pin${on ? ' on' : ''}${x.s ? ' zz' : ''}${pop}" role="tab" tabindex="${on ? 0 : -1}" aria-selected="${on}" data-id="${x.id}" title="${esc(title)}">${x.l ? '<i class="spin" aria-hidden="true"></i>' : x.u ? icon(x.u, x.f, true) : I.plusTab}</div>`;
@@ -270,7 +273,7 @@ function renderSide() {
     if (x.g && x.g !== last && g) html += `<button class="vgrp${g.col ? ' col' : ''}" data-g="${g.id}" style="--gc:${GC[g.color]}" aria-expanded="${!g.col}">${I.chev}<span>${esc(g.name || t('g.unnamed'))}</span></button>`;
     last = x.g;
     if (g && g.col && x.id !== S.a) continue;
-    const title = x.t || (x.u ? host(x.u) : t('tab.new')), on = x.id === S.a;
+    const title = tabName(x), on = x.id === S.a;
     html += `<div class="vtab${on ? ' on' : ''}${x.s ? ' zz' : ''}${x.p ? ' pv' : ''}${g ? ' ing' : ''}" role="tab" tabindex="${on ? 0 : -1}" aria-selected="${on}" data-id="${x.id}"${g ? ` style="--gc:${GC[g.color]}"` : ''} title="${esc(title)}">`
       + (x.l ? '<i class="spin" aria-hidden="true"></i>' : x.u ? icon(x.u, x.f) : I.plusTab)
       + `<span class="tt">${esc(title)}</span>` + (window.tabExtra ? tabExtra(x, false) : '') + `<button class="x" data-x="${x.id}" aria-label="${esc(t('tab.closeTab'))}" tabindex="-1">${I.x}</button></div>`;
@@ -306,8 +309,42 @@ function renderInfo() {
 
 /* ---------- Panneaux ---------- */
 let prevMode = null; // panneau (réglages, historique, téléchargements) gardé sous la barre d'adresse
+/* ---------- Pages plume:// en vrais onglets (option « pageTabs », comme chrome://settings) : Réglages, Historique,
+   Téléchargements et pages internes s'ouvrent dans un onglet plume://… sans page web ; quand il est actif, son
+   panneau occupe la page. Sans l'option, ce sont des panneaux par-dessus la page (comportement par défaut). ---------- */
+const PGT = { sync: false, bound: false };
+const PGNAME = { set: 'settings', hist: 'history', dl: 'downloads' };
+const pgName = (u) => { const r = /^plume:\/\/([\w-]+)/i.exec(u || ''); return r ? r[1].toLowerCase() : ''; };
+// panneau d'une page plume:// : 'set', 'hist', 'dl', ou 'pg' pour les pages des modules (tâches, statistiques, archive…)
+const pgMode = (n) => n === 'settings' || n === 'passwords' ? 'set' : n === 'history' ? 'hist' : n === 'downloads' ? 'dl' : n && typeof FX !== 'undefined' && FX.pages[n] ? 'pg' : null;
+const pgTitle = (n) => n === 'settings' || n === 'passwords' ? t('s.title') : n === 'history' ? t('hist.title') : n === 'downloads' ? t('dl.title') : typeof FX !== 'undefined' && FX.pages[n] ? FX.pages[n].title() : n;
+const tabName = (x) => pgName(x.u) ? pgTitle(pgName(x.u)) : x.t || (x.u ? host(x.u) : t('tab.new'));
+// l'onglet de cette page s'il existe (dans cette fenêtre), sinon un nouvel onglet
+function openAsTab(n) {
+  const u = 'plume://' + n, x = S.tabs.find((y) => y.u === u);
+  if (!x) send('open', { u });
+  else if (x.id !== S.a) send('act', { id: x.id });
+}
+// onglet actif = page plume:// : son panneau s'affiche
+function pgShow() {
+  const n = pgName(act().u), m = pgMode(n);
+  if (!m) return false;
+  if (mode === m && (m !== 'pg' || PG.name === n)) return true;
+  PGT.sync = true;
+  try { if (m === 'pg') openPage(n); else setMode(m); } finally { PGT.sync = false; }
+  return true;
+}
+// à chaque état : l'onglet actif décide (sa page s'affiche, ou elle se ferme quand on change d'onglet)
+function pgSyncTab() {
+  if (pgShow()) { PGT.bound = true; return; }
+  if (PGT.bound) { PGT.bound = false; if (['set', 'hist', 'dl', 'pg'].includes(mode)) setMode(null); }
+}
 function setMode(m, focusPage) {
+  // onglet plume:// actif : fermer un menu (ou Échap) ramène sa page, l'onglet n'est jamais vide
+  if (!m && !PGT.sync && pgShow()) return;
   if (m === mode) return;
+  // option : Réglages, Historique et Téléchargements s'ouvrent dans leur onglet plume://
+  if (C().pageTabs && !PGT.sync && PGNAME[m]) return openAsTab(PGNAME[m]);
   const was = !!mode;
   mode = m; sel = 0; confirmClear = false;
   if (!!m !== was) send('ov', { v: !!m, f: !!focusPage });
@@ -462,17 +499,29 @@ function ctxHtml() {
 }
 window.renameGroup = (g) => { const el = document.querySelector(`[data-g="${g}"]`); const r = el ? el.getBoundingClientRect() : { left: 100, bottom: 40 }; ctx = { g, x: r.left, y: r.bottom + 4 }; mode = null; setMode('ctx'); setTimeout(() => $('gname')?.focus(), 40); };
 
-/* ---------- Télécharger vidéo / audio (yt-dlp + FFmpeg) ---------- */
+/* ---------- Télécharger vidéo / audio (yt-dlp + FFmpeg) ----------
+   Le panneau sert tout de suite : les formats proposés ne dépendent pas de l'analyse de la vidéo (yt-dlp met
+   plusieurs secondes à démarrer), qui complète ensuite titre, miniature, qualités et liste des formats. */
 const MED = { state: 'idle', info: null, url: '', h: 0, all: false, msg: '', tool: '' };
+const MEDC = new Map(); // analyses récentes (adresse → infos) : revenir sur une vidéo est instantané
+function medProbe(u) {
+  const c = MEDC.get(u);
+  Object.assign(MED, { url: u, all: false, h: 0, info: c || null, state: c ? 'info' : 'loading' });
+  if (!c) send('media-probe', { u });
+}
 const VIDEO_SITES = /(^|\.)(youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com|twitch\.tv|tiktok\.com|instagram\.com|x\.com|twitter\.com|facebook\.com|reddit\.com|soundcloud\.com|bandcamp\.com|bilibili\.com|rumble\.com|kick\.com|streamable\.com)$/;
 const isVideoSite = () => { const u = act().u || ''; return /^https?:/.test(u) && VIDEO_SITES.test(host(u)); };
 function openMedia() {
   const u = act().u || '';
   if (!/^https?:/.test(u)) return;
-  if (MED.url !== u || MED.state === 'error') { MED.state = 'loading'; MED.info = null; MED.url = u; MED.all = false; send('media-probe', { u }); }
+  if (MED.url !== u || MED.state === 'error') medProbe(u);
   setMode('media');
 }
+// survoler le bouton lance déjà l'analyse : elle a souvent fini au moment du clic
+$('mediaBtn').addEventListener('pointerenter', () => { const u = act().u || ''; if (/^https?:/.test(u) && MED.url !== u) medProbe(u); });
 window.MEDIA = (v) => {
+  if (v.info && v.url) { MEDC.set(v.url, v.info); if (MEDC.size > 8) MEDC.delete(MEDC.keys().next().value); }
+  if (v.url && v.url !== MED.url) return; // analyse d'une vidéo qu'on a quittée entre-temps
   MED.state = v.state;
   if (v.info) { MED.info = v.info; MED.h = 0; }
   if (v.msg) MED.msg = v.msg;
@@ -490,19 +539,21 @@ function renderMedia(under) {
       <p class="mednote">${t('md.legal')}</p>
       <div class="acts"><button class="pill" data-m="close-ov">${t('b.cancel')}</button><button class="pill pri" data-md="install">${t('md.install')}</button></div>`;
   } else if (MED.state === 'installing') body = spin(t('md.installing', { t: MED.tool || 'yt-dlp' }));
-  else if (MED.state === 'loading') body = spin(t('md.loading'));
   else if (MED.state === 'error') body = `<h3>${t('md.err')}</h3><p class="mednote" style="user-select:text">${esc(MED.msg)}</p><div class="acts"><button class="pill" data-m="close-ov">${t('b.close')}</button><button class="pill pri" data-md="retry">${t('md.retry')}</button></div>`;
-  else if (MED.state === 'info' && MED.info) {
-    const i = MED.info, max = i.maxh || 0;
+  else if (MED.state === 'loading' || (MED.state === 'info' && MED.info)) {
+    // pendant l'analyse : titre de l'onglet et formats déjà cliquables (« Meilleure » qualité)
+    const i = MED.info, max = i ? i.maxh || 0 : 0;
     const qs = [0, 2160, 1440, 1080, 720, 480, 360].filter((h) => h === 0 || h <= max);
     const chip = (k, label, sub) => `<button class="medfmt" data-md="get" data-k="${k}"><b>${label}</b><span>${sub}</span></button>`;
-    const all = (i.formats || []).filter((f) => f.v || f.a).sort((a, b) => (b.h || 0) - (a.h || 0) || (b.abr || 0) - (a.abr || 0));
-    body = `<div class="medinfo">${i.thumb ? `<img src="${esc(i.thumb)}" alt="">` : ''}<div><h3>${esc(i.title)}</h3><p>${esc(i.by || '')}${i.dur ? ' · ' + fmtDur(i.dur) : ''}${i.site ? ' · ' + esc(i.site) : ''}</p></div></div>
-      <div class="medsec"><div class="ghd">${t('md.video')}</div><div class="seg" role="radiogroup" aria-label="${esc(t('md.quality'))}" style="margin-bottom:10px">${qs.map((h) => `<button role="radio" aria-checked="${MED.h === h}" data-md="h" data-h="${h}">${h ? h + 'p' : t('md.best')}</button>`).join('')}</div>
+    const all = i ? (i.formats || []).filter((f) => f.v || f.a).sort((a, b) => (b.h || 0) - (a.h || 0) || (b.abr || 0) - (a.abr || 0)) : [];
+    const head = i
+      ? `<div class="medinfo">${i.thumb ? `<img src="${esc(i.thumb)}" alt="">` : ''}<div><h3>${esc(i.title)}</h3><p>${esc(i.by || '')}${i.dur ? ' · ' + fmtDur(i.dur) : ''}${i.site ? ' · ' + esc(i.site) : ''}</p></div></div>`
+      : `<div class="medinfo"><span class="medthumb" aria-hidden="true"><i class="spin"></i></span><div><h3>${esc(act().t || host(MED.url))}</h3><p>${t('md.loading')}</p></div></div>`;
+    body = head + `<div class="medsec"><div class="ghd">${t('md.video')}</div>${qs.length > 1 ? `<div class="seg" role="radiogroup" aria-label="${esc(t('md.quality'))}" style="margin-bottom:10px">${qs.map((h) => `<button role="radio" aria-checked="${MED.h === h}" data-md="h" data-h="${h}">${h ? h + 'p' : t('md.best')}</button>`).join('')}</div>` : ''}
       <div class="medgrid">${chip('mp4', 'MP4', t('md.mp4'))}${chip('webm', 'WEBM', t('md.webm'))}${chip('mkv', 'MKV', t('md.mkv'))}${chip('mov', 'MOV', t('md.mov'))}</div></div>
       <div class="medsec"><div class="ghd">${t('md.audio')}</div><div class="medgrid">${chip('mp3', 'MP3', t('md.mp3'))}${chip('m4a', 'M4A', 'AAC')}${chip('wav', 'WAV', t('md.wav'))}${chip('flac', 'FLAC', t('md.flac'))}${chip('opus', 'OPUS', t('md.opus'))}${chip('ogg', 'OGG', 'Vorbis')}</div></div>
-      <button class="pill" data-md="all" style="margin-top:4px">${t('md.all', { n: all.length })} ${MED.all ? '▴' : '▾'}</button>
-      ${MED.all ? `<div class="medall"><table class="nt"><thead><tr><th>ID</th><th>${t('dt.type')}</th><th>${t('md.res')}</th><th>Codec</th><th>${t('dt.size')}</th><th></th></tr></thead><tbody>${all.map((f) => `<tr><td>${esc(f.id)}</td><td>${esc(f.ext)}</td><td>${f.v ? esc(f.res || '') + (f.fps ? ' ' + Math.round(f.fps) + 'fps' : '') : t('md.audioOnly')}</td><td>${esc([f.v ? f.vc : '', f.a ? f.ac : ''].filter((x) => x && x !== 'none').join(' + ').slice(0, 40))}</td><td>${f.size ? fmtB(f.size) : ''}</td><td><button class="mini" data-md="get" data-k="raw" data-f="${esc(f.id)}">${I.chev}</button></td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${i ? `<button class="pill" data-md="all" style="margin-top:4px">${t('md.all', { n: all.length })} ${MED.all ? '▴' : '▾'}</button>` : ''}
+      ${i && MED.all ? `<div class="medall"><table class="nt"><thead><tr><th>ID</th><th>${t('dt.type')}</th><th>${t('md.res')}</th><th>Codec</th><th>${t('dt.size')}</th><th></th></tr></thead><tbody>${all.map((f) => `<tr><td>${esc(f.id)}</td><td>${esc(f.ext)}</td><td>${f.v ? esc(f.res || '') + (f.fps ? ' ' + Math.round(f.fps) + 'fps' : '') : t('md.audioOnly')}</td><td>${esc([f.v ? f.vc : '', f.a ? f.ac : ''].filter((x) => x && x !== 'none').join(' + ').slice(0, 40))}</td><td>${f.size ? fmtB(f.size) : ''}</td><td><button class="mini" data-md="get" data-k="raw" data-f="${esc(f.id)}">${I.chev}</button></td></tr>`).join('')}</tbody></table></div>` : ''}
       <p class="mednote">${t('md.legal')}</p>`;
   }
   $('ov').innerHTML = under + `<div class="modal"><div class="card med" role="dialog" aria-modal="true" aria-label="${esc(t('md.title'))}">${close}${body}</div></div>`;
@@ -516,7 +567,8 @@ $('ov').addEventListener('click', (e) => {
   if (d.md === 'h') { MED.h = +d.h; return renderPanel(); }
   if (d.md === 'all') { MED.all = !MED.all; return renderPanel(); }
   if (d.md === 'get') {
-    send('media-get', { u: MED.info.url || MED.url, kind: d.k, fmt: d.f || '', h: MED.h, title: MED.info.title || '' });
+    const i = MED.info || {}; // l'analyse n'est pas forcément finie : la page et son titre suffisent
+    send('media-get', { u: i.url || MED.url, kind: d.k, fmt: d.f || '', h: MED.h, title: i.title || act().t || '' });
     toast('md.started');
     setMode('dl');
   }
@@ -727,7 +779,8 @@ function menuAction(m, d) {
     case 'media': mode = null; return openMedia();
     case 'pw': SET.sec = 'pw'; return setMode('set');
     case 'exts': SET.sec = 'ext'; return setMode('set');
-    case 'close-ov': return close();
+    // dans l'onglet d'une page plume://, fermer sa page ferme l'onglet
+    case 'close-ov': if (pgMode(pgName(act().u)) === mode && (mode !== 'pg' || PG.name === pgName(act().u))) return send('close', { id: S.a }); return close();
     case 'clear': if (!confirmClear) { confirmClear = true; return renderPanel(); } break;
     case 'histdel': return send('histdel');
     case 'dl-clear': return send('dl-clear');

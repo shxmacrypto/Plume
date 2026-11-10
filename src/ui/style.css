@@ -158,6 +158,7 @@ body.vtn .vtab{justify-content:center;padding:0}
   background:hsl(var(--hu) 42% 40%);color:#fff;font-size:10px;font-weight:700}
 .ic img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0}
 .ic.ok{background:transparent}.ic.ok b{display:none}.ic.ok img{opacity:1}
+.ic.pgi{color:var(--t2)}.ic.pgi svg{width:15px;height:15px}
 .spin{width:14px;height:14px;flex:none;border-radius:50%;border:2px solid var(--fill2);border-top-color:var(--acc);animation:r .7s linear infinite}
 @keyframes r{to{transform:rotate(360deg)}}
 
@@ -488,6 +489,8 @@ table.nt tr.bad td{color:var(--red)}
 .medwait{display:flex;flex-direction:column;align-items:center;gap:14px;padding:40px 0;color:var(--t2)}
 .medinfo{display:flex;gap:14px;align-items:center;margin-bottom:18px}
 .medinfo img{width:160px;aspect-ratio:16/9;object-fit:cover;border-radius:10px;flex:none;background:var(--fill)}
+.medthumb{width:160px;aspect-ratio:16/9;border-radius:10px;flex:none;background:var(--fill);display:grid;place-items:center}
+.medthumb .spin{width:22px;height:22px;border-width:3px}
 .medinfo h3{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .medsec{margin-bottom:16px}
 .medgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}

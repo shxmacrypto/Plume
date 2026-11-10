@@ -25,6 +25,8 @@ window.openPage = (name) => {
   if (name === 'downloads') return setMode('dl');
   const p = FX.pages[name];
   if (!p) return toast('pg.none');
+  // option : la page s'ouvre dans son onglet plume:// (app.js)
+  if (C().pageTabs && !PGT.sync) return openAsTab(name);
   if (mode === 'pg' && PG.name !== name) pageLeft();
   PG.name = name;
   if (p.open) p.open();
@@ -49,7 +51,8 @@ window.renderPage = () => {
 // quitter une page interne (Échap, clic ailleurs, autre panneau) → elle arrête ce qu'elle surveillait
 const featSetMode0 = setMode;
 setMode = function (m, f) {
-  if (mode === 'pg' && m !== 'pg') pageLeft();
+  // (sauf si cette page est l'onglet actif : fermer un menu ou Échap la garde affichée)
+  if (mode === 'pg' && m !== 'pg' && !(m == null && pgName(act().u) === PG.name)) pageLeft();
   if (mode === 'pop' && m !== 'pop') POP.html = null;
   return featSetMode0(m, f);
 };

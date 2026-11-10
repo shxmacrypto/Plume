@@ -57,6 +57,7 @@
     {"k":"spacesBm","s":"tabs","p":"spaces","t":"seg","o":["shared","separate"],"d":"shared"},
     {"k":"spacesPos","s":"tabs","p":"spaces","t":"seg","o":["top","side"],"d":"top"},
     {"k":"spacesUnload","s":"tabs","p":"spaces","t":"sw","d":true},
+    {"k":"pageTabs","s":"tabs","t":"sw","d":false},
     {"k":"autoClose","s":"tabs","t":"sw","d":false},
     {"k":"autoCloseAfter","s":"tabs","p":"autoClose","t":"seg","o":["12h","1d","3d","7d","30d"],"d":"7d"},
     {"k":"autoCloseSkip","s":"tabs","p":"autoClose","t":"sw","d":true},

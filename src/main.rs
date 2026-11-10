@@ -1362,7 +1362,8 @@ impl App {
             self.set_mute(i, false);
         }
         self.overlay = false;
-        if self.tabs[i].view.is_none() && !self.tabs[i].url.is_empty() {
+        let page = internal(&self.tabs[i].url);
+        if self.tabs[i].view.is_none() && !self.tabs[i].url.is_empty() && !page {
             self.build_view(i);
         }
         let t = &mut self.tabs[i];
@@ -1376,7 +1377,9 @@ impl App {
             let _ = v.focus();
         } else if self.ui_ready {
             let _ = self.ui.focus();
-            self.js("focusBar()");
+            if !page {
+                self.js("focusBar()"); // page plume:// : son panneau garde la main, pas la barre d'adresse
+            }
         }
         let title = self.tabs[i].title.clone();
         self.window.set_title(if title.is_empty() { "Plume" } else { &title });
@@ -1395,9 +1398,10 @@ impl App {
         t.opener = std::mem::take(&mut self.next_opener);
         t.cont = if private { 0 } else { self.cont_for(url.as_deref()) };
         // un onglet ouvert depuis un groupe reste dans le groupe
-        t.group = self.tabs.get(self.active).map_or(0, |a| if url.is_some() { a.group } else { 0 });
+        let page = url.as_deref().is_some_and(internal);
+        t.group = self.tabs.get(self.active).map_or(0, |a| if url.is_some() && !page { a.group } else { 0 });
         self.tabs.insert(pos, t);
-        if !fg && url.is_some() {
+        if !fg && url.is_some() && !page {
             self.build_view(pos);
             self.bg_mute(pos);
             self.sleep(pos);
@@ -1793,7 +1797,7 @@ impl App {
             .iter()
             .map(|t| {
                 json!({"id": t.id, "t": t.title, "u": t.url, "f": t.fav, "l": t.loading, "p": t.private, "g": t.group, "pin": t.pinned,
-                       "s": t.view.is_none() && !t.url.is_empty(), "ram": t.ram,
+                       "s": t.view.is_none() && !t.url.is_empty() && !internal(&t.url), "ram": t.ram,
                        "ns": self.cfg["sleepWl"] == true && strs(&self.cfg["sleepList"]).contains(&import::host_of(&t.url)),
                        "nt": self.has_note(&t.url), "c": t.cont, "au": t.audio, "mu": t.muted, "pip": t.pip})
             })
@@ -2786,7 +2790,17 @@ impl App {
                         }
                         if host_of(&u) != host_of(&self.tabs[i].url) {
                             self.tabs[i].fav.clear();
-                            self.tabs[i].info = None;
+                            // « Enregistrer le mot de passe ? » survit une minute aux redirections qui suivent une
+                            // connexion (accounts.google.com → mail.google.com, login.site → app.site…) ; les autres
+                            // barres ne concernent que la page qu'on quitte
+                            let save = self.tabs[i].info.as_ref().is_some_and(|x| x["k"] == "save");
+                            let fresh = self.pending_pw.as_ref().is_some_and(|p| now_ms().saturating_sub(p["t"].as_u64().unwrap_or(0)) < 60_000);
+                            if !(save && fresh) {
+                                if save {
+                                    self.pending_pw = None; // trop tard : ne sera pas enregistré en douce au prochain déverrouillage
+                                }
+                                self.tabs[i].info = None;
+                            }
                             self.tabs[i].tint = None;
                             if self.tabs[i].audio == 2 {
                                 self.tabs[i].audio = 0;
@@ -3132,13 +3146,15 @@ impl App {
                 if !install && !media::have_ytdlp() {
                     self.js(&format!("MEDIA({})", json!({"state": "need", "url": u})));
                 } else {
-                    media::self_update();
                     std::thread::spawn(move || {
                         let r = if install { media::install(true, &p) } else { Ok(()) }.and_then(|_| media::probe(&u));
                         let _ = p.send_event(Ev::Media(match r {
-                            Ok(info) => json!({"state": "info", "info": info}),
-                            Err(e) => json!({"state": "error", "msg": e}),
+                            Ok(info) => json!({"state": "info", "info": info, "url": u}),
+                            Err(e) => json!({"state": "error", "msg": e, "url": u}),
                         }));
+                        // mise à jour de yt-dlp (au plus une fois par jour) après l'analyse : lancée en même temps,
+                        // elle la ralentissait (deux yt-dlp qui se décompressent, l'exécutable remplacé en route)
+                        media::self_update();
                     });
                 }
             }
@@ -4225,6 +4241,12 @@ unsafe extern "system" fn parent_proc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM,
         }
         DefSubclassProc(h, msg, wp, lp)
     }
+}
+
+/// Onglet d'une page de Plume (plume://settings, plume://downloads…, option « pageTabs ») : pas de page web,
+/// l'interface affiche le panneau de la page à sa place.
+pub(crate) fn internal(url: &str) -> bool {
+    url.starts_with("plume://")
 }
 
 /// Fenêtre de premier niveau visible sous `p`, dans l'ordre d'affichage, sans compter `skip` (la fenêtre qu'on

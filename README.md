@@ -59,6 +59,7 @@ And much more, each feature optional and free when switched off:
 
 1. Download [`PlumeSetup.exe`](https://github.com/shxmacrypto/plume/releases/latest/download/PlumeSetup.exe) and run it. Plume installs for your account in `%LOCALAPPDATA%\Programs\Plume` (no admin rights), adds Start menu and desktop shortcuts, and opens.
 2. Windows SmartScreen may warn about an *unknown publisher* because the installer is not code-signed: click **More info → Run anyway**. Each release ships a `PlumeSetup.exe.sha256` file so you can check the download.
+3. Windows Security may also block the installer or Plume the first time and call it a threat. It's a false positive: Microsoft's automatic scan flags new programs that aren't code-signed yet. Open **Windows Security → Virus & threat protection → Protection history**, select the Plume entry, choose **Actions → Allow on device**, then run the installer again. You only need to do this once.
 
 Silent install: `PlumeSetup.exe --quiet` (add `--no-desktop` to skip the desktop shortcut).
 
