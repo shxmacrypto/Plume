@@ -9,7 +9,7 @@ Part of the Plume suite (not released yet).
   phrases, wildcards, regular expressions, types of files, sizes, dates, duplicates, empty folders.
 - No administrator rights: the index follows the NTFS change journal.
 - Windows does the file work: the real Explorer context menu, Recycle Bin, copy and move dialogs, drag and drop.
-- Archives: extract ZIP, 7z, RAR and tar; create ZIP, with a password (AES-256) if you want one.
+- Archives: extract ZIP, 7z, RAR and tar; create ZIP or 7z, with a password (AES-256) if you want one (a 7z hides the file names too).
 - Folder sizes, straight from the index.
 - Servers over SFTP (beta), through the OpenSSH client that ships with Windows.
 - Optional: "Open in Plume FEx" in the right-click menu of folders, and a switch that makes folders and Win+E

@@ -21,6 +21,8 @@ plume-update = { path = "../../crates/plume-update" }
 serde_json = "1"
 # ZIP with a password (AES-256), read and written in the program itself: no C code, no extra compression formats
 zip = { version = "2", default-features = false, features = ["deflate", "aes-crypto"] }
+# 7z with a password (AES-256, file names hidden), read and written here too, in Rust
+sevenz-rust2 = { version = "0.25", default-features = false, features = ["aes256", "compress", "util", "bzip2", "ppmd"] }
 windows-core = "0.61"
 windows-numerics = "0.2"
 windows = { version = "0.61", features = [

@@ -48,6 +48,7 @@ pub struct Sheet {
 pub struct SheetLay {
     pub card: Rect,
     pub zip: Rect,
+    pub seven: Rect,
     pub rar: Rect,
     pub field: Rect,
     pub text: Rect,
@@ -71,10 +72,11 @@ impl App {
         let card = rect(((w - cw) / 2.0).round(), (((h - ch) * 0.36).round()).max(m::TITLE_H + 8.0), cw, ch);
         let pad = 22.0;
         let mut y = card.y + 66.0;
-        let (mut zip, mut rar) = (Rect::default(), Rect::default());
+        let (mut zip, mut seven, mut rar) = (Rect::default(), Rect::default(), Rect::default());
         if lock {
             zip = rect(card.x + pad, y, 62.0, 28.0);
-            rar = rect(zip.right() + 8.0, y, 62.0, 28.0);
+            seven = rect(zip.right() + 8.0, y, 62.0, 28.0);
+            rar = rect(seven.right() + 8.0, y, 62.0, 28.0);
             y += 60.0;
         }
         let field = if typed { rect(card.x + pad, y, cw - 2.0 * pad, 36.0) } else { Rect::default() };
@@ -83,7 +85,7 @@ impl App {
         let by = card.bottom() - 22.0 - 34.0;
         let ok = rect(card.right() - pad - 112.0, by, 112.0, 34.0);
         let cancel = rect(ok.x - 10.0 - 100.0, by, 100.0, 34.0);
-        Some(SheetLay { card, zip, rar, field, text, reveal, ok, cancel })
+        Some(SheetLay { card, zip, seven, rar, field, text, reveal, ok, cancel })
     }
 
     /// Demande le mot de passe d'une nouvelle archive pour ces éléments.
@@ -152,9 +154,13 @@ impl App {
                     self.win.edit_mask(!sheet.reveal);
                 }
             }
-            Id::SheetZip | Id::SheetRar => {
+            Id::SheetZip | Id::Sheet7z | Id::SheetRar => {
                 if let Some(Sheet { kind: SheetKind::Lock { format, rar, .. }, .. }) = self.sheet.as_mut() {
-                    *format = if id == Id::SheetRar && *rar { Format::Rar } else { Format::Zip };
+                    *format = match id {
+                        Id::Sheet7z => Format::SevenZ,
+                        Id::SheetRar if *rar => Format::Rar,
+                        _ => Format::Zip,
+                    };
                 }
             }
             _ => {}
@@ -238,7 +244,7 @@ impl App {
 
         if let SheetKind::Lock { format, rar, .. } = &sheet.kind {
             for (id, r, label, on, enabled) in
-                [(Id::SheetZip, l.zip, "ZIP", *format == Format::Zip, true), (Id::SheetRar, l.rar, "RAR", *format == Format::Rar, *rar)]
+                [(Id::SheetZip, l.zip, "ZIP", *format == Format::Zip, true), (Id::Sheet7z, l.seven, "7z", *format == Format::SevenZ, true), (Id::SheetRar, l.rar, "RAR", *format == Format::Rar, *rar)]
             {
                 if on {
                     c.fill_round(r, 14.0, t.accent.fade(if t.dark { 0.32 } else { 0.18 }));
@@ -259,6 +265,7 @@ impl App {
             }
             let note = match (format, rar) {
                 (Format::Rar, _) => s.pw_note_rar,
+                (Format::SevenZ, _) => s.pw_note_7z,
                 (Format::Zip, true) => s.pw_note_zip,
                 (Format::Zip, false) => s.pw_note_no_rar,
             };

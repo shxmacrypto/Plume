@@ -713,7 +713,11 @@ impl App {
 
     /// Compresse des éléments d'un même dossier dans une archive protégée par mot de passe.
     pub(super) fn compress_locked(&mut self, paths: Vec<PathBuf>, password: String, format: Format) {
-        let ext = if format == Format::Rar { "rar" } else { "zip" };
+        let ext = match format {
+            Format::Zip => "zip",
+            Format::SevenZ => "7z",
+            Format::Rar => "rar",
+        };
         let Some((dir, names, out)) = Self::archive_plan(&paths, ext) else { return };
         let label = self.s.fill(self.s.compressing, &[&out]);
         let d = dir.clone();

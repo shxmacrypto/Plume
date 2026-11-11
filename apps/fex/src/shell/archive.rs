@@ -2,7 +2,8 @@
 //!
 //! - Sans mot de passe, le travail est fait par `tar.exe`, livré avec Windows depuis Windows 10 1803 (c'est bsdtar,
 //!   de libarchive) : rien à installer, rien à embarquer.
-//! - Les ZIP protégés (AES-256) sont lus et écrits ici même : le mot de passe ne passe par aucune ligne de commande.
+//! - Les ZIP et 7z protégés (AES-256) sont lus et écrits ici même : le mot de passe ne passe par aucune ligne de
+//!   commande.
 //! - Les RAR protégés passent par WinRAR s'il est installé (`Rar.exe`, `UnRAR.exe`) : le format RAR appartient à
 //!   son auteur, lui seul sait en créer. Le mot de passe leur est donné sur leur entrée standard.
 //!
@@ -37,6 +38,8 @@ const SINGLE: [&str; 18] = ["zip", "7z", "rar", "tar", "gz", "tgz", "bz2", "tbz2
 pub enum Format {
     /// ZIP chiffré en AES-256 : s'ouvre dans WinRAR, 7-Zip, WinZip et Windows 11.
     Zip,
+    /// 7z chiffré en AES-256, noms de fichiers cachés : s'ouvre dans 7-Zip, WinRAR et NanaZip.
+    SevenZ,
     /// RAR, noms de fichiers cachés. Demande WinRAR.
     Rar,
 }
@@ -159,6 +162,7 @@ fn file_time(d: zip::DateTime) -> Option<SystemTime> {
 #[derive(PartialEq)]
 enum Kind {
     Zip,
+    SevenZ,
     Rar,
     Other,
 }
@@ -169,6 +173,7 @@ fn kind(archive: &Path) -> Kind {
     match &head[..n] {
         [b'P', b'K', 3, 4, ..] | [b'P', b'K', 5, 6, ..] => Kind::Zip,
         [b'R', b'a', b'r', b'!', 0x1a, 7, ..] => Kind::Rar,
+        [b'7', b'z', 0xBC, 0xAF, 0x27, 0x1C, ..] => Kind::SevenZ,
         _ => Kind::Other,
     }
 }
@@ -221,6 +226,34 @@ fn extract_zip(archive: &Path, dest: &Path, password: Option<&str>) -> Result<()
     Ok(())
 }
 
+/// 7z : sans chiffrement, bsdtar s'en charge ; chiffré (contenu, ou noms aussi), on le lit ici.
+fn extract_7z(archive: &Path, dest: &Path, password: Option<&str>) -> Result<(), Failure> {
+    use sevenz_rust2::{ArchiveReader, Error as E, Password};
+    let open = |pw: Password| -> Result<ArchiveReader<BufReader<File>>, E> { ArchiveReader::new(BufReader::new(File::open(archive)?), pw) };
+    let pw = password.map(Password::from).unwrap_or_else(Password::empty);
+    let encrypted = match open(pw.clone()) {
+        Ok(r) => (0..r.archive().files.len()).any(|i| r.archive().is_file_encrypted(i)),
+        // les noms eux-mêmes sont chiffrés
+        Err(E::PasswordRequired) => return Err(if password.is_some() { Failure::WrongPassword } else { Failure::NeedPassword }),
+        // un mot de passe a été donné et l'en-tête ne se lit pas : sans mot de passe, il en demanderait un ?
+        Err(_) if password.is_some() && matches!(open(Password::empty()), Err(E::PasswordRequired)) => return Err(Failure::WrongPassword),
+        // une archive que cette bibliothèque ne comprend pas : bsdtar dira ce qu'il en est
+        Err(_) => return tar_extract(archive, dest).map_err(Failure::Message),
+    };
+    if !encrypted {
+        return tar_extract(archive, dest).map_err(Failure::Message);
+    }
+    if password.is_none() {
+        return Err(Failure::NeedPassword);
+    }
+    // les chemins qui sortiraient du dossier (« .. », absolus) sont refusés par la bibliothèque
+    match sevenz_rust2::decompress_file_with_password(archive, dest, pw) {
+        Ok(()) => Ok(()),
+        Err(E::MaybeBadPassword(_) | E::ChecksumVerificationFailed | E::PasswordRequired) => Err(Failure::WrongPassword),
+        Err(e) => Err(Failure::Message(e.to_string())),
+    }
+}
+
 /// RAR : bsdtar lit ceux qui ne sont pas protégés ; pour les autres il faut UnRAR, qui reçoit le mot de passe sur
 /// son entrée standard (ou en argument s'il contient autre chose que de l'ASCII, que l'entrée standard déforme).
 fn extract_rar(archive: &Path, dest: &Path, password: Option<&str>) -> Result<(), Failure> {
@@ -255,6 +288,7 @@ fn extract_any(archive: &Path, dest: &Path, password: Option<&str>) -> Result<()
     match kind(archive) {
         Kind::Zip => extract_zip(archive, dest, password),
         Kind::Rar => extract_rar(archive, dest, password),
+        Kind::SevenZ => extract_7z(archive, dest, password),
         Kind::Other => tar_extract(archive, dest).map_err(|msg| {
             let low = msg.to_lowercase();
             if low.contains("ncrypt") || low.contains("passphrase") {
@@ -363,6 +397,40 @@ fn zip_locked(out: &Path, dir: &Path, names: &[String], password: &str) -> Resul
     zip.finish().map_err(|e| e.to_string())?.flush().map_err(|e| e.to_string())
 }
 
+/// Ajoute un fichier ou un dossier (avec tout ce qu'il contient) à un 7z chiffré. `rel` : son chemin dans l'archive.
+fn seven_add<W: Write + io::Seek>(sz: &mut sevenz_rust2::ArchiveWriter<W>, path: &Path, rel: &str) -> Result<(), String> {
+    use sevenz_rust2::ArchiveEntry;
+    let meta = std::fs::symlink_metadata(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if meta.is_dir() {
+        sz.push_archive_entry::<File>(ArchiveEntry::from_path(path, rel.to_string()), None).map_err(|e| e.to_string())?;
+        // on ne suit pas les liens et les jonctions : ils pourraient mener n'importe où, voire tourner en rond
+        if meta.file_type().is_symlink() {
+            return Ok(());
+        }
+        let mut children: Vec<_> = std::fs::read_dir(path).map_err(|e| format!("{}: {e}", path.display()))?.filter_map(Result::ok).collect();
+        children.sort_by_key(|c| c.file_name());
+        for child in children {
+            seven_add(sz, &child.path(), &format!("{rel}/{}", child.file_name().to_string_lossy()))?;
+        }
+        return Ok(());
+    }
+    let file = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    sz.push_archive_entry(ArchiveEntry::from_path(path, rel.to_string()), Some(BufReader::new(file))).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(())
+}
+
+/// 7z chiffré en AES-256, compressé en LZMA2 ; les noms des fichiers sont chiffrés aussi.
+fn seven_locked(out: &Path, dir: &Path, names: &[String], password: &str) -> Result<(), String> {
+    use sevenz_rust2::{ArchiveWriter, EncoderMethod, Password, encoder_options::AesEncoderOptions};
+    let mut sz = ArchiveWriter::new(BufWriter::new(File::create(out).map_err(|e| e.to_string())?)).map_err(|e| e.to_string())?;
+    sz.set_content_methods(vec![AesEncoderOptions::new(Password::from(password)).into(), EncoderMethod::LZMA2.into()]);
+    sz.set_encrypt_header(true);
+    for n in names {
+        seven_add(&mut sz, &dir.join(n), n)?;
+    }
+    sz.finish().map_err(|e| e.to_string())?.flush().map_err(|e| e.to_string())
+}
+
 fn rar_locked(out: &Path, dir: &Path, names: &[String], password: &str) -> Result<(), String> {
     let Some((rar, _)) = winrar() else { return Err("WinRAR is not installed.".to_string()) };
     let mut cmd = Command::new(rar);
@@ -389,6 +457,7 @@ fn rar_locked(out: &Path, dir: &Path, names: &[String], password: &str) -> Resul
 pub fn compress_locked(out: &Path, dir: &Path, names: &[String], password: &str, format: Format) -> Result<(), String> {
     let r = match format {
         Format::Zip => zip_locked(out, dir, names, password),
+        Format::SevenZ => seven_locked(out, dir, names, password),
         Format::Rar => rar_locked(out, dir, names, password),
     };
     if r.is_err() {
@@ -493,6 +562,58 @@ mod tests {
         // Windows (bsdtar) ouvre aussi ce ZIP avec le mot de passe : il est au format standard
         let (code, _) = run(Command::new(tar().unwrap()).arg("-tf").arg(&archive), None).unwrap();
         assert_eq!(code, 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn seven_z_with_a_password() {
+        let dir = scratch("7z");
+        let names = ["Dossier".to_string(), "-odd name.txt".to_string()];
+        let archive = dir.join("secret.7z");
+        compress_locked(&archive, &dir, &names, "s3cret é", Format::SevenZ).unwrap();
+        // ni le contenu ni les noms ne sont lisibles
+        let raw = std::fs::read(&archive).unwrap();
+        assert!(!raw.windows(7).any(|w| w == b"bonjour"));
+        let utf16: Vec<u8> = "Dossier".encode_utf16().flat_map(u16::to_le_bytes).collect();
+        assert!(!raw.windows(utf16.len()).any(|w| w == utf16.as_slice()));
+        // sans mot de passe, avec le mauvais, avec le bon
+        assert_eq!(extract_new(&archive, &dir.join("a"), None), Err(Failure::NeedPassword));
+        assert_eq!(extract_new(&archive, &dir.join("a"), Some("nope")), Err(Failure::WrongPassword));
+        assert!(!dir.join("a").exists());
+        extract_new(&archive, &dir.join("a"), Some("s3cret é")).unwrap();
+        assert_eq!(std::fs::read(dir.join("a").join("Dossier").join("été.txt")).unwrap(), b"bonjour");
+        assert!(dir.join("a").join("Dossier").join("Vide").is_dir());
+        assert_eq!(list(&dir.join("a")), ["-odd name.txt", "Dossier"]);
+        // un mauvais mot de passe sur place n'ajoute rien au dossier
+        let here = dir.join("here");
+        std::fs::create_dir(&here).unwrap();
+        assert_eq!(extract_here(&archive, &here, Some("wrong")), Err(Failure::WrongPassword));
+        assert!(list(&here).is_empty());
+        extract_here(&archive, &here, Some("s3cret é")).unwrap();
+        assert_eq!(list(&here), ["-odd name.txt", "Dossier"]);
+        // un 7z sans mot de passe (fait par Windows) s'extrait toujours sans rien demander
+        let plain = dir.join("plain.7z");
+        compress(&plain, &dir, &names).unwrap();
+        extract_new(&plain, &dir.join("b"), None).unwrap();
+        assert_eq!(std::fs::read(dir.join("b").join("Dossier").join("été.txt")).unwrap(), b"bonjour");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Un 7z dont seul le contenu est chiffré (les noms restent lisibles), comme en fait 7-Zip sans « -mhe ».
+    #[test]
+    fn seven_z_with_visible_names() {
+        use sevenz_rust2::{ArchiveWriter, EncoderMethod, Password, encoder_options::AesEncoderOptions};
+        let dir = scratch("7z-names");
+        let archive = dir.join("names.7z");
+        let mut sz = ArchiveWriter::new(BufWriter::new(File::create(&archive).unwrap())).unwrap();
+        sz.set_content_methods(vec![AesEncoderOptions::new(Password::from("pw")).into(), EncoderMethod::LZMA2.into()]);
+        sz.set_encrypt_header(false);
+        seven_add(&mut sz, &dir.join("Dossier"), "Dossier").unwrap();
+        sz.finish().unwrap().flush().unwrap();
+        assert_eq!(extract_new(&archive, &dir.join("a"), None), Err(Failure::NeedPassword));
+        assert_eq!(extract_new(&archive, &dir.join("a"), Some("nope")), Err(Failure::WrongPassword));
+        extract_new(&archive, &dir.join("a"), Some("pw")).unwrap();
+        assert_eq!(std::fs::read(dir.join("a").join("Dossier").join("été.txt")).unwrap(), b"bonjour");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

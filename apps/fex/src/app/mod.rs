@@ -124,6 +124,7 @@ pub enum Id {
     SheetCancel,
     SheetReveal,
     SheetZip,
+    Sheet7z,
     SheetRar,
     SheetCard,
     SheetDim,
@@ -1353,7 +1354,7 @@ impl App {
         if self.sheet.is_some() {
             if button == Button::Left {
                 let live =
-                    |id: &Id| matches!(id, Id::SheetOk | Id::SheetCancel | Id::SheetReveal | Id::SheetZip | Id::SheetRar | Id::Min | Id::Max | Id::Close);
+                    |id: &Id| matches!(id, Id::SheetOk | Id::SheetCancel | Id::SheetReveal | Id::SheetZip | Id::Sheet7z | Id::SheetRar | Id::Min | Id::Max | Id::Close);
                 self.pressed = self.hit(p).filter(live);
             }
             cx.repaint();
@@ -1604,7 +1605,7 @@ impl App {
             Id::ScopeHere => self.set_scope(false),
             Id::ScopeAll => self.set_scope(true),
             Id::Filter => self.filter_menu(cx),
-            Id::SheetOk | Id::SheetCancel | Id::SheetReveal | Id::SheetZip | Id::SheetRar => self.sheet_click(id),
+            Id::SheetOk | Id::SheetCancel | Id::SheetReveal | Id::SheetZip | Id::Sheet7z | Id::SheetRar => self.sheet_click(id),
             Id::Nav(i) => {
                 if let Some(row) = self.nav_rows.get(i) {
                     self.navigate(row.loc.clone());
