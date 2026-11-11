@@ -3,6 +3,7 @@
 
 pub mod archive;
 pub mod dnd;
+pub mod hotkey;
 pub mod icons;
 pub mod integration;
 pub mod menu;

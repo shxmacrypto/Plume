@@ -71,6 +71,15 @@ unsafe extern "system" {
 #[link(name = "advapi32", kind = "raw-dylib")]
 unsafe extern "system" {
     fn RegDeleteTreeW(key: isize, subkey: *const u16) -> i32;
+    fn RegDeleteKeyW(key: isize, subkey: *const u16) -> i32;
+    fn RegDeleteKeyValueW(key: isize, subkey: *const u16, name: *const u16) -> i32;
+    fn RegGetValueW(key: isize, subkey: *const u16, name: *const u16, flags: u32, kind: *mut u32, data: *mut u16, bytes: *mut u32) -> i32;
+}
+#[link(name = "user32", kind = "raw-dylib")]
+unsafe extern "system" {
+    fn FindWindowExW(parent: isize, after: isize, class: *const u16, title: *const u16) -> isize;
+    fn PostMessageW(hwnd: isize, msg: u32, wp: usize, lp: isize) -> i32;
+    fn IsWindow(hwnd: isize) -> i32;
 }
 /// HKEY_CURRENT_USER
 const HKCU: isize = 0x8000_0001_u32 as i32 as isize;
@@ -216,6 +225,55 @@ fn register(dir: &Path, desktop: bool) -> bool {
     ok
 }
 
+/// Valeur texte d'une clé de HKCU (`name` vide : la valeur par défaut).
+fn reg_text(key: &str, name: &str) -> Option<String> {
+    let mut buf = vec![0u16; 1024];
+    let mut bytes = (buf.len() * 2) as u32;
+    // 2 : RRF_RT_REG_SZ
+    let r = unsafe { RegGetValueW(HKCU, wide(key).as_ptr(), wide(name).as_ptr(), 2, std::ptr::null_mut(), buf.as_mut_ptr(), &mut bytes) };
+    (r == 0).then(|| String::from_utf16_lossy(&buf[..(bytes as usize / 2).min(buf.len())]).trim_end_matches('\0').to_string())
+}
+
+/// Plume FEx retiré : tout ce qui faisait de lui l'explorateur de Windows s'en va, même si son propre `--unregister`
+/// n'a pas pu tourner (programme déjà effacé, réglages perdus). Ses entrées seulement : un autre choix de
+/// l'utilisateur reste en place. Les dossiers, les lecteurs et Win+E reviennent à l'Explorateur de Windows.
+fn fex_cleanup() {
+    const CLASSES: &str = r"Software\Classes";
+    unsafe {
+        // le veilleur de Win+E s'arrête (il tient le programme ouvert)
+        let helper = FindWindowExW(-3, 0, wide("PlumeFExWinE").as_ptr(), std::ptr::null()); // -3 : HWND_MESSAGE
+        if helper != 0 {
+            PostMessageW(helper, 0x0010, 0, 0); // WM_CLOSE
+            for _ in 0..30 {
+                if IsWindow(helper) == 0 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+        RegDeleteKeyValueW(HKCU, wide(r"Software\Microsoft\Windows\CurrentVersion\Run").as_ptr(), wide("Plume FEx Win+E").as_ptr());
+        for place in ["Directory", "Drive"] {
+            let shell = format!(r"{CLASSES}\{place}\shell");
+            if reg_text(&shell, "").is_some_and(|v| v.eq_ignore_ascii_case("PlumeFEx")) {
+                RegDeleteKeyValueW(HKCU, wide(&shell).as_ptr(), wide("").as_ptr());
+            }
+        }
+        for place in ["Directory", r"Directory\Background", "Drive"] {
+            RegDeleteTreeW(HKCU, wide(&format!(r"{CLASSES}\{place}\shell\PlumeFEx")).as_ptr());
+            RegDeleteKeyW(HKCU, wide(&format!(r"{CLASSES}\{place}\shell\PlumeFEx")).as_ptr());
+        }
+        let clsid = format!(r"{CLASSES}\CLSID\{{52205fd8-5dfb-447d-801a-d0b52f2e83e1}}");
+        let win_e = format!(r"{clsid}\shell\opennewwindow");
+        if reg_text(&format!(r"{win_e}\command"), "").is_some_and(|c| c.to_lowercase().contains("plume-fex.exe")) {
+            RegDeleteTreeW(HKCU, wide(&win_e).as_ptr());
+            RegDeleteKeyW(HKCU, wide(&win_e).as_ptr());
+            // les clés parentes, si elles sont vides (refusé sinon : rien d'autre n'est touché)
+            RegDeleteKeyW(HKCU, wide(&format!(r"{clsid}\shell")).as_ptr());
+            RegDeleteKeyW(HKCU, wide(&clsid).as_ptr());
+        }
+    }
+}
+
 /// Retire une application. Rend un code de sortie (0 : retirée).
 fn uninstall(app: App, dir: &Path, quiet: bool, fr: bool) -> i32 {
     if !app.installed(dir) {
@@ -240,6 +298,9 @@ fn uninstall(app: App, dir: &Path, quiet: bool, fr: bool) -> i32 {
             if !ONES[i].unregister.is_empty() && !sandbox() {
                 run(&app.exe(dir), &[ONES[i].unregister]);
             }
+            if app.key() == "fex" && !sandbox() {
+                fex_cleanup();
+            }
             // « Convertir avec Plume » dans le menu du clic droit de l'Explorateur
             if app.key() == "convert" && !sandbox() {
                 unsafe { RegDeleteTreeW(HKCU, wide(r"Software\Classes\*\shell\PlumeConvert").as_ptr()) };
@@ -258,6 +319,10 @@ fn uninstall(app: App, dir: &Path, quiet: bool, fr: bool) -> i32 {
                     alert(&msg, 0x30);
                 }
                 return 4;
+            }
+            // Plume FEx parti : les dossiers et Win+E reviennent à coup sûr à l'Explorateur de Windows
+            if app.key() == "fex" && !sandbox() {
+                fex_cleanup();
             }
         }
     }

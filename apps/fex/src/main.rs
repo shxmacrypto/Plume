@@ -111,6 +111,10 @@ fn main() {
     if std::env::args().skip(1).any(|a| a.eq_ignore_ascii_case("--make-default")) {
         std::process::exit(make_default());
     }
+    // le veilleur de Win+E (lancé avec Windows quand Plume FEx est l'explorateur par défaut) : pas de fenêtre
+    if std::env::args().skip(1).any(|a| a.eq_ignore_ascii_case("--hotkey")) {
+        std::process::exit(shell::hotkey::run());
+    }
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         // OLE (et donc COM) : presse-papiers, glisser-déposer, menus du shell
@@ -122,7 +126,7 @@ fn main() {
     let Ok(_lock) = hand_off(&name, &folders) else { return };
     let start = folders.first().cloned().map_or(Location::ThisPc, Location::Path);
     let gfx = Rc::new(ui::Gfx::new().expect("Direct2D"));
-    let theme = Theme::new(set.dark(), set.accent);
+    let theme = Theme::new(set.dark(), Some(set.accent_color()));
     shell::menu::set_dark_menus(theme.dark);
     let o = ui::window::Options {
         title: "Plume FEx".into(),

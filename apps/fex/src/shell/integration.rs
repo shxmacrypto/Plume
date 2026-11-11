@@ -8,7 +8,8 @@
 //! - Entrée du clic droit : un verbe `PlumeFEx` sous `Directory\shell`, `Directory\Background\shell` et `Drive\shell`.
 //! - Par défaut : ce verbe devient celui du double-clic sur un dossier ou un lecteur, et la commande de Win+E
 //!   (`CLSID\{52205fd8-…}\shell\opennewwindow`) lance Plume FEx. Dans les fenêtres de l'Explorateur déjà ouvertes,
-//!   la navigation reste celle de l'Explorateur.
+//!   la navigation reste celle de l'Explorateur. Windows 11 25H2 ne lit plus cette commande pour Win+E : le veilleur
+//!   de `hotkey.rs` (valeur « Plume FEx Win+E » de la clé Run) attrape alors Win+E au clavier.
 
 use std::path::Path;
 use windows::{
@@ -24,6 +25,8 @@ const VERB: &str = "PlumeFEx";
 const PLACES: [(&str, &str); 3] = [("Directory", "%1"), ("Directory\\Background", "%V"), ("Drive", "%1")];
 /// L'objet « Explorateur de fichiers » que Win+E ouvre.
 const WIN_E: &str = "CLSID\\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\\shell\\opennewwindow\\command";
+/// La valeur de la clé Run qui lance le veilleur de Win+E avec Windows.
+const HELPER: &str = "Plume FEx Win+E";
 
 /// Ce qu'il y avait dans le registre avant que Plume FEx ne devienne l'explorateur par défaut.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -43,6 +46,35 @@ pub struct Classes {
 
 fn wz(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
+}
+
+/// Valeur texte d'une clé de HKCU (`name` vide : la valeur par défaut).
+fn get_at(key: &[u16], name: &str) -> Option<String> {
+    let name = wz(name);
+    let mut buf = vec![0u16; 2048];
+    let mut bytes = (buf.len() * 2) as u32;
+    let r = unsafe {
+        RegGetValueW(HKEY_CURRENT_USER, PCWSTR(key.as_ptr()), PCWSTR(name.as_ptr()), RRF_RT_REG_SZ, None, Some(buf.as_mut_ptr() as *mut _), Some(&mut bytes))
+    };
+    r.is_ok().then(|| {
+        let len = (bytes as usize / 2).min(buf.len());
+        String::from_utf16_lossy(&buf[..len]).trim_end_matches('\0').to_string()
+    })
+}
+
+fn set_at(key: &[u16], name: &str, value: &str) -> bool {
+    let (name, data) = (wz(name), wz(value));
+    unsafe {
+        RegSetKeyValueW(HKEY_CURRENT_USER, PCWSTR(key.as_ptr()), PCWSTR(name.as_ptr()), REG_SZ.0, Some(data.as_ptr() as *const _), (data.len() * 2) as u32)
+    }
+    .is_ok()
+}
+
+fn remove_value_at(key: &[u16], name: &str) {
+    let name = wz(name);
+    unsafe {
+        let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, PCWSTR(key.as_ptr()), PCWSTR(name.as_ptr()));
+    }
 }
 
 impl Classes {
@@ -65,49 +97,58 @@ impl Classes {
         if sub.is_empty() { wz(&self.base) } else { wz(&format!("{}\\{sub}", self.base)) }
     }
 
+    /// Le vrai registre de l'utilisateur (et non une clé d'essai).
+    fn real(&self) -> bool {
+        self.base.eq_ignore_ascii_case("Software\\Classes")
+    }
+
+    /// La clé Run (démarrage avec Windows) ; sous la clé d'essai pendant les essais.
+    fn run_key(&self) -> Vec<u16> {
+        if self.real() { wz("Software\\Microsoft\\Windows\\CurrentVersion\\Run") } else { wz(&format!("{}\\Run", self.base)) }
+    }
+
+    /// La commande du veilleur de Win+E inscrite pour le démarrage de Windows, s'il y en a une.
+    #[cfg(test)]
+    pub fn helper(&self) -> Option<String> {
+        get_at(&self.run_key(), HELPER)
+    }
+
+    /// Inscrit (et lance) ou retire (et arrête) le veilleur de Win+E.
+    fn set_helper(&self, exe: &Path, on: bool) -> bool {
+        if on {
+            let ok = set_at(&self.run_key(), HELPER, &format!("{} --hotkey", Self::command(exe, "")));
+            if self.real() {
+                super::hotkey::start(exe);
+            }
+            ok
+        } else {
+            remove_value_at(&self.run_key(), HELPER);
+            if self.real() {
+                super::hotkey::stop();
+            }
+            true
+        }
+    }
+
     /// Prévient Windows que les associations ont changé (sinon il faudrait attendre la prochaine session).
     /// Inutile, et sans effet voulu, pour une clé d'essai.
     fn notify(&self) {
-        if self.base.eq_ignore_ascii_case("Software\\Classes") {
+        if self.real() {
             unsafe { SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None) };
         }
     }
 
     /// Valeur texte d'une clé (`name` vide : la valeur par défaut).
     fn get(&self, sub: &str, name: &str) -> Option<String> {
-        let (key, name) = (self.key(sub), wz(name));
-        let mut buf = vec![0u16; 2048];
-        let mut bytes = (buf.len() * 2) as u32;
-        let r = unsafe {
-            RegGetValueW(
-                HKEY_CURRENT_USER,
-                PCWSTR(key.as_ptr()),
-                PCWSTR(name.as_ptr()),
-                RRF_RT_REG_SZ,
-                None,
-                Some(buf.as_mut_ptr() as *mut _),
-                Some(&mut bytes),
-            )
-        };
-        r.is_ok().then(|| {
-            let len = (bytes as usize / 2).min(buf.len());
-            String::from_utf16_lossy(&buf[..len]).trim_end_matches('\0').to_string()
-        })
+        get_at(&self.key(sub), name)
     }
 
     fn set(&self, sub: &str, name: &str, value: &str) -> bool {
-        let (key, name, data) = (self.key(sub), wz(name), wz(value));
-        unsafe {
-            RegSetKeyValueW(HKEY_CURRENT_USER, PCWSTR(key.as_ptr()), PCWSTR(name.as_ptr()), REG_SZ.0, Some(data.as_ptr() as *const _), (data.len() * 2) as u32)
-        }
-        .is_ok()
+        set_at(&self.key(sub), name, value)
     }
 
     fn remove_value(&self, sub: &str, name: &str) {
-        let (key, name) = (self.key(sub), wz(name));
-        unsafe {
-            let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, PCWSTR(key.as_ptr()), PCWSTR(name.as_ptr()));
-        }
+        remove_value_at(&self.key(sub), name)
     }
 
     /// Supprime une clé et tout ce qu'elle contient.
@@ -177,7 +218,9 @@ impl Classes {
             && self.set("Drive\\shell", "", VERB)
             && self.set(WIN_E, "", &Self::command(exe, ""))
             // une valeur vide ici prend le pas sur celle de Windows, qui confierait Win+E à l'Explorateur
-            && self.set(WIN_E, "DelegateExecute", "");
+            && self.set(WIN_E, "DelegateExecute", "")
+            // Windows 11 25H2 : Win+E ne passe plus par cette commande, le veilleur l'attrape au clavier
+            && self.set_helper(exe, true);
         self.notify();
         if ok {
             Some(backup)
@@ -189,6 +232,8 @@ impl Classes {
 
     /// Rend les dossiers et Win+E à ce qui les ouvrait avant. L'entrée du clic droit reste en place.
     pub fn restore(&self, backup: &Backup) {
+        // le veilleur s'arrête d'abord : Win+E redevient aussitôt celui de Windows
+        self.set_helper(Path::new(""), false);
         for (place, old) in [("Directory\\shell", &backup.directory), ("Drive\\shell", &backup.drive)] {
             match old {
                 Some(verb) => {
@@ -232,6 +277,7 @@ impl Classes {
         self.set_entry(exe, label, true);
         if self.get("Directory\\shell", "").as_deref() == Some(VERB) {
             self.set(WIN_E, "", &Self::command(exe, ""));
+            self.set_helper(exe, true);
         }
     }
 }
@@ -289,6 +335,8 @@ mod tests {
         assert_eq!(c.get("Directory\\shell", "").as_deref(), Some("PlumeFEx"));
         assert_eq!(c.get(WIN_E, "").as_deref(), Some(r#""C:\Apps\Plume\plume-fex.exe""#));
         assert_eq!(c.get(WIN_E, "DelegateExecute").as_deref(), Some(""));
+        // le veilleur de Win+E démarre avec Windows (sous la clé d'essai, jamais la vraie clé Run)
+        assert_eq!(c.helper().as_deref(), Some(r#""C:\Apps\Plume\plume-fex.exe" --hotkey"#));
         // demandé deux fois : la sauvegarde ne retient pas notre propre réglage
         let again = c.make_default(&exe, "Open in Plume FEx").expect("registered");
         assert_eq!(again, Backup::default());
@@ -299,6 +347,7 @@ mod tests {
         assert_eq!(c.get("Drive\\shell", ""), None);
         assert_eq!(c.get(WIN_E, ""), None);
         assert_eq!(c.get(WIN_E, "DelegateExecute"), None);
+        assert_eq!(c.helper(), None);
         // une commande Win+E déjà personnalisée est remise telle quelle
         assert!(c.set(WIN_E, "", "other.exe") && c.set(WIN_E, "DelegateExecute", "{1234}"));
         let backup = c.make_default(&exe, "Open in Plume FEx").expect("registered");
@@ -311,7 +360,9 @@ mod tests {
         c.heal(&moved, "Open in Plume FEx");
         assert!(c.is_default(&moved));
         assert_eq!(c.get(WIN_E, "").as_deref(), Some(r#""D:\Plume\plume-fex.exe""#));
+        assert_eq!(c.helper().as_deref(), Some(r#""D:\Plume\plume-fex.exe" --hotkey"#));
         c.restore(&backup);
+        assert_eq!(c.helper(), None);
         cleanup(&c);
     }
 
