@@ -9,10 +9,16 @@ use windows::Win32::Foundation::HWND;
 /// Ce qu'il faut pour défaire une opération.
 pub enum Undo {
     /// L'élément s'appelle maintenant `now` ; il s'appelait `old_name`.
-    Rename { now: PathBuf, old_name: String },
+    Rename {
+        now: PathBuf,
+        old_name: String,
+    },
     NewFolder(PathBuf),
     /// Un collage : (d'où venait l'élément, où il a été collé). `moved` : couper-coller (il a quitté sa place).
-    Pasted { moved: bool, items: Vec<(PathBuf, PathBuf)> },
+    Pasted {
+        moved: bool,
+        items: Vec<(PathBuf, PathBuf)>,
+    },
     /// Les chemins d'origine d'éléments envoyés à la Corbeille.
     Recycled(Vec<PathBuf>),
 }

@@ -76,6 +76,7 @@ mod cmd {
     pub const MATCH_WORD: u32 = 0x702B;
     pub const MATCH_PATH: u32 = 0x702C;
     pub const MATCH_REGEX: u32 = 0x702D;
+    pub const MATCH_CONTENT: u32 = 0x7052;
     pub const EXPORT: u32 = 0x702E;
     pub const FOLDER_SIZES: u32 = 0x702F;
     pub const CONNECT: u32 = 0x7030;
@@ -364,6 +365,7 @@ impl App {
             .check(cmd::MATCH_WORD, s.match_word, o.word)
             .check(cmd::MATCH_PATH, s.match_path, o.path)
             .check(cmd::MATCH_REGEX, s.match_regex, o.regex)
+            .check(cmd::MATCH_CONTENT, s.match_content, o.content)
             .sep()
             .item(cmd::EXPORT, s.export_results);
         cx.after(move |win| {
@@ -429,6 +431,7 @@ impl App {
             cmd::MATCH_WORD => self.set_search_opts(Options { word: !o.word, ..o }),
             cmd::MATCH_PATH => self.set_search_opts(Options { path: !o.path, ..o }),
             cmd::MATCH_REGEX => self.set_search_opts(Options { regex: !o.regex, ..o }),
+            cmd::MATCH_CONTENT => self.set_search_opts(Options { content: !o.content, ..o }),
             cmd::EXPORT => self.export_results(cx),
             cmd::FOLDER_SIZES => self.set_folder_sizes(!self.set.folder_sizes),
             cmd::CONNECT => self.ask_server(),

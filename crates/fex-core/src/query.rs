@@ -203,6 +203,8 @@ enum Test {
     Dupe(Same),
     /// Résultat calculé avant la recherche : un bit par élément (voir `prepare`).
     Bits(usize),
+    /// Le contenu du fichier contient ce texte (`content:`). Lu sur le disque : lent, testé en dernier.
+    Content(Vec<u8>),
     /// Jamais vrai (filtre incompris).
     Nothing,
 }
@@ -264,6 +266,8 @@ pub struct Options {
     pub path: bool,
     /// Tout le texte est une seule expression régulière.
     pub regex: bool,
+    /// Le texte tapé est cherché dans le contenu des fichiers (comme `content:`), pas dans les noms.
+    pub content: bool,
     pub kind: Kind,
 }
 
@@ -757,6 +761,9 @@ impl Parser<'_> {
         } else if let Some(v) = strip(w, "child:") {
             let t = self.text(v);
             if t.is_empty() { Test::Nothing } else { Test::Child(t) }
+        } else if let Some(v) = strip_any(w, &["content:", "utf8content:"]) {
+            let t = self.text(v);
+            if t.is_empty() { Test::Nothing } else { Test::Content(t) }
         } else if strip(w, "empty:").is_some() {
             Test::Children(None, 0, 0)
         } else if strip(w, "dupe:").is_some() {
@@ -832,6 +839,14 @@ impl Query {
 
     /// Comme [`Query::parse`], avec les réglages choisis dans l'interface.
     pub fn parse_with(s: &str, clock: &Clock, o: &Options) -> Query {
+        // « dans le contenu » : tout le texte tapé est une seule phrase à trouver dans les fichiers
+        let inside;
+        let s = if o.content && !o.regex && !s.trim().is_empty() {
+            inside = format!("content:\"{}\"", s.trim().replace('"', ""));
+            inside.as_str()
+        } else {
+            s
+        };
         // en mode « expression régulière », tout le texte en est une : rien d'autre n'y est reconnu
         let toks = if o.regex { vec![] } else { tokens(s) };
         // « case: » et « diacritics: », où qu'ils soient, valent pour toute la requête
@@ -937,6 +952,32 @@ fn has_word(name: &[u8], word: &[u8]) -> bool {
     })
 }
 
+/// Fichiers plus gros : leur contenu n'est pas lu.
+const CONTENT_MAX: u64 = 64 << 20;
+/// Ce qui est lu d'un fichier, au plus.
+const CONTENT_READ: u64 = 16 << 20;
+/// Formats binaires dont le contenu n'est jamais du texte (en plus des images, sons, vidéos, archives et programmes).
+const BINARY: [&str; 14] = ["dll", "sys", "bin", "dat", "pdb", "lib", "obj", "o", "a", "pak", "db", "sqlite", "class", "pyc"];
+
+/// Un fichier dont on ne cherche pas dans le contenu : binaire d'après son extension.
+fn binary_ext(ext: &str) -> bool {
+    BINARY.iter().any(|b| b.eq_ignore_ascii_case(ext))
+        || KINDS.iter().filter(|(k, _)| *k != "doc").any(|(_, list)| list.split(';').any(|e| e.eq_ignore_ascii_case(ext)))
+}
+
+/// Le contenu d'un fichier, sous la forme où il se compare au texte cherché (UTF-8, ou UTF-16 avec sa marque).
+fn read_content(path: &Path, fold: Fold) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path).ok()?.take(CONTENT_READ).read_to_end(&mut bytes).ok()?;
+    let text = if bytes.starts_with(&[0xFF, 0xFE]) {
+        String::from_utf16_lossy(&bytes[2..].as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect::<Vec<_>>())
+    } else {
+        String::from_utf8_lossy(bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes)).into_owned()
+    };
+    Some(fold.text(&text))
+}
+
 fn ext_of(name: &[u8]) -> &[u8] {
     match name.iter().rposition(|&b| b == b'.') {
         Some(i) if i > 0 => &name[i + 1..],
@@ -1008,6 +1049,8 @@ struct Eval<'a> {
     scope: Option<Vec<bool>>,
     /// Un des tests lit-il le nom ? (sinon on ne le transforme pas pour rien)
     names: bool,
+    /// Interrompt aussi la lecture du contenu des fichiers, qui peut être longue.
+    cancel: &'a AtomicBool,
 }
 
 impl Eval<'_> {
@@ -1036,10 +1079,22 @@ impl Eval<'_> {
                 p != NO_PARENT && ix.parent[p as usize] == NO_PARENT
             }
             Test::Bits(k) => self.bits[*k][i as usize],
+            Test::Content(needle) => self.content(i, needle),
             // remplacés par `Bits` avant la recherche
             Test::Path(_) | Test::Parent(_) | Test::Depth(..) | Test::Children(..) | Test::Child(_) | Test::Dupe(_) => false,
             Test::Nothing => false,
         }
+    }
+
+    /// Le fichier contient-il ce texte ? Ni les dossiers, ni les fichiers dans le nuage (les lire les
+    /// téléchargerait), ni les très gros, ni les formats binaires.
+    fn content(&self, i: u32, needle: &[u8]) -> bool {
+        let ix = self.ix;
+        if ix.is_dir(i) || ix.flags[i as usize] & F_OFFLINE != 0 || ix.size_of(i) > CONTENT_MAX || self.cancel.load(Ordering::Relaxed) {
+            return false;
+        }
+        let ext = std::str::from_utf8(ext_of(ix.name(i).as_bytes())).unwrap_or("");
+        !binary_ext(ext) && read_content(&ix.path(i), self.fold).is_some_and(|text| memmem::find(&text, needle).is_some())
     }
 
     fn node(&self, n: &Node, i: u32, name: &[u8], caches: &mut [Apart<meta::Cache>]) -> bool {
@@ -1287,8 +1342,21 @@ fn prepare(ix: &Index, n: &Node, fold: Fold, bits: &mut Vec<Vec<bool>>) -> Node 
             None => Node::Test(t.clone()),
         },
         Node::Not(inner) => Node::Not(Box::new(prepare(ix, inner, fold, bits))),
-        Node::And(items) => Node::And(items.iter().map(|x| prepare(ix, x, fold, bits)).collect()),
+        Node::And(items) => {
+            // ce qui lit le disque en dernier : seuls les éléments qui ont passé les autres tests y arrivent
+            let mut v: Vec<Node> = items.iter().map(|x| prepare(ix, x, fold, bits)).collect();
+            v.sort_by_key(reads_content);
+            Node::And(v)
+        }
         Node::Or(items) => Node::Or(items.iter().map(|x| prepare(ix, x, fold, bits)).collect()),
+    }
+}
+
+fn reads_content(n: &Node) -> bool {
+    match n {
+        Node::Test(t) => matches!(t, Test::Content(_)),
+        Node::Not(inner) => reads_content(inner),
+        Node::And(items) | Node::Or(items) => items.iter().any(reads_content),
     }
 }
 
@@ -1316,7 +1384,7 @@ impl Index {
         let limit = q.count.map_or(limit, |c| c.min(limit));
         let mut bits = vec![];
         let root = prepare(self, root, q.fold, &mut bits);
-        let eval = Eval { ix: self, regexes: &q.regexes, fold: q.fold, names: reads_name(&root), bits, scope: scope.map(|r| subtree(self, r)) };
+        let eval = Eval { ix: self, regexes: &q.regexes, fold: q.fold, names: reads_name(&root), bits, scope: scope.map(|r| subtree(self, r)), cancel };
         // Le mot le plus long que tout résultat doit contenir guide la recherche : on le cherche d'un trait dans
         // toute la zone des noms, et seuls les éléments où il apparaît passent les autres tests.
         let driver = q
@@ -1497,6 +1565,37 @@ mod tests {
     }
 
     const NONE: [&str; 0] = [];
+
+    #[test]
+    fn inside_files() {
+        let dir = std::env::temp_dir().join(format!("fex-content-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("notes.txt"), "Rendez-vous à la Gare du Nord, à midi.").unwrap();
+        std::fs::write(dir.join("sub").join("other.md"), "nothing here").unwrap();
+        let wide: Vec<u8> = [0xFF, 0xFE].into_iter().chain("Plume Été gare".encode_utf16().flat_map(|u| u.to_le_bytes())).collect();
+        std::fs::write(dir.join("wide.txt"), wide).unwrap();
+        // une image n'est jamais lue, même si elle contient le texte
+        std::fs::write(dir.join("photo.jpg"), "gare").unwrap();
+        let (progress, cancel) = (crate::index::Progress::default(), AtomicBool::new(false));
+        let mut ix = crate::index::build(std::slice::from_ref(&dir), 2, &progress, &cancel);
+        ix.compute_rank(2);
+        assert_eq!(find(&ix, "content:gare"), ["notes.txt", "wide.txt"]);
+        assert_eq!(find(&ix, "content:\"gare du nord\""), ["notes.txt"]);
+        // accents et casse ignorés, comme pour les noms ; `case:` les fait compter
+        assert_eq!(find(&ix, "content:ete"), ["wide.txt"]);
+        assert_eq!(find(&ix, "case:content:GARE"), NONE);
+        assert_eq!(find(&ix, "*.md content:nothing"), ["other.md"]);
+        assert_eq!(find(&ix, "content:nothing !*.md"), NONE);
+        assert_eq!(find(&ix, "content:nowhere"), NONE);
+        assert_eq!(find(&ix, "content:"), NONE);
+        // l'option de l'interface : le texte tapé, tel quel, dans le contenu
+        let o = Options { content: true, ..Options::default() };
+        let q = Query::parse_with("gare du", &CLOCK, &o);
+        let got = ix.search(&q, None, Order::Name, false, 10, 2, &cancel).ids.iter().map(|&i| ix.name(i).to_string()).collect::<Vec<_>>();
+        assert_eq!(got, ["notes.txt"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn words_phrases_and_case() {

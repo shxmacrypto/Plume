@@ -378,7 +378,7 @@ impl App {
             Kind::Files(k) => s.kinds.get(k).copied().unwrap_or(s.filter_all),
         }
         .to_string();
-        for (on, tag) in [(o.case, "Aa"), (o.word, "[ab]"), (o.path, "a\\b"), (o.regex, ".*")] {
+        for (on, tag) in [(o.case, "Aa"), (o.word, "[ab]"), (o.path, "a\\b"), (o.regex, ".*"), (o.content, "{…}")] {
             if on {
                 filter.push_str("  ");
                 filter.push_str(tag);

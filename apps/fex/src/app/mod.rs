@@ -6,12 +6,12 @@ pub mod format;
 pub mod i18n;
 pub mod load;
 pub mod model;
-pub mod remote;
 pub mod preview;
+pub mod remote;
 mod search;
-pub mod undo;
 pub mod settings;
 pub mod sheet;
+pub mod undo;
 mod view;
 
 use crate::{

@@ -9,7 +9,9 @@ use windows::{
     Win32::{
         Foundation::HWND,
         System::Com::{CLSCTX_ALL, CoCreateInstance, IBindCtx},
-        UI::Shell::{FOF_ALLOWUNDO, FOFX_SHOWELEVATIONPROMPT, FileOperation, IFileOperation, IFileOperationProgressSink, IShellItem, SHCreateItemFromParsingName},
+        UI::Shell::{
+            FOF_ALLOWUNDO, FOFX_SHOWELEVATIONPROMPT, FileOperation, IFileOperation, IFileOperationProgressSink, IShellItem, SHCreateItemFromParsingName,
+        },
     },
     core::PCWSTR,
 };

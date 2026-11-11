@@ -166,7 +166,7 @@ fn state(app: &App) -> Value {
         "index_count": app.ix.progress.entries.load(std::sync::atomic::Ordering::Relaxed),
         "everywhere": app.set.search_everywhere,
         "search_kind": format!("{:?}", app.search_opts.kind),
-        "search_match": { "case": app.search_opts.case, "word": app.search_opts.word, "path": app.search_opts.path, "regex": app.search_opts.regex },
+        "search_match": { "case": app.search_opts.case, "word": app.search_opts.word, "path": app.search_opts.path, "regex": app.search_opts.regex, "content": app.search_opts.content },
         "folders": (0..rows.min(first + 60)).skip(first).map(|r| tab.item(r).folder.as_ref().map(|f| f.display().to_string())).collect::<Vec<_>>(),
         "can_back": !tab.back.is_empty(),
         "can_forward": !tab.fwd.is_empty(),
