@@ -247,7 +247,9 @@ impl App {
                     let r2 = rect(boxr.x + (boxr.w - w) / 2.0, boxr.bottom() - h, w, h);
                     let wic = self.preview_wic();
                     c.image(key_of(p), r2, 1.0, move || unsafe {
-                        wic.CreateBitmapFromMemory(pix.1, pix.2, &GUID_WICPixelFormat32bppPBGRA, pix.1 * 4, &pix.0).ok().and_then(|b| b.cast::<IWICBitmapSource>().ok())
+                        wic.CreateBitmapFromMemory(pix.1, pix.2, &GUID_WICPixelFormat32bppPBGRA, pix.1 * 4, &pix.0)
+                            .ok()
+                            .and_then(|b| b.cast::<IWICBitmapSource>().ok())
                     });
                 }
                 (p, cached) => {

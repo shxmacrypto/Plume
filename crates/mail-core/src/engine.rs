@@ -226,8 +226,6 @@ fn watch(keys: Arc<Keys>, store: Store, stop: Arc<AtomicBool>, notify: Notify) {
     }
 }
 
-
-
 /// De quoi s'identifier, partagé par le fil du compte et son guet.
 enum Secret {
     Password(String),

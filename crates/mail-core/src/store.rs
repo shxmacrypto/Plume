@@ -606,18 +606,28 @@ mod tests {
             to: to.into(),
             ..Summary::default()
         };
-        store.save_listing("a1", "INBOX", &Listing {
-            uid_validity: 1,
-            messages: vec![msg(2, 200, ("Ann Départ", "ann@example.com"), "sam@example.com, carl@example.com"), msg(1, 100, ("", "ann@example.com"), "Sam <SAM@example.com>")],
-        });
-        store.save_listing("a1", "Sent", &Listing { uid_validity: 1, messages: vec![msg(1, 300, ("Sam", "sam@example.com"), "Bob <bob@example.com>, Ann <ann@example.com>")] });
+        store.save_listing(
+            "a1",
+            "INBOX",
+            &Listing {
+                uid_validity: 1,
+                messages: vec![
+                    msg(2, 200, ("Ann Départ", "ann@example.com"), "sam@example.com, carl@example.com"),
+                    msg(1, 100, ("", "ann@example.com"), "Sam <SAM@example.com>"),
+                ],
+            },
+        );
+        store.save_listing(
+            "a1",
+            "Sent",
+            &Listing { uid_validity: 1, messages: vec![msg(1, 300, ("Sam", "sam@example.com"), "Bob <bob@example.com>, Ann <ann@example.com>")] },
+        );
         let all = store.contacts("a1", "sam@example.com");
         // Ann trois fois (son nom le plus récent l'emporte), puis Bob et Carl ; jamais soi-même
-        assert_eq!(all.iter().map(|c| (c.name.as_str(), c.email.as_str(), c.count)).collect::<Vec<_>>(), [
-            ("Ann", "ann@example.com", 3),
-            ("Bob", "bob@example.com", 1),
-            ("", "carl@example.com", 1)
-        ]);
+        assert_eq!(
+            all.iter().map(|c| (c.name.as_str(), c.email.as_str(), c.count)).collect::<Vec<_>>(),
+            [("Ann", "ann@example.com", 3), ("Bob", "bob@example.com", 1), ("", "carl@example.com", 1)]
+        );
         let names = |typed: &str| matching(&all, typed, 5).iter().map(|c| c.email.clone()).collect::<Vec<_>>();
         assert_eq!(names("an"), ["ann@example.com"]);
         assert_eq!(names("CA"), ["carl@example.com"]);

@@ -22,7 +22,12 @@ use std::{
 pub enum OAuth {
     Idle,
     /// La page est ouverte dans le navigateur ; `cancel` arrête l'attente.
-    Waiting { url: String, cancel: Arc<AtomicBool> },
+    Waiting {
+        /// La page ouverte (les essais automatiques jouent le navigateur avec).
+        #[cfg_attr(not(feature = "test-hook"), allow(dead_code))]
+        url: String,
+        cancel: Arc<AtomicBool>,
+    },
     /// Connecté : le jeton qui sert à renouveler l'accès.
     Ready(String),
 }
@@ -82,8 +87,16 @@ pub enum Sheet {
     Account(AccountForm),
     Compose(ComposeForm),
     /// La signature d'un compte, ajoutée sous les messages qu'il écrit.
-    Signature { account: usize, text: String },
-    Confirm { title: String, text: String, action: String, what: Confirm },
+    Signature {
+        account: usize,
+        text: String,
+    },
+    Confirm {
+        title: String,
+        text: String,
+        action: String,
+        what: Confirm,
+    },
 }
 
 /// Les rectangles de la boîte ouverte, les mêmes pour le dessin et pour le champ de saisie.
@@ -129,7 +142,8 @@ impl App {
             None => Default::default(),
         };
         self.toast = None;
-        self.sheet = Some(Sheet::Account(AccountForm { fields, active: 0, error: None, editing, reveal: false, own_servers: editing.is_some(), oauth: OAuth::Idle }));
+        self.sheet =
+            Some(Sheet::Account(AccountForm { fields, active: 0, error: None, editing, reveal: false, own_servers: editing.is_some(), oauth: OAuth::Idle }));
         self.open_field(0, None);
     }
 
@@ -301,11 +315,8 @@ impl App {
         let in_reply_to = references.pop().unwrap_or_default();
         // les pièces jointes du brouillon repartent avec lui
         let raw = self.boxes.get(account).and_then(|mb| self.store.body(&mb.account.id, &folder, uid));
-        let files: Vec<(String, Vec<u8>)> = msg
-            .attachments
-            .iter()
-            .filter_map(|a| Some((a.name.clone(), message::attachment(raw.as_deref()?, a.index)?)))
-            .collect();
+        let files: Vec<(String, Vec<u8>)> =
+            msg.attachments.iter().filter_map(|a| Some((a.name.clone(), message::attachment(raw.as_deref()?, a.index)?))).collect();
         let fields = [sum.to.clone(), msg.cc.clone(), sum.subject.clone(), msg.text.clone()];
         let form = ComposeForm {
             account,
@@ -450,7 +461,6 @@ impl App {
         self.suggest.clear();
         self.open_field(i, None);
     }
-
 
     // ───────────────────────── les champs ─────────────────────────
 
@@ -893,7 +903,13 @@ impl App {
                     if done {
                         c.fill_round(rect(r.x + 12.0, r.y + r.h / 2.0 - 4.0, 8.0, 8.0), 4.0, t.green);
                     }
-                    c.text(label, rect(r.x + if done { 28.0 } else { 12.0 }, r.y, r.w - 40.0, r.h), Font::Body, if done { t.t1 } else { t.accent }, Align::Left);
+                    c.text(
+                        label,
+                        rect(r.x + if done { 28.0 } else { 12.0 }, r.y, r.w - 40.0, r.h),
+                        Font::Body,
+                        if done { t.t1 } else { t.accent },
+                        Align::Left,
+                    );
                     self.hits.add(r, Id::SignIn);
                 } else {
                     let hot = self.hover == Some(Id::SheetReveal);

@@ -371,7 +371,13 @@ impl App {
                 marks += 18.0;
             }
             let subject = if msg.subject.is_empty() { s.no_subject } else { msg.subject.as_str() };
-            c.text(subject, rect(x, r.y + 28.0, (r.w - 26.0 - indent - 14.0 - marks).max(10.0), 20.0), Font::Body, if unread { t.t1 } else { t.t2 }, Align::Left);
+            c.text(
+                subject,
+                rect(x, r.y + 28.0, (r.w - 26.0 - indent - 14.0 - marks).max(10.0), 20.0),
+                Font::Body,
+                if unread { t.t1 } else { t.t2 },
+                Align::Left,
+            );
             c.hline(x, r.bottom() - 1.0, r.w - 26.0 - indent, t.sep.fade(0.6));
             self.hits.add(r.intersect(&list), Id::Row(row));
         }
@@ -399,9 +405,10 @@ impl App {
         let links = self.links().len();
         let hover = self.hover;
         // un brouillon se reprend pour être fini et envoyé
-        let in_drafts = self.reading.as_ref().is_some_and(|r| {
-            self.boxes.get(r.account).is_some_and(|mb| mb.folders.iter().any(|f| f.raw == r.folder && f.role == Role::Drafts))
-        });
+        let in_drafts = self
+            .reading
+            .as_ref()
+            .is_some_and(|r| self.boxes.get(r.account).is_some_and(|mb| mb.folders.iter().any(|f| f.raw == r.folder && f.role == Role::Drafts)));
         let Some(r) = self.reading.as_mut() else {
             if !self.boxes.is_empty() {
                 c.text(s.pick_message, rect(area.x, area.y + area.h * 0.34, area.w, 22.0), Font::Body, t.t3, Align::Center);

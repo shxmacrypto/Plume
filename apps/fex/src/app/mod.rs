@@ -1353,8 +1353,9 @@ impl App {
         // boîte de dialogue ouverte : seuls ses boutons, et ceux de la fenêtre, réagissent
         if self.sheet.is_some() {
             if button == Button::Left {
-                let live =
-                    |id: &Id| matches!(id, Id::SheetOk | Id::SheetCancel | Id::SheetReveal | Id::SheetZip | Id::Sheet7z | Id::SheetRar | Id::Min | Id::Max | Id::Close);
+                let live = |id: &Id| {
+                    matches!(id, Id::SheetOk | Id::SheetCancel | Id::SheetReveal | Id::SheetZip | Id::Sheet7z | Id::SheetRar | Id::Min | Id::Max | Id::Close)
+                };
                 self.pressed = self.hit(p).filter(live);
             }
             cx.repaint();

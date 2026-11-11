@@ -104,15 +104,13 @@ fn decode(s: &str) -> String {
     while i < bytes.len() {
         match bytes[i] {
             b'+' => out.push(b' '),
-            b'%' if i + 2 < bytes.len() => {
-                match u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or("zz"), 16) {
-                    Ok(v) => {
-                        out.push(v);
-                        i += 2;
-                    }
-                    Err(_) => out.push(b'%'),
+            b'%' if i + 2 < bytes.len() => match u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or("zz"), 16) {
+                Ok(v) => {
+                    out.push(v);
+                    i += 2;
                 }
-            }
+                Err(_) => out.push(b'%'),
+            },
             b => out.push(b),
         }
         i += 1;
@@ -376,13 +374,23 @@ mod tests {
                 let mut body = vec![0u8; len];
                 reader.read_exact(&mut body).unwrap();
                 seen.push(String::from_utf8(body).unwrap());
-                let json = if seen.len() == 1 { r#"{"access_token":"tok-1","refresh_token":"ref-1","expires_in":3599}"# } else { r#"{"access_token":"tok-2","expires_in":"60"}"# };
+                let json = if seen.len() == 1 {
+                    r#"{"access_token":"tok-1","refresh_token":"ref-1","expires_in":3599}"#
+                } else {
+                    r#"{"access_token":"tok-2","expires_in":"60"}"#
+                };
                 let mut w = stream;
-                write!(w, "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Type: application/json\r\n\r\n{:x}\r\n{json}\r\n0\r\n\r\n", json.len()).unwrap();
+                write!(w, "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Type: application/json\r\n\r\n{:x}\r\n{json}\r\n0\r\n\r\n", json.len())
+                    .unwrap();
             }
             seen
         });
-        let p = Provider { authorize: format!("{base}/authorize"), token: format!("{base}/token"), client_id: "plume-test".into(), scope: "imap offline_access".into() };
+        let p = Provider {
+            authorize: format!("{base}/authorize"),
+            token: format!("{base}/token"),
+            client_id: "plume-test".into(),
+            scope: "imap offline_access".into(),
+        };
         let pending = begin(&p, "sam@hotmail.com").unwrap();
         assert!(pending.url.starts_with(&format!("{base}/authorize?client_id=plume-test&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A")));
         assert!(pending.url.contains("code_challenge_method=S256") && pending.url.contains("login_hint=sam%40hotmail.com"));

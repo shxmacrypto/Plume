@@ -371,7 +371,8 @@ fn service(s: &SearchIndex, sender: Sender, dir: &Path) {
     s.touch();
     let (mut last_save, mut last_watch) = (Instant::now(), Instant::now());
     // clés USB, cartes, lecteurs réseau : regardés toutes les 10 s, relus en entier toutes les 15 min
-    let (extra_check, extra_every) = (ms_env("PLUME_FEX_EXTRA_CHECK_MS", Duration::from_secs(10)), ms_env("PLUME_FEX_EXTRA_EVERY_MS", Duration::from_secs(15 * 60)));
+    let (extra_check, extra_every) =
+        (ms_env("PLUME_FEX_EXTRA_CHECK_MS", Duration::from_secs(10)), ms_env("PLUME_FEX_EXTRA_EVERY_MS", Duration::from_secs(15 * 60)));
     let mut extras = adopt_extras(s, &plan);
     dirty |= follow_extras(s, &mut extras, extra_every);
     let mut last_extra = Instant::now();

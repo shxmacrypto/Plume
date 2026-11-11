@@ -700,7 +700,10 @@ impl Index {
 
     /// Les racines de l'index (non supprimées) : (numéro, nom tel que « E: »).
     pub fn roots(&self) -> Vec<(u32, String)> {
-        (0..self.len() as u32).filter(|&i| self.parent[i as usize] == NO_PARENT && self.flags[i as usize] & F_DELETED == 0).map(|i| (i, self.name(i).to_string())).collect()
+        (0..self.len() as u32)
+            .filter(|&i| self.parent[i as usize] == NO_PARENT && self.flags[i as usize] & F_DELETED == 0)
+            .map(|i| (i, self.name(i).to_string()))
+            .collect()
     }
 
     /// Les dossiers (non supprimés) sous `root`, `root` compris, dans l'ordre de l'index.

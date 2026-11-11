@@ -325,10 +325,8 @@ impl App {
         self.remote_busy(self.s.fill(self.s.sftp_downloading, &[&what]));
         // la taille attendue : celle des fichiers de la liste (un dossier : inconnue, on montre ce qui arrive)
         let tab = self.tab();
-        let total: Option<u64> = items
-            .iter()
-            .map(|(p, dir)| if *dir { None } else { tab.row_of(p.rsplit('/').next().unwrap_or_default()).map(|r| tab.item(r).size) })
-            .sum();
+        let total: Option<u64> =
+            items.iter().map(|(p, dir)| if *dir { None } else { tab.row_of(p.rsplit('/').next().unwrap_or_default()).map(|r| tab.item(r).size) }).sum();
         let transfer = Arc::new(Transfer::default());
         transfer.total.store(total.unwrap_or(0), Ordering::Relaxed);
         transfer.running.store(true, Ordering::Relaxed);
@@ -378,7 +376,11 @@ impl App {
                 for (f, size) in files.iter().zip(&sizes) {
                     let Some(name) = f.file_name().map(|n| n.to_string_lossy().into_owned()) else { continue };
                     // un dossier arrive dans le dossier du serveur sous son nom ; un fichier reçoit le sien
-                    if f.is_dir() { s.put(f, &to, true)? } else { s.put(f, &sftp::join(&to, &name), false)? }
+                    if f.is_dir() {
+                        s.put(f, &to, true)?
+                    } else {
+                        s.put(f, &sftp::join(&to, &name), false)?
+                    }
                     transfer.done.fetch_add(*size, Ordering::Relaxed);
                     to_app(&sender, |_, cx| cx.repaint());
                 }

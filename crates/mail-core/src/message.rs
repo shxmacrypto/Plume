@@ -551,16 +551,14 @@ mod tests {
 
     #[test]
     fn conversations_people_and_folding() {
-        let m = |uid: u32, id: &str, refs: &[&str]| Summary { uid, message_id: id.into(), references: refs.iter().map(|r| r.to_string()).collect(), ..Summary::default() };
+        let m = |uid: u32, id: &str, refs: &[&str]| Summary {
+            uid,
+            message_id: id.into(),
+            references: refs.iter().map(|r| r.to_string()).collect(),
+            ..Summary::default()
+        };
         // du plus récent au plus ancien : deux réponses à un message absent du dossier, une réponse à une réponse
-        let list = [
-            m(9, "c@x", &["a@x", "b@x"]),
-            m(8, "z@x", &[]),
-            m(7, "b@x", &["a@x"]),
-            m(6, "", &[]),
-            m(5, "d@x", &["root@x"]),
-            m(4, "e@x", &["root@x"]),
-        ];
+        let list = [m(9, "c@x", &["a@x", "b@x"]), m(8, "z@x", &[]), m(7, "b@x", &["a@x"]), m(6, "", &[]), m(5, "d@x", &["root@x"]), m(4, "e@x", &["root@x"])];
         assert_eq!(threads(&list), [0, 1, 0, 2, 3, 3]);
         assert!(threads(&[]).is_empty());
         assert_eq!(

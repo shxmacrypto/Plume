@@ -243,9 +243,11 @@ impl App {
         c.text(&subtitle, rect(l.card.x + pad, l.card.y + 40.0, inner, 18.0), Font::Small, t.t3, Align::Left);
 
         if let SheetKind::Lock { format, rar, .. } = &sheet.kind {
-            for (id, r, label, on, enabled) in
-                [(Id::SheetZip, l.zip, "ZIP", *format == Format::Zip, true), (Id::Sheet7z, l.seven, "7z", *format == Format::SevenZ, true), (Id::SheetRar, l.rar, "RAR", *format == Format::Rar, *rar)]
-            {
+            for (id, r, label, on, enabled) in [
+                (Id::SheetZip, l.zip, "ZIP", *format == Format::Zip, true),
+                (Id::Sheet7z, l.seven, "7z", *format == Format::SevenZ, true),
+                (Id::SheetRar, l.rar, "RAR", *format == Format::Rar, *rar),
+            ] {
                 if on {
                     c.fill_round(r, 14.0, t.accent.fade(if t.dark { 0.32 } else { 0.18 }));
                 } else if enabled && self.hover == Some(id) {
