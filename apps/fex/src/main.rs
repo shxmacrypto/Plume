@@ -64,6 +64,27 @@ fn hand_off(name: &str, folders: &[std::path::PathBuf]) -> Result<windows::Win32
     Ok(lock.unwrap_or_default())
 }
 
+/// `plume-fex.exe --make-default` : Plume FEx ouvre désormais les dossiers et Win+E (comme l'option de son menu), en
+/// gardant ce qui les ouvrait avant. PlumeSetup.exe le lance quand on installe Plume FEx depuis Plume Suite ; l'option
+/// du menu et le retrait de Plume FEx le défont.
+fn make_default() -> i32 {
+    let Some(classes) = shell::integration::Classes::user() else { return 0 };
+    let Ok(exe) = std::env::current_exe() else { return 1 };
+    if classes.is_default(&exe) {
+        return 0;
+    }
+    let mut set = Settings::load();
+    let s = app::i18n::strings(set.language());
+    match classes.make_default(&exe, s.open_in_fex) {
+        Some(backup) => {
+            set.explorer_backup.get_or_insert(backup);
+            set.save();
+            0
+        }
+        None => 1,
+    }
+}
+
 /// `plume-fex.exe --unregister` : retire l'entrée « Ouvrir dans Plume FEx » et rend les dossiers et Win+E à ce qui
 /// les ouvrait avant. PlumeSetup.exe le lance avant d'effacer le programme. Les réglages et l'index restent.
 fn unregister() -> i32 {
@@ -86,6 +107,9 @@ fn main() {
     // retrait de Plume FEx (Plume Suite) : rendre à Windows les dossiers, Win+E et le clic droit, puis s'arrêter
     if std::env::args().skip(1).any(|a| a.eq_ignore_ascii_case("--unregister")) {
         std::process::exit(unregister());
+    }
+    if std::env::args().skip(1).any(|a| a.eq_ignore_ascii_case("--make-default")) {
+        std::process::exit(make_default());
     }
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);

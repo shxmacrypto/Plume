@@ -125,7 +125,7 @@ try:
     ui.cmd(cmd="click", id="Install(1)")
     s = ui.wait(lambda s: s["busy"] is None and s["installed"][1], "FEx installed")
     check("Install in the window installs Plume FEx", there("plume-fex.exe") and s["installed"] == [False, True, False], s)
-    check("no error is shown", s["toast"] is None, s)
+    check("it says folders now open in Plume FEx, and how to undo it", s["toast"] and "Plume FEx" in s["toast"] and "undo" in s["toast"], s["toast"])
     ui.cmd(cmd="click", id="Install(0)")
     s = ui.wait(lambda s: s["busy"] is None and s["installed"][0], "Web installed")
     ui.shot("suite-two.png")

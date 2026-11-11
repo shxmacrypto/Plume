@@ -247,6 +247,8 @@ impl Hub {
                     hub.refresh();
                     let s = hub.s;
                     match r {
+                        // Plume FEx ouvre maintenant les dossiers : on le dit, avec le moyen de revenir en arrière
+                        Ok(0) if install && ALL[i] == apps::App::Fex => hub.say(s.fex_default.to_string(), cx),
                         Ok(0) => {}
                         // 1 : l'utilisateur a renoncé (désinstallation de Plume Web)
                         Ok(1) if !install => {}

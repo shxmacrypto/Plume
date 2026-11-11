@@ -290,6 +290,10 @@ fn main() {
     }
     let desktop = first && !update && install.is_none() && !has("--no-desktop");
     let registered = register(&dir, desktop);
+    // Plume FEx qu'on vient d'installer ouvre les dossiers et Win+E (son menu, ou son retrait, le défait)
+    if install == Some(App::Fex) && !sandbox() {
+        run(&App::Fex.exe(&dir), &["--make-default"]);
+    }
     if update || install.is_some() {
         std::process::exit(if registered { 0 } else { 3 });
     }

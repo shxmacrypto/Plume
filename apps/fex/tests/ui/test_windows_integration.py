@@ -1,4 +1,4 @@
-import json, os, subprocess, sys, winreg
+import json, os, shutil, subprocess, sys, winreg
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fex
 from fex import *
@@ -64,6 +64,22 @@ try:
     more(default); more(entry)
     check("removing the right-click entry also gives folders back", value(r"Directory\shell") == "SomethingElse" and value(r"Directory\shell\PlumeFEx") is None and value(WIN_E) is None,
           (value(r"Directory\shell"), value(r"Directory\shell\PlumeFEx")))
+    # installing Plume FEx from Plume Suite: the installer runs --make-default, removing it runs --unregister
+    x.close()
+    prof = os.path.join(OUT, "prof-install-default")
+    shutil.rmtree(prof, ignore_errors=True)
+    env = dict(os.environ, PLUME_FEX_CLASSES_ROOT=CLASSES, PLUME_FEX_PROFILE=prof)
+    code = subprocess.run([fex.EXE, "--make-default"], env=env, timeout=30).returncode
+    check("--make-default (run when Plume FEx is installed) makes it open folders, drives and Win+E",
+          code == 0 and value(r"Directory\shell") == "PlumeFEx" and value(r"Drive\shell") == "PlumeFEx" and value(WIN_E) == '"%s"' % fex.EXE, (code, value(r"Directory\shell"), value(WIN_E)))
+    saved = json.load(open(os.path.join(prof, "settings.json"), encoding="utf-8"))
+    check("it remembers what opened folders before", saved.get("explorer_backup", {}).get("directory") == "SomethingElse", saved.get("explorer_backup"))
+    code = subprocess.run([fex.EXE, "--make-default"], env=env, timeout=30).returncode
+    saved = json.load(open(os.path.join(prof, "settings.json"), encoding="utf-8"))
+    check("running it twice keeps the first backup", code == 0 and saved.get("explorer_backup", {}).get("directory") == "SomethingElse", saved.get("explorer_backup"))
+    subprocess.run([fex.EXE, "--unregister"], env=env, timeout=30)
+    check("removing Plume FEx (--unregister) gives everything back", value(r"Directory\shell") == "SomethingElse" and value(r"Drive\shell") is None and value(WIN_E) is None and value(r"Directory\shell\PlumeFEx") is None,
+          (value(r"Directory\shell"), value(r"Drive\shell"), value(WIN_E)))
 finally:
     x.close()
     subprocess.run(["reg", "delete", "HKCU\\" + ROOT, "/f"], capture_output=True)
