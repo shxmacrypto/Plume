@@ -2,6 +2,22 @@
 
 Toutes les nouveautés de Plume, version après version (en anglais : [CHANGELOG.md](CHANGELOG.md)). Le site les affiche sur sa page « Notes de version ».
 
+## 1.0.1 - 2026-11-11
+
+Des icônes plus grandes dans Plume FEx, des dossiers qui s'ouvrent avec lui une fois installé, et une correction de l'assistant de bienvenue sur batterie.
+
+Déjà sur Plume Suite 1.0.0 ? Plume Suite et chaque application annoncent la mise à jour : un clic l'installe.
+
+### Plume FEx
+- **Les tailles d'icônes de l'Explorateur** : très grandes, grandes, moyennes et petites icônes, en plus de Détails. Choisissez-les avec le nouveau bouton **Affichage** à côté du menu `…`, avec Ctrl+Maj+1 à 4 (Ctrl+Maj+6 pour Détails) ou avec **Ctrl + molette**. Photos et vidéos montrent leur vraie miniature à chaque taille ; la taille est gardée.
+- **Installé depuis Plume Suite, Plume FEx ouvre vos dossiers** : un double-clic sur un dossier ou un lecteur, et Win+E, l'ouvrent dans Plume FEx. Plume Suite le dit, avec le moyen de l'annuler : menu `…` de Plume FEx, *Ouvrir les dossiers et Win+E avec Plume FEx*. Retirer Plume FEx rend tout à l'Explorateur de Windows.
+
+### Plume Web
+- Corrigé : *Revoir l'assistant de bienvenue* (Paramètres › À propos) restait figé sur un portable sur batterie. L'économie de batterie coupe toujours les animations de l'interface, mais plus celles de l'écran de démarrage et de l'assistant de bienvenue ; *Réduire les animations* coupe toujours tout.
+
+### En coulisses
+- Le code du navigateur est maintenant dans `apps/web`, à côté des autres applications ; tous les logos sont dans `assets/brand`.
+
 ## 1.0.0 - 2026-11-11
 
 Plume devient **Plume Suite** : de petites applications natives au même visage, installées et mises à jour ensemble.

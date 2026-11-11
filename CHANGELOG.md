@@ -2,6 +2,22 @@
 
 All notable changes to Plume. Each `## x.y.z` section becomes the release notes when you run `.\release.ps1 x.y.z`.
 
+## 1.0.1 - 2026-11-11
+
+Bigger icons in Plume FEx, folders that open in it once installed, and a fix for the welcome setup on battery.
+
+Already on Plume Suite 1.0.0? Plume Suite and each app show the update: one click installs it.
+
+### Plume FEx
+- **Explorer's icon sizes**: extra large, large, medium and small icons beside Details. Choose them with the new **View** button next to the `…` menu, with Ctrl+Shift+1 to 4 (Ctrl+Shift+6 for Details), or with **Ctrl + mouse wheel**. Photos and videos show their real thumbnail at every size; the size is remembered.
+- **Installed from Plume Suite, Plume FEx opens your folders**: double-clicking a folder or a drive, and Win+E, open it in Plume FEx. Plume Suite says so and how to undo it: Plume FEx's `…` menu, *Open folders and Win+E with Plume FEx*. Removing Plume FEx gives everything back to Windows' Explorer.
+
+### Plume Web
+- Fixed: *Replay the welcome setup* (Settings › About) stayed frozen on a laptop on battery. The battery saver still stops the interface's animations, but no longer the startup screen and the welcome setup; *Reduce motion* still stops everything.
+
+### Inside
+- The browser's code moved to `apps/web`, next to the other apps; every logo is in `assets/brand`.
+
 ## 1.0.0 - 2026-11-11
 
 Plume becomes **Plume Suite**: small native apps with one look, installed and updated together.
