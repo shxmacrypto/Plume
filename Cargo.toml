@@ -9,7 +9,7 @@ default-members = ["apps/web"]
 exclude = ["launcher", "vendor/wry"]
 
 [workspace.package]
-version = "1.0.0"
+version = "1.0.1"
 
 [profile.release]
 opt-level = "s"
