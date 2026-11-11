@@ -413,6 +413,8 @@ impl Hub {
                 self.button(c, rect(right - bw, by, bw, 34.0), label, true, None);
                 right -= bw;
             }
+            // pas encore dans cette version : ni bouton ni installation
+            _ if !installed && !app.available() => {}
             _ => {
                 let others_busy = self.busy.is_some();
                 let (label, id) = if installed { (s.open, Id::Open(i)) } else { (s.install, Id::Install(i)) };
@@ -432,7 +434,11 @@ impl Hub {
         let text_w = (right - 20.0 - x).max(60.0);
         let name_w = c.text_width(app.name(), Font::Large);
         c.text(app.name(), rect(x, card.y + 24.0, text_w, 24.0), Font::Large, t.t1, Align::Left);
-        let (state, ink) = if installed { (s.installed, t.green) } else { (s.not_installed, t.t3) };
+        let (state, ink) = match (installed, app.available()) {
+            (true, _) => (s.installed, t.green),
+            (false, true) => (s.not_installed, t.t3),
+            (false, false) => (s.coming_soon, t.accent),
+        };
         let pw = c.text_width(state, Font::SmallBold) + 18.0;
         if x + name_w + 12.0 + pw < right - 20.0 {
             let pill = rect(x + name_w + 12.0, card.y + 26.0, pw, 20.0);

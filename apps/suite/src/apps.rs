@@ -31,6 +31,18 @@ pub enum App {
 
 pub const ALL: [App; 3] = [App::Web, App::Fex, App::Mail];
 
+/// Plume Mail fait-il partie de cette version (`PLUME_WITH_MAIL=1` à la compilation, comme pour l'installeur) ?
+pub fn mail_ready() -> bool {
+    option_env!("PLUME_WITH_MAIL") == Some("1")
+}
+
+impl App {
+    /// L'application peut être installée par cette version (sinon : « Bientôt »).
+    pub fn available(self) -> bool {
+        self != App::Mail || mail_ready()
+    }
+}
+
 impl App {
     /// Nom court, celui de la ligne de commande de PlumeSetup.exe (`--install fex`).
     pub fn key(self) -> &'static str {

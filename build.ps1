@@ -20,14 +20,18 @@ foreach ($tool in "dlltool.exe", "windres.exe") {
 $env:Path = "$binutils;$env:USERPROFILE\.cargo\bin;$env:Path"
 
 # 1. The four programs: the browser (root package), Plume Suite, Plume FEx, Plume Mail
-cmd /c "cargo build --release -p plume -p plume-suite -p plume-fex -p plume-mail 2>&1"
+# Plume Mail waits for its Microsoft sign-in: it is left out unless PLUME_WITH_MAIL=1 (read by Plume Suite and the launcher)
+$withMail = $env:PLUME_WITH_MAIL -eq "1"
+$pkgs = "-p plume -p plume-suite -p plume-fex"
+if ($withMail) { $pkgs += " -p plume-mail" }
+cmd /c "cargo build --release $pkgs 2>&1"
 if ($LASTEXITCODE -ne 0) { Write-Host "Build of the apps failed" -ForegroundColor Red; exit 1 }
 
 # 2. The installer, which carries the four programs + WebView2Loader.dll
 $env:PLUME_CORE_EXE = (Resolve-Path target\release\plume.exe).Path
 $env:PLUME_SUITE_EXE = (Resolve-Path target\release\plume-suite.exe).Path
 $env:PLUME_FEX_EXE = (Resolve-Path target\release\plume-fex.exe).Path
-$env:PLUME_MAIL_EXE = (Resolve-Path target\release\plume-mail.exe).Path
+if ($withMail) { $env:PLUME_MAIL_EXE = (Resolve-Path target\release\plume-mail.exe).Path } else { Remove-Item Env:PLUME_MAIL_EXE -ErrorAction SilentlyContinue }
 $env:PLUME_LOADER_DLL = (Get-ChildItem "$env:USERPROFILE\.cargo\registry\src\*\webview2-com-sys-*\x64\WebView2Loader.dll" | Select-Object -Last 1).FullName
 if (-not $env:PLUME_LOADER_DLL) { Write-Host "WebView2Loader.dll not found in the cargo registry" -ForegroundColor Red; exit 1 }
 cmd /c "cargo build --release --manifest-path launcher\Cargo.toml 2>&1"

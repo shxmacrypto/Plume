@@ -22,7 +22,11 @@ static SUITE: &[u8] = include_bytes!(env!("PLUME_SUITE_EXE"));
 static WEB: &[u8] = include_bytes!(env!("PLUME_CORE_EXE"));
 static DLL: &[u8] = include_bytes!(env!("PLUME_LOADER_DLL"));
 static FEX: &[u8] = include_bytes!(env!("PLUME_FEX_EXE"));
+#[cfg(plume_mail)]
 static MAIL: &[u8] = include_bytes!(env!("PLUME_MAIL_EXE"));
+/// Plume Mail ne fait pas partie de cette version : il ne s'installe pas (un ancien reste se retire quand même).
+#[cfg(not(plume_mail))]
+static MAIL: &[u8] = &[];
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const NO_WINDOW: u32 = 0x0800_0000;
 
@@ -74,7 +78,7 @@ impl App {
         match s {
             "web" => Some(App::Web),
             "fex" => Some(App::Fex),
-            "mail" => Some(App::Mail),
+            "mail" => Some(App::Mail).filter(|_| !MAIL.is_empty() || std::env::args().any(|a| a.eq_ignore_ascii_case("--uninstall"))),
             _ => None,
         }
     }
@@ -261,6 +265,10 @@ fn main() {
 
     let update = has("--update");
     let install = after("--install");
+    // une application inconnue, ou qui n'est pas dans cette version
+    if has("--install") && install.is_none() {
+        std::process::exit(2);
+    }
     let first = !dir.join("plume-suite.exe").is_file();
     // Plume Suite, puis les applications déjà installées (une mise à jour les prend toutes), puis celle demandée
     let mut running = false;

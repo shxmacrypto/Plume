@@ -75,6 +75,7 @@ check("an update does not add apps", not there("plume-mail.exe"), files())
 # ── 4. removing
 check("--uninstall fex removes it", setup("--uninstall", "fex", exe=CACHED) == 0 and not there("plume-fex.exe"), files())
 check("removing an app that is not there is fine", setup("--uninstall", "mail", exe=CACHED) == 0)
+check("Plume Mail is not in this version: it cannot be installed", setup("--install", "mail", exe=CACHED) != 0 and not there("plume-mail.exe"), files())
 check("the browser can be removed too (sandbox: its files only)", setup("--uninstall", "web", exe=CACHED) == 0 and not there("plume.exe"), files())
 
 
@@ -119,17 +120,19 @@ try:
     s = ui.wait(lambda s: s["installed"] is not None, "window")
     check("the window sees what is installed (nothing now)", s["installed"] == [False, False, False], s)
     ui.shot("suite-empty.png")
-    ui.cmd(cmd="click", id="Install(2)")
-    s = ui.wait(lambda s: s["busy"] is None and s["installed"][2], "Mail installed")
-    check("Install in the window installs Plume Mail", there("plume-mail.exe") and s["installed"] == [False, False, True], s)
-    check("no error is shown", s["toast"] is None, s)
+    hits = [h["id"] for h in ui.cmd(cmd="hits")]
+    check("Plume Mail shows as coming soon, without an Install button", "Install(2)" not in hits and "Install(1)" in hits, hits)
     ui.cmd(cmd="click", id="Install(1)")
     s = ui.wait(lambda s: s["busy"] is None and s["installed"][1], "FEx installed")
+    check("Install in the window installs Plume FEx", there("plume-fex.exe") and s["installed"] == [False, True, False], s)
+    check("no error is shown", s["toast"] is None, s)
+    ui.cmd(cmd="click", id="Install(0)")
+    s = ui.wait(lambda s: s["busy"] is None and s["installed"][0], "Web installed")
     ui.shot("suite-two.png")
-    # removing FEx asks first (a Windows dialog): the test removes it with the installer, the window follows
-    setup("--uninstall", "fex", exe=CACHED)
+    # removing asks first (a Windows dialog): the test removes Plume Web with the installer, the window follows
+    setup("--uninstall", "web", exe=CACHED)
     s = ui.cmd(cmd="refresh")
-    check("the window follows a change made elsewhere", s["installed"] == [False, False, True], s)
+    check("the window follows a change made elsewhere", s["installed"] == [False, True, False], s)
 finally:
     ui.close()
 
@@ -151,8 +154,8 @@ try:
 except OSError as e:
     check("the test key exists", False, e)
 menu = os.path.join(ROAMING, r"Microsoft\Windows\Start Menu\Programs")
-check("Start menu: Plume Suite and the installed app (Mail), not the others",
-      sorted(os.listdir(menu)) == ["Plume Mail.lnk", "Plume Suite.lnk"], os.listdir(menu) if os.path.isdir(menu) else None)
+check("Start menu: Plume Suite and the installed app (FEx), not the others",
+      sorted(os.listdir(menu)) == ["Plume FEx.lnk", "Plume Suite.lnk"], os.listdir(menu) if os.path.isdir(menu) else None)
 check("desktop shortcut on request", os.path.isfile(os.path.join(DESK, "Plume Suite.lnk")))
 subprocess.run([suite_exe, "--unregister"], env=RENV, timeout=60)
 gone = True
@@ -194,7 +197,7 @@ class Feed(http.server.BaseHTTPRequestHandler):
 
 server = http.server.ThreadingHTTPServer(("127.0.0.1", PORT_FEED), Feed)
 threading.Thread(target=server.serve_forever, daemon=True).start()
-open(os.path.join(DIR, "plume-mail.exe"), "wb").write(b"old")
+open(os.path.join(DIR, "plume-fex.exe"), "wb").write(b"old")
 FENV = dict(UENV, PLUME_UPDATE_FEED="http://127.0.0.1:%d/latest.json" % PORT_FEED)
 ui = Ui(FENV)
 try:
@@ -208,7 +211,7 @@ try:
     except (RuntimeError, OSError, ValueError):
         # the window restarts itself into the new version once the update is installed
         s = None
-    check("the installed apps were updated", os.path.getsize(os.path.join(DIR, "plume-mail.exe")) > 1000)
+    check("the installed apps were updated", os.path.getsize(os.path.join(DIR, "plume-fex.exe")) > 1000)
 finally:
     try:
         ui.close()
