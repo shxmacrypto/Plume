@@ -108,6 +108,7 @@ impl App {
     }
 
     /// Miniatures prêtes (essais).
+    #[cfg(feature = "test-hook")]
     pub fn thumbs_ready(&self) -> usize {
         self.thumbs.cache.values().filter(|v| v.is_some()).count()
     }
