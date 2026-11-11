@@ -27,9 +27,66 @@ pub enum App {
     Web,
     Fex,
     Mail,
+    Viewer,
+    Music,
+    Drop,
+    Launcher,
+    Passwords,
+    Media,
+    Task,
+    Clean,
+    Backup,
+    Clipboard,
+    Pdf,
+    Calendar,
+    Convert,
 }
 
-pub const ALL: [App; 3] = [App::Web, App::Fex, App::Mail];
+/// Nombre d'applications de la suite.
+pub const COUNT: usize = 16;
+
+/// Dans l'ordre des logos et des textes (l'ordre affiché est [`SHOWN`]).
+pub const ALL: [App; COUNT] = [
+    App::Web,
+    App::Fex,
+    App::Mail,
+    App::Viewer,
+    App::Music,
+    App::Drop,
+    App::Launcher,
+    App::Passwords,
+    App::Media,
+    App::Task,
+    App::Clean,
+    App::Backup,
+    App::Clipboard,
+    App::Pdf,
+    App::Calendar,
+    App::Convert,
+];
+/// L'ordre des cartes dans la fenêtre : le quotidien d'abord (navigateur, fichiers, musique, photos), puis le
+/// téléphone, les outils, l'entretien du PC, et « Bientôt » en dernier.
+pub const SHOWN: [usize; COUNT] = [0, 1, 4, 8, 3, 5, 6, 7, 12, 13, 14, 15, 9, 10, 11, 2];
+
+/// Nom de la ligne de commande, nom affiché, programme, raccourci du menu Démarrer (dans l'ordre de [`ALL`]).
+const INFO: [(&str, &str, &str, &str); COUNT] = [
+    ("web", "Plume Web", "plume.exe", "Plume.lnk"),
+    ("fex", "Plume FEx", "plume-fex.exe", "Plume FEx.lnk"),
+    ("mail", "Plume Mail", "plume-mail.exe", "Plume Mail.lnk"),
+    ("viewer", "Plume Viewer", "plume-viewer.exe", "Plume Viewer.lnk"),
+    ("music", "Plume Music", "plume-music.exe", "Plume Music.lnk"),
+    ("drop", "Plume Drop", "plume-drop.exe", "Plume Drop.lnk"),
+    ("launcher", "Plume Launcher", "plume-launcher.exe", "Plume Launcher.lnk"),
+    ("passwords", "Plume Passwords", "plume-passwords.exe", "Plume Passwords.lnk"),
+    ("media", "Plume Media", "plume-media.exe", "Plume Media.lnk"),
+    ("task", "Plume Task", "plume-task.exe", "Plume Task.lnk"),
+    ("clean", "Plume Clean", "plume-clean.exe", "Plume Clean.lnk"),
+    ("backup", "Plume Backup", "plume-backup.exe", "Plume Backup.lnk"),
+    ("clipboard", "Plume Clipboard", "plume-clipboard.exe", "Plume Clipboard.lnk"),
+    ("pdf", "Plume PDF", "plume-pdf.exe", "Plume PDF.lnk"),
+    ("calendar", "Plume Calendar", "plume-calendar.exe", "Plume Calendar.lnk"),
+    ("convert", "Plume Convert", "plume-convert.exe", "Plume Convert.lnk"),
+];
 
 /// Plume Mail fait-il partie de cette version (`PLUME_WITH_MAIL=1` à la compilation, comme pour l'installeur) ?
 pub fn mail_ready() -> bool {
@@ -46,25 +103,13 @@ impl App {
 impl App {
     /// Nom court, celui de la ligne de commande de PlumeSetup.exe (`--install fex`).
     pub fn key(self) -> &'static str {
-        match self {
-            App::Web => "web",
-            App::Fex => "fex",
-            App::Mail => "mail",
-        }
+        INFO[self as usize].0
     }
     pub fn name(self) -> &'static str {
-        match self {
-            App::Web => "Plume Web",
-            App::Fex => "Plume FEx",
-            App::Mail => "Plume Mail",
-        }
+        INFO[self as usize].1
     }
     pub fn exe_name(self) -> &'static str {
-        match self {
-            App::Web => "plume.exe",
-            App::Fex => "plume-fex.exe",
-            App::Mail => "plume-mail.exe",
-        }
+        INFO[self as usize].2
     }
     pub fn exe(self) -> PathBuf {
         install_dir().join(self.exe_name())
@@ -74,11 +119,7 @@ impl App {
     }
     /// Raccourci du menu Démarrer. Celui de Plume Web (« Plume.lnk ») est géré par le navigateur lui-même.
     fn shortcut(self) -> &'static str {
-        match self {
-            App::Web => "Plume.lnk",
-            App::Fex => "Plume FEx.lnk",
-            App::Mail => "Plume Mail.lnk",
-        }
+        INFO[self as usize].3
     }
 }
 
@@ -189,7 +230,7 @@ pub fn register(with_desktop: bool) -> bool {
     let (dir, exe) = (install_dir(), suite_exe());
     let menu = start_menu();
     let mut ok = shortcut(&menu.join("Plume Suite.lnk"), &exe, "Plume Suite").is_ok();
-    for app in [App::Fex, App::Mail] {
+    for app in ALL.into_iter().filter(|&a| a != App::Web) {
         let lnk = menu.join(app.shortcut());
         if app.installed() {
             ok &= shortcut(&lnk, &app.exe(), app.name()).is_ok();
@@ -222,8 +263,9 @@ pub fn register(with_desktop: bool) -> bool {
 /// `plume-suite.exe --unregister` (désinstallation de toute la suite) : raccourcis et entrée de Paramètres › Applications.
 pub fn unregister() {
     let menu = start_menu();
-    for lnk in ["Plume Suite.lnk", App::Fex.shortcut(), App::Mail.shortcut()] {
-        let _ = std::fs::remove_file(menu.join(lnk));
+    let _ = std::fs::remove_file(menu.join("Plume Suite.lnk"));
+    for app in ALL.into_iter().filter(|&a| a != App::Web) {
+        let _ = std::fs::remove_file(menu.join(app.shortcut()));
     }
     if let Some(d) = desktop() {
         let _ = std::fs::remove_file(d.join("Plume Suite.lnk"));
@@ -242,7 +284,16 @@ mod tests {
         assert!(install_dir().ends_with(r"Programs\Plume"));
         assert_eq!(App::Fex.exe().file_name().unwrap(), "plume-fex.exe");
         assert!(setup().ends_with(r"Programs\Plume\PlumeSetup.exe"));
-        assert_eq!(ALL.iter().map(|a| a.key()).collect::<Vec<_>>(), ["web", "fex", "mail"]);
+        assert_eq!(ALL.iter().take(5).map(|a| a.key()).collect::<Vec<_>>(), ["web", "fex", "mail", "viewer", "music"]);
+        // la table suit l'ordre de l'énumération, et chaque carte est montrée une fois
+        for (i, app) in ALL.iter().enumerate() {
+            assert_eq!(*app as usize, i);
+            assert!(app.exe_name().starts_with("plume"), "{}", app.key());
+        }
+        let mut shown = SHOWN.to_vec();
+        shown.sort();
+        assert_eq!(shown, (0..COUNT).collect::<Vec<_>>());
+        assert_eq!(App::Pdf.exe().file_name().unwrap(), "plume-pdf.exe");
         assert!(!running_installed()); // les essais tournent depuis target\
         assert!(uninstall_key().ends_with(r"\Uninstall\Plume") || std::env::var_os("PLUME_SUITE_TEST_KEY").is_some());
     }

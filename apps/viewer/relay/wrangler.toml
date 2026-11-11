@@ -1,0 +1,20 @@
+# Plume Viewer relay: puts a PC and a viewer (phone, browser) in touch, then steps aside.
+# Deploy: npx wrangler deploy   (see README.md next to this file)
+name = "plume-viewer"
+main = "src/worker.js"
+compatibility_date = "2025-10-01"
+
+# the viewer page (phone and browser)
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/ws/*"]
+
+# one room per PC (its ID)
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

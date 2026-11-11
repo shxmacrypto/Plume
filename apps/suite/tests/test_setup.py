@@ -64,6 +64,11 @@ CACHED = os.path.join(DIR, "PlumeSetup.exe")
 # ── 2. apps one by one, through the kept installer (as Plume Suite does)
 check("--install fex", setup("--install", "fex", exe=CACHED) == 0 and there("plume-fex.exe"), files())
 check("--install web brings the browser and its WebView2 loader", setup("--install", "web", exe=CACHED) == 0 and there("plume.exe", "WebView2Loader.dll"), files())
+check("--install viewer", setup("--install", "viewer", exe=CACHED) == 0 and there("plume-viewer.exe"), files())
+check("--install music", setup("--install", "music", exe=CACHED) == 0 and there("plume-music.exe"), files())
+NEW = ['drop', 'launcher', 'passwords', 'media', 'task', 'clean', 'backup', 'clipboard', 'pdf', 'calendar', 'convert']
+for key in NEW:
+    check("--install " + key, setup("--install", key, exe=CACHED) == 0 and there("plume-%s.exe" % key), files())
 check("an unknown app is refused", setup("--uninstall", "nope", exe=CACHED) != 0)
 
 # ── 3. an update rewrites every installed app, and only those
@@ -74,6 +79,10 @@ check("an update does not add apps", not there("plume-mail.exe"), files())
 
 # ── 4. removing
 check("--uninstall fex removes it", setup("--uninstall", "fex", exe=CACHED) == 0 and not there("plume-fex.exe"), files())
+check("--uninstall viewer removes it", setup("--uninstall", "viewer", exe=CACHED) == 0 and not there("plume-viewer.exe"), files())
+check("--uninstall music removes it", setup("--uninstall", "music", exe=CACHED) == 0 and not there("plume-music.exe"), files())
+for key in NEW:
+    check("--uninstall %s removes it" % key, setup("--uninstall", key, exe=CACHED) == 0 and not there("plume-%s.exe" % key), files())
 check("removing an app that is not there is fine", setup("--uninstall", "mail", exe=CACHED) == 0)
 check("Plume Mail is not in this version: it cannot be installed", setup("--install", "mail", exe=CACHED) != 0 and not there("plume-mail.exe"), files())
 check("the browser can be removed too (sandbox: its files only)", setup("--uninstall", "web", exe=CACHED) == 0 and not there("plume.exe"), files())
@@ -115,16 +124,42 @@ class Ui:
 
 
 UENV = dict(ENV, PLUME_SUITE_TEST_PORT=str(PORT_UI), PLUME_SUITE_NOACTIVATE="1")
+COUNT = 16
+NONE = [False] * COUNT
+FEX_ONLY = [False, True] + [False] * (COUNT - 2)
 ui = Ui(UENV)
 try:
     s = ui.wait(lambda s: s["installed"] is not None, "window")
-    check("the window sees what is installed (nothing now)", s["installed"] == [False, False, False], s)
+    check("the window sees what is installed (nothing now)", s["installed"] == NONE, s)
     ui.shot("suite-empty.png")
     hits = [h["id"] for h in ui.cmd(cmd="hits")]
     check("Plume Mail shows as coming soon, without an Install button", "Install(2)" not in hits and "Install(1)" in hits, hits)
+    check("Plume Viewer can be installed from the window", "Install(3)" in hits, hits)
+    check("Plume Music can be installed from the window", "Install(4)" in hits, hits)
+    # the cards further down come into view when the list scrolls; each new app has its Install button
+    for i in range(5, COUNT):
+        ui.cmd(cmd="reveal", app=i)
+        ok = False
+        for _ in range(20):
+            if "Install(%d)" % i in [h["id"] for h in ui.cmd(cmd="hits")]:
+                ok = True
+                break
+            time.sleep(0.25)
+        check("app %d (%s) can be installed from the window" % (i, NEW[i - 5]), ok)
+    s = ui.cmd(cmd="state")
+    check("the list scrolled to show the last cards", s["scroll"] > 0, s["scroll"])
+    ui.shot("suite-scrolled.png")
+    ui.cmd(cmd="reveal", app=8)
+    time.sleep(0.5)
+    ui.cmd(cmd="click", id="Install(8)")
+    s = ui.wait(lambda s: s["busy"] is None and s["installed"][8], "Media installed")
+    check("Install on a card further down installs that app (Plume Media)", there("plume-media.exe"), files())
+    setup("--uninstall", "media", exe=CACHED)
+    ui.cmd(cmd="reveal", app=0)
+    ui.cmd(cmd="refresh")
     ui.cmd(cmd="click", id="Install(1)")
     s = ui.wait(lambda s: s["busy"] is None and s["installed"][1], "FEx installed")
-    check("Install in the window installs Plume FEx", there("plume-fex.exe") and s["installed"] == [False, True, False], s)
+    check("Install in the window installs Plume FEx", there("plume-fex.exe") and s["installed"] == FEX_ONLY, s)
     check("it says folders now open in Plume FEx, and how to undo it", s["toast"] and "Plume FEx" in s["toast"] and "undo" in s["toast"], s["toast"])
     ui.cmd(cmd="click", id="Install(0)")
     s = ui.wait(lambda s: s["busy"] is None and s["installed"][0], "Web installed")
@@ -132,7 +167,7 @@ try:
     # removing asks first (a Windows dialog): the test removes Plume Web with the installer, the window follows
     setup("--uninstall", "web", exe=CACHED)
     s = ui.cmd(cmd="refresh")
-    check("the window follows a change made elsewhere", s["installed"] == [False, True, False], s)
+    check("the window follows a change made elsewhere", s["installed"] == FEX_ONLY, s)
 finally:
     ui.close()
 
@@ -208,7 +243,7 @@ try:
     try:
         s = ui.wait(lambda s: s["update"]["kind"] in ("done", "failed"), "update installed", timeout=90)
         check("Update everything downloads, checks and installs", s["update"]["kind"] == "done", s)
-    except (RuntimeError, OSError, ValueError):
+    except (RuntimeError, OSError, ValueError, KeyError):
         # the window restarts itself into the new version once the update is installed
         s = None
     check("the installed apps were updated", os.path.getsize(os.path.join(DIR, "plume-fex.exe")) > 1000)

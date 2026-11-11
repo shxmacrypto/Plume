@@ -1,4 +1,5 @@
-// Plume Suite — installe, ouvre, retire et met à jour les applications Plume (Plume Web, Plume FEx, Plume Mail).
+// Plume Suite — installe, ouvre, retire et met à jour les applications Plume (Plume Web, Plume FEx, Plume Viewer,
+// Plume Music, Plume Mail).
 // Fenêtre native dessinée à la main (Win32 + Direct2D + DirectWrite), comme les autres applications de la suite.
 //
 //   plume-suite.exe                    la fenêtre
@@ -90,8 +91,8 @@ fn main() {
     let s = i18n::strings(i18n::french());
     let o = window::Options {
         title: "Plume Suite".into(),
-        size: (900.0, 700.0),
-        min: (640.0, 660.0),
+        size: (1080.0, 820.0),
+        min: (560.0, 560.0),
         dark: theme.dark,
         background: theme.bg,
         activate: std::env::var_os("PLUME_SUITE_NOACTIVATE").is_none(),

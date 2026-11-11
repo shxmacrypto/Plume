@@ -1,0 +1,52 @@
+:root {
+  --bg: #0b1416;
+  --card: #15201f;
+  --field: rgba(118, 118, 128, 0.24);
+  --t1: #fff;
+  --t2: rgba(235, 235, 245, 0.72);
+  --t3: rgba(235, 235, 245, 0.5);
+  --acc: #14b8a6;
+  --acc2: #2dd4bf;
+  --red: #ff453a;
+  --ease: cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--bg); color: var(--t1); font: 15px/1.5 "Segoe UI Variable Text", "Segoe UI", -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+body { overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
+[hidden] { display: none !important; }
+
+.panel { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px 20px calc(32px + env(safe-area-inset-bottom));
+  background: radial-gradient(120% 70% at 50% 0%, rgba(20, 184, 166, 0.22), transparent 60%), var(--bg); }
+.logo { width: 84px; height: 84px; filter: drop-shadow(0 14px 30px rgba(20, 184, 166, 0.45)); animation: pop 0.6s var(--ease) both; }
+h1 { font: 600 30px/1.2 "Segoe UI Variable Display", "Segoe UI", -apple-system, system-ui, sans-serif; letter-spacing: -0.02em; margin: 18px 0 6px; }
+.sub { color: var(--t2); margin-bottom: 26px; }
+form { width: min(360px, 100%); display: grid; gap: 14px; text-align: left; }
+label span { display: block; font-size: 13px; color: var(--t3); margin: 0 0 6px 4px; }
+input { width: 100%; height: 50px; border: 0; border-radius: 14px; background: var(--field); color: var(--t1); font: 500 19px/1 inherit; padding: 0 16px; outline: none; letter-spacing: 0.04em; -webkit-user-select: text; user-select: text; }
+input:focus { box-shadow: 0 0 0 2px var(--acc); }
+button { font: inherit; border: 0; cursor: pointer; color: inherit; }
+#go { height: 50px; border-radius: 25px; background: var(--acc); color: #fff; font-weight: 600; font-size: 16px; margin-top: 6px; transition: filter 0.15s; }
+#go:hover { filter: brightness(1.1); }
+#go:disabled { opacity: 0.55; cursor: default; }
+.status { min-height: 24px; margin-top: 16px; color: var(--t2); }
+.status.err { color: var(--red); }
+.fine { max-width: 360px; margin-top: 18px; font-size: 12.5px; color: var(--t3); }
+
+#session { position: fixed; inset: 0; background: #000; }
+#screen { position: absolute; inset: 0; width: 100%; height: 100%; outline: none; cursor: none; }
+.wait { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 18px; background: rgba(11, 20, 22, 0.86); text-align: center; padding: 20px; }
+.wait p { color: var(--t2); max-width: 340px; }
+.spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.15); border-top-color: var(--acc2); animation: r 0.9s linear infinite; }
+.kbd { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; font-size: 16px; }
+.bar { position: absolute; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 4px; padding: 6px; border-radius: 22px;
+  background: rgba(28, 28, 30, 0.86); backdrop-filter: blur(20px) saturate(1.5); -webkit-backdrop-filter: blur(20px) saturate(1.5); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.08); transition: opacity 0.25s; }
+.bar.dim { opacity: 0.35; }
+.bar button { width: 44px; height: 40px; border-radius: 14px; background: transparent; display: grid; place-items: center; color: var(--t1); }
+.bar button:hover, .bar button.on { background: rgba(118, 118, 128, 0.3); }
+.bar button.on { color: var(--acc2); }
+.bar button.red:hover { background: var(--red); }
+.bar svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.bar b { font-size: 12px; font-weight: 700; }
+@keyframes pop { from { transform: scale(0.7); opacity: 0; } }
+@keyframes r { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

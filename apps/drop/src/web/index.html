@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#161618">
+<meta name="referrer" content="no-referrer">
+<title>Plume Drop</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header class="top">
+  <img src="/icon.svg" alt="" class="logo">
+  <div class="brand"><b>Plume Drop</b><span id="pc" class="pc"></span></div>
+  <span id="dot" class="dot" title=""></span>
+</header>
+
+<main>
+  <section id="gate" class="card gate" hidden>
+    <div id="spin" class="spin" hidden></div>
+    <h1 id="gateTitle"></h1>
+    <p id="gateText"></p>
+    <button id="retry" class="btn" type="button" hidden></button>
+  </section>
+
+  <section id="app" hidden>
+    <label class="send" id="pick">
+      <input type="file" id="files" multiple>
+      <span class="send-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg>
+      </span>
+      <span class="send-text"><b id="sendLabel"></b><small id="sendSub"></small></span>
+    </label>
+    <ul id="queue" class="list"></ul>
+
+    <div class="card compose">
+      <h2 id="textTitle"></h2>
+      <textarea id="text" rows="3" autocomplete="off" spellcheck="true"></textarea>
+      <div class="row"><span id="textNote" class="muted small"></span><button id="sendText" class="btn" type="button"></button></div>
+    </div>
+
+    <h2 class="section" id="fromTitle"></h2>
+    <ul id="offers" class="list"></ul>
+    <p id="none" class="muted empty"></p>
+  </section>
+</main>
+
+<footer id="foot" class="foot"></footer>
+<div id="drop" class="dropzone" hidden><div id="dropText"></div></div>
+<div id="toast" class="toast" hidden></div>
+<script src="/app.js"></script>
+</body>
+</html>

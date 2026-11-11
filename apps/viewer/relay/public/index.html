@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b1416">
+<meta name="robots" content="noindex">
+<title>Plume Viewer</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="viewer.css">
+<script src="viewer.js" defer></script>
+</head>
+<body>
+<main id="connect" class="panel" aria-labelledby="title">
+  <img class="logo" src="icon.svg" alt="" width="84" height="84">
+  <h1 id="title">Plume Viewer</h1>
+  <p class="sub" data-i="sub">See and control a PC from this device.</p>
+  <form id="form" autocomplete="off">
+    <label><span data-i="id">PC ID</span><input id="pcid" inputmode="numeric" placeholder="123 456 789" maxlength="11" required></label>
+    <label><span data-i="secret">Code or password</span><input id="secret" type="password" required></label>
+    <button id="go" type="submit" data-i="connect">Connect</button>
+  </form>
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+  <p class="fine" data-i="fine">End-to-end encrypted. The person at the PC accepts each connection, unless you use its permanent password.</p>
+</main>
+
+<section id="session" hidden>
+  <canvas id="screen" tabindex="0" aria-label="Remote screen"></canvas>
+  <div id="wait" class="wait" hidden><div class="spin"></div><p id="waittext"></p></div>
+  <input id="kbd" class="kbd" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Keyboard">
+  <nav id="bar" class="bar" aria-label="Controls">
+    <button data-a="kbd" data-i-title="t_kbd" title="Keyboard"><svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.01M7.5 14h9"/></svg></button>
+    <button data-a="win" data-i-title="t_win" title="Windows key"><svg viewBox="0 0 24 24"><path d="M4 5.5 11 4.5v7H4zM13 4.2 20 3.2v8.3h-7zM4 12.5h7v7l-7-1zM13 12.5h7v8.3l-7-1z"/></svg></button>
+    <button data-a="esc" title="Esc"><b>Esc</b></button>
+    <button data-a="rclick" data-i-title="t_rclick" title="Next tap is a right-click"><svg viewBox="0 0 24 24"><rect x="6.5" y="3" width="11" height="18" rx="5.5"/><path d="M12 3v7M12 10h5.5"/></svg></button>
+    <button data-a="fs" data-i-title="t_fs" title="Full screen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+    <button data-a="quit" class="red" data-i-title="t_quit" title="Disconnect"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </nav>
+</section>
+</body>
+</html>

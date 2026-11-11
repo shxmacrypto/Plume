@@ -1,0 +1,39 @@
+[package]
+name = "plume-backup"
+version.workspace = true
+edition = "2024"
+build = "build.rs"
+description = "Plume Backup: automatic backups of your folders to a drive or another PC."
+license = "MIT"
+
+[[bin]]
+name = "plume-backup"
+path = "src/main.rs"
+
+[features]
+# Prise d'essai (pilotage de la fenêtre par un script, sur 127.0.0.1) : jamais dans une version publiée.
+test-hook = ["plume-ui/test-hook"]
+
+[dependencies]
+plume-ui = { path = "../../crates/plume-ui" }
+plume-update = { path = "../../crates/plume-update" }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10.9"
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Graphics_Imaging",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_LibraryLoader",
+    "Win32_System_SystemInformation",
+    "Win32_System_Time",
+    "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_System_Registry",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }

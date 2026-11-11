@@ -2,6 +2,47 @@
 
 Toutes les nouveautés de Plume, version après version (en anglais : [CHANGELOG.md](CHANGELOG.md)). Le site les affiche sur sa page « Notes de version ».
 
+## 1.1.0 - 2026-11-11
+
+Treize nouvelles applications rejoignent Plume Suite. **Plume Music** joue votre musique et YouTube Music, avec vos playlists Spotify et Apple Music. **Plume Viewer** vous permet de contrôler votre PC depuis votre téléphone. Onze outils du quotidien les accompagnent : Drop, Launcher, Passwords, Media, Task, Clean, Backup, Clipboard, PDF, Calendar et Convert.
+
+Déjà sur Plume Suite 1.0 ? Mettez-la à jour, puis installez les nouvelles applications depuis Plume Suite en un clic.
+
+### Plume Music
+- **Tout dans un seul lecteur** : la musique de votre PC, n'importe quel titre de YouTube Music (recherche pendant la frappe, avec suggestions), SoundCloud, et vos playlists.
+- **Importer une playlist en collant son lien** : Spotify (playlist, album, titre), Apple Music, SoundCloud et YouTube. Les titres Spotify et Apple sont retrouvés sur YouTube Music par titre, artiste et durée (100 titres en 25 secondes environ). Une playlist Spotify entière, au-delà des 100 titres d'un lien partagé : sélectionnez ses titres dans Spotify (Ctrl+A, Ctrl+C) et cliquez sur **Coller les titres copiés**.
+- **Sans attente** : un titre démarre en 3 secondes environ et le suivant est préparé pendant l'écoute. Lecture sans blanc, fondu enchaîné, normalisation du volume, égaliseur 10 bandes avec préréglages, aléatoire, répétition, minuteur, et lecture automatique de titres similaires à la fin de la file.
+- **Paroles synchronisées** qui s'allument ligne par ligne, dans un panneau ou en plein écran ; un clic sur une ligne y va.
+- **« En cours » en plein écran** : pochettes animées quand Apple Music en a une, sur un fond vivant (les couleurs de la pochette, la pochette floutée, ou votre GIF animé, aussi possible derrière toute la fenêtre).
+- **Téléchargements** d'un titre, d'un album ou d'une playlist, en M4A (sans perte) ou MP3 320 kbit/s, avec titre, artiste, album et pochette.
+- Albums, artistes, titres likés, playlists, thèmes clair et sombre, couleur d'accent prise sur la pochette, panneau multimédia de Windows et touches multimédia, anglais et français.
+
+### Plume Viewer
+- **Scannez, c'est parti** : Plume Viewer affiche l'ID du PC, un code à usage unique et un QR code. Scannez-le avec l'appareil photo du téléphone (ou tapez l'ID et le code dans n'importe quel navigateur), la personne devant le PC accepte, et le téléphone voit l'écran et utilise la souris et le clavier. Rien à installer sur le téléphone.
+- **Rapide** : seul ce qui change à l'écran est envoyé, directement du PC au téléphone, chiffré. Un réseau lent reçoit moins d'images, jamais un retard qui s'accumule.
+- **Pensé pour le tactile** : un appui pour cliquer, un appui long pour le clic droit, glisser, deux doigts pour zoomer ou défiler, le clavier du téléphone pour écrire, plus la touche Windows, Échap et le plein écran. Depuis un ordinateur, la souris et le clavier marchent comme sur le PC.
+- **Mot de passe permanent** pour vos propres appareils : se connecter sans que personne n'accepte. Plume Viewer reste alors près de l'horloge et peut démarrer avec Windows.
+- **Sûr par conception** : le code et le mot de passe ne quittent jamais les appareils ; cinq essais faux bloquent le PC 5 minutes ; un bandeau rouge montre qui est connecté, avec un bouton Déconnecter.
+
+### Onze applications de plus
+- **Plume Drop** : envoyez fichiers, photos, textes et liens entre le PC et votre téléphone. Scannez le QR code, le navigateur du téléphone fait le reste. Rien à installer sur le téléphone, les fichiers arrivent dans `Téléchargements\Plume Drop`, et un nouveau téléphone demande votre accord une fois.
+- **Plume Launcher** : appuyez sur **Alt+Espace** et tapez. Il trouve les applications, les fichiers de vos dossiers (indexés avec le moteur de Plume FEx), les pages des paramètres de Windows et les calculs rapides (unités et pourcentages compris). La fenêtre apparaît en quelques millisecondes, et les derniers choix passent en premier.
+- **Plume Passwords** : un coffre chiffré pour vos identifiants, codes 2FA (avec leur compte à rebours), cartes et notes. Il a un générateur de mots de passe, un rapport sur les mots de passe faibles et réutilisés, la saisie automatique dans la bonne fenêtre, le déverrouillage avec Windows Hello, l'import CSV et des sauvegardes chiffrées. Il ne va jamais en ligne.
+- **Plume Media** : une visionneuse de photos instantanée (une photo de 12 Mpx à l'écran en une demi-seconde) et un lecteur vidéo. Elle ajoute une frise par mois qui reste fluide avec des milliers de photos, la rotation sans perte des JPEG, les détails des photos, les sous-titres, les pistes audio et la reprise là où vous vous êtes arrêté.
+- **Plume Task** : les applications et les processus en arrière-plan, regroupés par programme. Une carte nomme ce qui ralentit le PC, et **Fin de tâche** l'arrête. Des graphiques en direct montrent le processeur, la mémoire, le disque, le réseau et la carte graphique, et les applications au démarrage s'activent ou se désactivent. Il utilise lui-même moins de 0,1 % du processeur.
+- **Plume Clean** : une carte de ce qui remplit chaque disque, les plus gros fichiers, et des suggestions sûres : fichiers temporaires, caches, anciens téléchargements, doublons et dossiers vides. Chaque suggestion dit ce que c'est et rien n'est libéré sans votre accord.
+- **Plume Backup** : des sauvegardes automatiques de vos dossiers sur une clé USB, un autre disque ou un partage réseau, toutes les heures, chaque jour ou au branchement du disque. Les sauvegardes sont incrémentielles et versionnées (un fichier inchangé ne prend pas de place en plus) et reprennent après un arrêt. Rien n'est jamais effacé à la source, et un fichier retiré de la source est gardé dans un dossier daté. Vous pouvez restaurer n'importe quelle version, à sa place ou ailleurs.
+- **Plume Clipboard** : **Ctrl+Maj+V** ouvre l'historique du presse-papiers (textes, liens, images, fichiers) près du curseur, avec la recherche, les épingles, des extraits appelés par un court déclencheur (`;sig`) et le collage en texte brut. Les mots de passe copiés depuis un gestionnaire ne sont jamais gardés, et l'historique peut être scellé par Windows pour votre compte.
+- **Plume PDF** : lisez vos PDF avec la recherche, le sommaire, les miniatures et les pages sombres. Surlignez, ajoutez des notes, dessinez, ajoutez du texte et signez. Fusionnez, découpez, réordonnez, faites pivoter et extrayez des pages, et remplissez des formulaires. Les modifications sont enregistrées en vraies annotations PDF, visibles dans les autres lecteurs.
+- **Plume Calendar** : vues mois, semaine, jour et agenda, avec glisser pour créer, déplacer et redimensionner. L'ajout rapide comprend « Déjeuner avec Max demain 12h30 » en français et en anglais. Il gère les événements récurrents, les rappels, plusieurs calendriers, l'import et l'export `.ics`, et les abonnements à des liens de calendrier (école, sport, jours fériés).
+- **Plume Convert** : déposez une vidéo, un son ou une image et choisissez un préréglage : pour téléphone, pour Discord (10, 25 ou 50 Mo), fichier plus léger, audio seul, GIF, images (WebP, JPEG, PNG, ICO), couper, sans son ou pivoter. Il utilise l'encodeur de la carte graphique quand elle en a un, n'écrase jamais un fichier, et télécharge FFmpeg la première fois qu'il en a besoin.
+
+### Plume Suite
+- Les treize nouvelles applications rejoignent la liste : installez-les, ouvrez-les, mettez-les à jour et retirez-les comme les autres. La fenêtre les montre sur deux colonnes et défile quand elles ne tiennent pas toutes.
+
+### Plume Music
+- Corrigé : sur un PC sans FFmpeg, son téléchargement (nécessaire aux téléchargements en MP3) échouait, car l'archive dépassait la taille acceptée par l'application.
+
 ## 1.0.1 - 2026-11-11
 
 Des icônes plus grandes dans Plume FEx, des dossiers qui s'ouvrent avec lui une fois installé, et une correction de l'assistant de bienvenue sur batterie.

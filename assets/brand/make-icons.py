@@ -8,10 +8,23 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 # name -> SVG source ; Plume Web keeps the original logo
 LOGOS = {
-    "plume-web": os.path.join(ROOT, "assets", "logo.svg"),
+    "plume-web": os.path.join(HERE, "plume-web.svg"),
     "plume-suite": os.path.join(HERE, "plume-suite.svg"),
     "plume-fex": os.path.join(HERE, "plume-fex.svg"),
     "plume-mail": os.path.join(HERE, "plume-mail.svg"),
+    "plume-viewer": os.path.join(HERE, "plume-viewer.svg"),
+    "plume-music": os.path.join(HERE, "plume-music.svg"),
+    "plume-drop": os.path.join(HERE, "plume-drop.svg"),
+    "plume-launcher": os.path.join(HERE, "plume-launcher.svg"),
+    "plume-passwords": os.path.join(HERE, "plume-passwords.svg"),
+    "plume-media": os.path.join(HERE, "plume-media.svg"),
+    "plume-task": os.path.join(HERE, "plume-task.svg"),
+    "plume-clean": os.path.join(HERE, "plume-clean.svg"),
+    "plume-backup": os.path.join(HERE, "plume-backup.svg"),
+    "plume-clipboard": os.path.join(HERE, "plume-clipboard.svg"),
+    "plume-pdf": os.path.join(HERE, "plume-pdf.svg"),
+    "plume-calendar": os.path.join(HERE, "plume-calendar.svg"),
+    "plume-convert": os.path.join(HERE, "plume-convert.svg"),
 }
 ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
 BIG = 1024

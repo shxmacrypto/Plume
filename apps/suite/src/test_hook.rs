@@ -5,6 +5,7 @@
 //!   {"cmd":"click","id":"Install(1)"}     un clic sur un élément (son nom tel que `hits` le donne)
 //!   {"cmd":"hits"}                        les éléments cliquables et leur rectangle
 //!   {"cmd":"refresh"}                     relit ce qui est installé
+//!   {"cmd":"reveal","app":9}              fait défiler la liste jusqu'à la carte de cette application
 
 use crate::ui::{Hub, Upd};
 use plume_ui::{Button, Event, Handler, Mods, Sender, Window, pt};
@@ -48,6 +49,14 @@ fn run(sender: &Sender, line: &str) -> String {
                 "state" => state(hub),
                 "refresh" => {
                     hub.refresh();
+                    cx.repaint();
+                    state(hub)
+                }
+                "reveal" => {
+                    let i = cmd["app"].as_u64().unwrap_or(0) as usize;
+                    if i < crate::apps::COUNT {
+                        hub.reveal(i);
+                    }
                     cx.repaint();
                     state(hub)
                 }
@@ -96,6 +105,7 @@ fn state(hub: &Hub) -> Value {
         "update": upd,
         "toast": hub.toast.as_ref().map(|(t, _)| t.clone()),
         "hover": hub.hover.map(|id| format!("{id:?}")),
+        "scroll": hub.scroll,
         "hwnd": hub.win.hwnd.0 as isize,
         "dark": hub.theme.dark,
         "version": plume_update::VERSION,

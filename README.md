@@ -6,8 +6,8 @@
 
 <p align="center">
   <b>Light, native apps for Windows, with one look.</b><br>
-  A web browser and a file explorer (a mail app is coming), written in Rust, installed and updated together.<br>
-  <i>Des applications légères et natives pour Windows : un navigateur, un explorateur de fichiers, et bientôt une messagerie.</i>
+  A web browser, a file explorer, a music player and remote control from your phone (a mail app is coming), written in Rust, installed and updated together.<br>
+  <i>Des applications légères et natives pour Windows : un navigateur, un explorateur de fichiers, un lecteur de musique, le contrôle du PC depuis le téléphone, et bientôt une messagerie.</i>
 </p>
 
 <p align="center">
@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/brand/family.png" width="560" alt="The Plume Suite family: Plume Web, Plume FEx and Plume Mail">
+  <img src="assets/brand/family.png" width="560" alt="The Plume Suite family: Plume Web, Plume FEx, Plume Mail, Plume Viewer, Plume Music and the eleven tools">
 </p>
 
 ---
@@ -29,6 +29,19 @@
 | **Plume Suite** | The app that installs, opens, updates and removes the others. Nothing to download: the installer holds them all. |
 | **Plume Web** | An ultra-light web browser on the WebView2 engine already in Windows. |
 | **[Plume FEx](apps/fex)** | A file explorer that opens folders in milliseconds and searches the whole PC as you type, without administrator rights. |
+| **[Plume Viewer](apps/viewer)** | Control this PC from your phone or any browser: scan a QR code, accept, and the screen, mouse and keyboard are yours. Direct and encrypted. |
+| **[Plume Music](apps/music)** | Your music files and YouTube Music, playlists imported from Spotify, Apple Music and SoundCloud, synced lyrics, animated covers and backgrounds, downloads. |
+| **[Plume Drop](apps/drop)** | Send files, photos and links between this PC and a phone: scan a QR code, the phone's browser does the rest. |
+| **[Plume Launcher](apps/launcher)** | Alt+Space, then type: apps, files, Windows settings pages and quick sums, in a few milliseconds. |
+| **[Plume Passwords](apps/passwords)** | An encrypted password vault with 2FA codes, a generator, a security report, auto-type and Windows Hello. Never online. |
+| **[Plume Media](apps/media)** | An instant photo viewer with a timeline, lossless JPEG rotation and photo details, and a video player with subtitles. |
+| **[Plume Task](apps/task)** | What slows the PC down, grouped by program, with End task, live graphs and startup apps. Under 0.1 % of the processor. |
+| **[Plume Clean](apps/clean)** | A map of what fills each drive and safe, explained cleanup: temporary files, caches, old downloads, duplicates. |
+| **[Plume Backup](apps/backup)** | Automatic, incremental and versioned backups of your folders to a drive or a network share, with restore by date. |
+| **[Plume Clipboard](apps/clipboard)** | Ctrl+Shift+V for your clipboard history: text, links, pictures and files, with search, pins and snippets. |
+| **[Plume PDF](apps/pdf)** | Read, search, highlight, annotate, sign, fill, merge, split and reorder PDF files. |
+| **[Plume Calendar](apps/calendar)** | Month, week, day and agenda views, recurring events, reminders, `.ics` files and subscribed calendars. |
+| **[Plume Convert](apps/convert)** | Drop a video, song or picture and get it for phone, for Discord (10/25/50 MB), as a GIF, audio only or another picture format. |
 | **[Plume Mail](apps/mail)** *(coming soon)* | A mail app for IMAP accounts, Outlook.com and Microsoft 365, that never loads a remote image. It is built and tested, and joins the installer once its *Sign in with Microsoft* is registered. |
 
 Each app is a single program drawn by Windows itself (FEx and Mail use Direct2D, no web view). When a new version
@@ -71,10 +84,16 @@ And much more, each feature optional and free when switched off:
   <img src="docs/screens/downloads.png" width="420" alt="The downloads bubble under the toolbar button">
 </p>
 
-## Plume FEx and Plume Mail
+## Plume FEx, Plume Viewer, Plume Music and Plume Mail
 
 - **[Plume FEx](apps/fex)**: instant search with Everything's syntax, search inside files, a preview pane, thumbnails,
   undo, the real Explorer context menu, archives (ZIP and 7z with a password), folder sizes, SFTP servers, tabs.
+- **[Plume Viewer](apps/viewer)**: the PC's ID, a one-time code and a QR code; the phone sees only what changes on the screen,
+  taps, long-presses, drags, zooms and types (accents included). A permanent password for your own devices, five wrong
+  tries lock the PC, and the screen goes straight from device to device, encrypted.
+- **[Plume Music](apps/music)**: search YouTube Music, paste a Spotify, Apple Music or SoundCloud link to import a playlist,
+  synced lyrics, Apple Music's animated covers, a moving background (cover colors, blur or your GIF), gapless and
+  crossfade, a 10-band equalizer, autoplay of similar songs, downloads in M4A or MP3, media keys. 4 MB, native.
 - **[Plume Mail](apps/mail)** (coming soon, not in the 1.0.0 installer): several accounts, *Sign in with Microsoft*, new mail pushed by the server,
   conversations, drafts kept on the server, signatures, address suggestions, search in the text of messages,
   HTML shown as text with nothing loaded or run, the mailbox kept offline.
@@ -97,7 +116,7 @@ Requires Windows 10 or 11 (64-bit). Plume Web also needs the **WebView2 Runtime*
 
 ## Privacy
 
-No Plume app has an account or telemetry. Everything stays in `%LOCALAPPDATA%\Plume`. Plume FEx goes online only for the SFTP servers you connect to; Plume Mail (coming soon) only talks to your mail servers (and to Microsoft's sign-in page for a Microsoft account). Plume Suite and each app check this repository's latest release at start (the same request as below). Plume Web only goes online when you ask it to, plus:
+No Plume app has an account or telemetry. Everything stays in `%LOCALAPPDATA%\Plume`. Plume FEx goes online only for the SFTP servers you connect to; Plume Mail (coming soon) only talks to your mail servers (and to Microsoft's sign-in page for a Microsoft account). Plume Viewer keeps a small link to its relay (a Cloudflare Worker, [apps/viewer/relay](apps/viewer/relay)) so phones can find the PC by its ID: the relay sees the ID and the devices' addresses, never the screen, the code or the password (the screen goes directly between the two devices, encrypted); STUN (`stun.cloudflare.com`) tells the PC its public address when a session starts. Plume Music talks to YouTube Music (search, radio, and the sound through yt-dlp), to LRCLIB for lyrics, to the pages of the playlists you import, and to Apple's iTunes search for animated covers when they are on (details in [apps/music](apps/music)). Plume Drop only listens on your local network, for the phones you allow. Plume Calendar downloads only the calendars you subscribe to, and Plume Convert only FFmpeg, the first time it needs it. Plume Launcher opens your browser only when you pick its web search line. Plume Passwords, Media, Task, Clean, Backup, Clipboard and PDF make no network connection at all. Plume Suite and each app check this repository's latest release at start (the same request as below). Plume Web only goes online when you ask it to, plus:
 
 | Request | When | Can be turned off |
 |---|---|---|
@@ -169,8 +188,13 @@ apps/web/          Plume Web, the browser (Rust, wry + tao + WebView2)
   assets/adlist.txt  the ad list            tests/   interface functions (node --test)
 apps/suite/        Plume Suite: install, open, update and remove the apps
 apps/fex/          Plume FEx, the file explorer (see its README)
+apps/viewer/       Plume Viewer, remote control from a phone (see its README); relay/ is its Cloudflare Worker
+apps/music/        Plume Music, the music player (see its README)
+apps/drop/ apps/launcher/ apps/passwords/ apps/media/ apps/task/ apps/clean/ apps/backup/ apps/clipboard/
+apps/pdf/ apps/calendar/ apps/convert/
+                   the eleven tools, one native program each (each README lists what it does and how it is tested)
 apps/mail/         Plume Mail, the mail app (see its README; not in the installer yet)
-crates/plume-ui/   the native interface kit of FEx, Mail and Suite (Win32, Direct2D, DirectWrite)
+crates/plume-ui/   the native interface kit of every app but the browser (Win32, Direct2D, DirectWrite)
 crates/fex-core/   FEx without interface: listing, index, change journal, query language
 crates/mail-core/  Mail without interface: IMAP, SMTP, messages, OAuth, the kept mailbox
 crates/plume-update/  the update check and download shared by every app

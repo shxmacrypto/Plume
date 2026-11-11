@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Plume PDF: a page with a folded corner, signed by the Plume feather used as a quill, on crimson. -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff7a7a"/>
+      <stop offset=".5" stop-color="#e5383b"/>
+      <stop offset="1" stop-color="#9d0208"/>
+    </linearGradient>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".28"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#g)"/>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#s)"/>
+  <!-- the page and its folded corner -->
+  <path fill="#fff" d="M17 9h17.5L45 19.5V52a3 3 0 0 1-3 3H17a3 3 0 0 1-3-3V12a3 3 0 0 1 3-3z"/>
+  <path fill="#ffc9c9" d="M34.5 9v7.5a3 3 0 0 0 3 3H45z"/>
+  <!-- lines of text -->
+  <g fill="#e5383b" fill-opacity=".38">
+    <rect x="19" y="23" width="19" height="2.6" rx="1.3"/>
+    <rect x="19" y="29" width="21" height="2.6" rx="1.3"/>
+    <rect x="19" y="35" width="14" height="2.6" rx="1.3"/>
+  </g>
+  <!-- the signature and its line -->
+  <path fill="none" stroke="#e5383b" stroke-opacity=".35" stroke-width="1.4" stroke-linecap="round" d="M18.5 50.6h18"/>
+  <path fill="none" stroke="#c1121f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M19.2 47.6c2.4-4.2 4.1-6.8 5.1-6.6 1.2.2-.7 5.4.6 5.6 1.2.2 2.5-3.8 3.8-3.6.9.1.3 2.8 1.4 3 1.1.2 2.9-1.3 5.6-1.8"/>
+  <!-- the feather, as a quill finishing the signature -->
+  <g transform="translate(27.6 18.4) scale(.56)">
+    <path fill="#fff" stroke="#9d0208" stroke-width="2.6" stroke-linejoin="round" d="M48.5 12.5c-12.6 1.2-23.4 9.6-26.6 22.4l-1.4 6.6 6.4-1.6c4.6-1.2 8.6-3.6 11.6-7.2l-6.2-.6 8.8-3.6c3.8-4.6 7-10 7.4-16z"/>
+    <path fill="none" stroke="#e5383b" stroke-width="2" stroke-linecap="round" d="M25 37.5C30 28 36 21 44.5 15.5"/>
+    <path fill="none" stroke="#9d0208" stroke-width="4" stroke-linecap="round" d="M15 50.5 24 40"/>
+  </g>
+</svg>

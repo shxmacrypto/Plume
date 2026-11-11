@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Plume Launcher: a search lens holding the Plume feather, its handle pointing down to the right, on indigo. -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#a5b4fc"/>
+      <stop offset=".5" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#3730a3"/>
+    </linearGradient>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".28"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#g)"/>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#s)"/>
+  <!-- the handle, then the lens over it -->
+  <path fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" d="M39.5 39.5 50 50"/>
+  <circle cx="27.5" cy="27.5" r="15.2" fill="#fff" fill-opacity=".16" stroke="#fff" stroke-width="5.2"/>
+  <!-- the feather in the lens -->
+  <g transform="translate(14.2 14.3) scale(.42)">
+    <path fill="#fff" d="M48.5 12.5c-12.6 1.2-23.4 9.6-26.6 22.4l-1.4 6.6 6.4-1.6c4.6-1.2 8.6-3.6 11.6-7.2l-6.2-.6 8.8-3.6c3.8-4.6 7-10 7.4-16z"/>
+    <path fill="none" stroke="#6366f1" stroke-width="2.6" stroke-linecap="round" d="M25 37.5C30 28 36 21 44.5 15.5"/>
+    <path fill="none" stroke="#fff" stroke-width="4.8" stroke-linecap="round" d="M15 50.5 24 40"/>
+  </g>
+</svg>

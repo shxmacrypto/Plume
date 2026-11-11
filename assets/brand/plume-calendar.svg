@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Plume Calendar: a calendar page with its two rings, the Plume feather written on it, on indigo. -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7dd3fc"/>
+      <stop offset=".5" stop-color="#0ea5e9"/>
+      <stop offset="1" stop-color="#075985"/>
+    </linearGradient>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".28"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="f" gradientUnits="userSpaceOnUse" x1="48" y1="12" x2="16" y2="50">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#075985"/>
+    </linearGradient>
+    <clipPath id="page">
+      <rect x="12" y="14" width="40" height="38" rx="6.5"/>
+    </clipPath>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#g)"/>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#s)"/>
+  <!-- the page and its band -->
+  <rect x="12" y="14" width="40" height="38" rx="6.5" fill="#fff"/>
+  <rect x="12" y="14" width="40" height="10.5" fill="#0284c7" fill-opacity=".85" clip-path="url(#page)"/>
+  <!-- the two rings -->
+  <rect x="20.2" y="9.5" width="4.6" height="9.5" rx="2.3" fill="#fff" stroke="#075985" stroke-width="1.4"/>
+  <rect x="39.2" y="9.5" width="4.6" height="9.5" rx="2.3" fill="#fff" stroke="#075985" stroke-width="1.4"/>
+  <!-- the feather on the page -->
+  <g transform="translate(14.6 21.4) scale(.55)">
+    <path fill="url(#f)" d="M48.5 12.5c-12.6 1.2-23.4 9.6-26.6 22.4l-1.4 6.6 6.4-1.6c4.6-1.2 8.6-3.6 11.6-7.2l-6.2-.6 8.8-3.6c3.8-4.6 7-10 7.4-16z"/>
+    <path fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" d="M25 37.5C30 28 36 21 44.5 15.5"/>
+    <path fill="none" stroke="url(#f)" stroke-width="3.4" stroke-linecap="round" d="M15 50.5 33.5 29"/>
+  </g>
+</svg>

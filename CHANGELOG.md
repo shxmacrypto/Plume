@@ -2,6 +2,47 @@
 
 All notable changes to Plume. Each `## x.y.z` section becomes the release notes when you run `.\release.ps1 x.y.z`.
 
+## 1.1.0 - 2026-11-11
+
+Thirteen new apps join Plume Suite. **Plume Music** plays your music and YouTube Music, with your Spotify and Apple Music playlists. **Plume Viewer** lets you control your PC from your phone. Eleven everyday tools come with them: Drop, Launcher, Passwords, Media, Task, Clean, Backup, Clipboard, PDF, Calendar and Convert.
+
+Already on Plume Suite 1.0? Update it, then install the new apps from Plume Suite in one click.
+
+### Plume Music
+- **Everything in one player**: the music files on your PC, any song of YouTube Music (search as you type, with suggestions), SoundCloud, and your own playlists.
+- **Import a playlist by pasting its link**: Spotify (playlist, album, song), Apple Music, SoundCloud and YouTube. Spotify and Apple songs are found on YouTube Music by title, artist and length (100 songs in about 25 seconds). A whole Spotify playlist, beyond the 100 songs a shared link shows: select its songs in Spotify (Ctrl+A, Ctrl+C) and click **Paste copied songs**.
+- **No waiting**: a song starts in about 3 seconds and the next one is fetched while the current one plays. Gapless playback, crossfade, volume normalization, a 10-band equalizer with presets, shuffle, repeat, sleep timer, and autoplay of similar songs when the queue ends.
+- **Synced lyrics** that light up line by line, in a side panel or in full window; click a line to go there.
+- **Now playing in full window**: animated covers when Apple Music has one, over a moving background (the cover's colors, the blurred cover, or your animated GIF, which can also go behind the whole window).
+- **Downloads** of a song, an album or a playlist, in M4A (no loss) or MP3 320 kbps, with title, artist, album and cover.
+- Albums, artists, liked songs, playlists, light and dark themes, an accent color taken from the cover, Windows' media overlay and media keys, English and French.
+
+### Plume Viewer
+- **Scan and you're in**: Plume Viewer shows the PC's ID, a one-time code and a QR code. Scan it with the phone's camera (or type the ID and code in any browser), the person at the PC accepts, and the phone sees the screen and uses the mouse and keyboard. Nothing to install on the phone.
+- **Fast**: only what changes on the screen is sent, directly from the PC to the phone, encrypted. A slow network gets fewer images, never a growing delay.
+- **Made for touch**: tap to click, long press for a right-click, drag, two fingers to zoom or scroll, the phone's keyboard to type, plus Windows key, Esc and full screen. From a computer, the mouse and keys work as on the PC.
+- **Permanent password** for your own devices: connect without anyone accepting. Plume Viewer then stays near the clock and can start with Windows.
+- **Safe by design**: the code and the password never leave the devices; five wrong tries lock the PC for 5 minutes; a red banner shows who is connected, with a Disconnect button.
+
+### Eleven more apps
+- **Plume Drop**: send files, photos, text and links between the PC and your phone. Scan the QR code, and the phone's browser does the rest. Nothing to install on the phone, files go straight to `Downloads\Plume Drop`, and a new phone needs your OK once.
+- **Plume Launcher**: press **Alt+Space** and type. It finds apps, the files of your own folders (indexed with Plume FEx's engine), Windows settings pages and quick sums (units and percentages too). The box shows up in a few milliseconds, and recent picks come first.
+- **Plume Passwords**: an encrypted vault for logins, 2FA codes (with their countdown), cards and notes. It has a password generator, a report on weak and reused passwords, auto-type into the right window, unlock with Windows Hello, CSV import and encrypted backups. It never goes online.
+- **Plume Media**: an instant photo viewer (a 12 MP photo on screen in half a second) and a video player. It adds a timeline by month that stays smooth with thousands of photos, lossless rotation of JPEG photos, photo details, subtitles, audio tracks and resume where you stopped.
+- **Plume Task**: the apps and background processes, grouped by program. A card names what slows the PC down, and **End task** stops it. Live graphs show the processor, memory, disk, network and graphics card, and startup apps can be switched on and off. It uses less than 0.1 % of the processor itself.
+- **Plume Clean**: a map of what fills each drive, the biggest files, and safe suggestions: temporary files, caches, old downloads, duplicates and empty folders. Every suggestion says what it is and frees nothing until you confirm.
+- **Plume Backup**: automatic backups of your folders to a USB drive, another disk or a network share, every hour, every day or when the drive is plugged in. Backups are incremental and versioned (unchanged files take no extra space) and resume after a stop. Nothing is ever deleted at the source, and a file removed from the source is kept in a dated folder. You can restore any version, to its place or elsewhere.
+- **Plume Clipboard**: **Ctrl+Shift+V** opens your clipboard history (text, links, pictures, files) next to the cursor, with search, pins, snippets you call with a short trigger (`;sig`) and paste as plain text. Passwords copied from password managers are never kept, and the history can be sealed by Windows for your account.
+- **Plume PDF**: read PDFs with search, the outline, thumbnails and dark pages. Highlight, add notes, draw, add text and sign. Merge, split, reorder, rotate and extract pages, and fill forms. Changes are saved as real PDF annotations that other readers show too.
+- **Plume Calendar**: month, week, day and agenda views, with drag to create, move and resize. Quick-add understands "Lunch with Max tomorrow 12:30" in English and French. It handles recurring events, reminders, several calendars, `.ics` import and export, and subscriptions to calendar links (school, sports, public holidays).
+- **Plume Convert**: drop a video, a song or a picture and pick a preset: for phone, for Discord (10, 25 or 50 MB), smaller file, audio only, GIF, images (WebP, JPEG, PNG, ICO), trim, mute or rotate. It uses the graphics card's encoder when it has one, never overwrites a file, and downloads FFmpeg the first time it's needed.
+
+### Plume Suite
+- The thirteen new apps join the list: install, open, update and remove them like the other apps. The window shows them on two columns and scrolls when they don't all fit.
+
+### Plume Music
+- Fixed: on a PC without FFmpeg, downloading it (needed for MP3 downloads) failed because the archive was larger than the app allowed.
+
 ## 1.0.1 - 2026-11-11
 
 Bigger icons in Plume FEx, folders that open in it once installed, and a fix for the welcome setup on battery.

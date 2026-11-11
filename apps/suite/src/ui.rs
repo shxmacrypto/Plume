@@ -1,8 +1,8 @@
-//! La fenêtre de Plume Suite : une carte par application (installer, ouvrir, retirer) et les mises à jour de toute
-//! la suite. Les opérations longues (installeur, téléchargement) tournent sur un autre fil ; la fenêtre reste vivante.
+//! La fenêtre de Plume Suite : une carte par application (installer, ouvrir, retirer), sur deux colonnes quand la
+//! place le permet et qui défilent sous la barre de titre, et les mises à jour de toute la suite. Les opérations longues (installeur, téléchargement) tournent sur un autre fil ; la fenêtre reste vivante.
 
 use crate::{
-    apps::{self, ALL, App},
+    apps::{self, ALL, App, COUNT},
     i18n::{Strings, fill},
 };
 use plume_ui::{Align, Area, Button, Canvas, Color, Cursor, Cx, Event, Font, Gfx, Handler, Hits, PaintCx, Pt, Rect, Theme, Window, m, rect};
@@ -24,12 +24,33 @@ use windows::{
 
 pub const SITE: &str = "https://plumeweb.netlify.app/";
 const TOAST_TIMER: usize = 1;
-const LOGOS: [&[u8]; 4] = [
+/// Les logos des applications, dans l'ordre de [`ALL`], puis celui de Plume Suite.
+const LOGOS: [&[u8]; COUNT + 1] = [
     include_bytes!("../../../assets/brand/plume-web-256.png"),
     include_bytes!("../../../assets/brand/plume-fex-256.png"),
     include_bytes!("../../../assets/brand/plume-mail-256.png"),
+    include_bytes!("../../../assets/brand/plume-viewer-256.png"),
+    include_bytes!("../../../assets/brand/plume-music-256.png"),
+    include_bytes!("../../../assets/brand/plume-drop-256.png"),
+    include_bytes!("../../../assets/brand/plume-launcher-256.png"),
+    include_bytes!("../../../assets/brand/plume-passwords-256.png"),
+    include_bytes!("../../../assets/brand/plume-media-256.png"),
+    include_bytes!("../../../assets/brand/plume-task-256.png"),
+    include_bytes!("../../../assets/brand/plume-clean-256.png"),
+    include_bytes!("../../../assets/brand/plume-backup-256.png"),
+    include_bytes!("../../../assets/brand/plume-clipboard-256.png"),
+    include_bytes!("../../../assets/brand/plume-pdf-256.png"),
+    include_bytes!("../../../assets/brand/plume-calendar-256.png"),
+    include_bytes!("../../../assets/brand/plume-convert-256.png"),
     include_bytes!("../../../assets/brand/plume-suite-256.png"),
 ];
+/// Le logo de Plume Suite (dans la barre de titre).
+const SUITE_LOGO: usize = COUNT;
+/// Hauteur d'une carte d'application, et l'espace entre deux cartes.
+const CARD_H: f32 = 132.0;
+const GAP: f32 = 14.0;
+/// Hauteur du pied de fenêtre (version, liens).
+const FOOT_H: f32 = 44.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Id {
@@ -68,13 +89,20 @@ pub struct Hub {
     pub hits: Hits<Id>,
     pub hover: Option<Id>,
     pressed: Option<Id>,
-    pub installed: [bool; 3],
+    pub installed: [bool; COUNT],
     /// Application en cours d'installation (vrai) ou de retrait (faux).
     pub busy: Option<(usize, bool)>,
     pub upd: Upd,
     /// Mettre à jour dès que la vérification aura trouvé une version (demandé par une autre application).
     update_when_found: bool,
     pub toast: Option<(String, Instant)>,
+    /// Défilement de la liste, en pixels, et la place qu'elle prend (mesurée au dernier dessin).
+    pub scroll: f32,
+    content_h: f32,
+    /// La partie de la fenêtre où la liste défile (entre la barre de titre et le pied).
+    view: Rect,
+    /// Le haut et le bas de chaque carte dans la liste (sans le défilement), pour la montrer (`reveal`).
+    cards: [(f32, f32); COUNT],
 }
 
 /// Décode un PNG intégré au programme en image prête pour Direct2D.
@@ -105,11 +133,15 @@ impl Hub {
             hits: Hits::default(),
             hover: None,
             pressed: None,
-            installed: [false; 3],
+            installed: [false; COUNT],
             busy: None,
             upd: if checks_updates() { Upd::Checking } else { Upd::Dev },
             update_when_found: update_now,
             toast: None,
+            scroll: 0.0,
+            content_h: 0.0,
+            view: rect(0.0, 0.0, 0.0, 0.0),
+            cards: [(0.0, 0.0); COUNT],
         };
         h.refresh();
         if updated {
@@ -124,6 +156,23 @@ impl Hub {
         for (i, app) in ALL.iter().enumerate() {
             self.installed[i] = app.installed();
         }
+    }
+
+    /// Fait défiler la liste pour que la carte de l'application `i` soit entièrement visible.
+    #[cfg_attr(not(feature = "test-hook"), allow(dead_code))]
+    pub fn reveal(&mut self, i: usize) {
+        let (top, bottom) = self.cards[i];
+        let h = self.view.h;
+        if top - 16.0 < self.scroll {
+            self.scroll = top - 16.0;
+        } else if bottom + 16.0 > self.scroll + h {
+            self.scroll = bottom + 16.0 - h;
+        }
+        self.clamp_scroll();
+    }
+
+    fn clamp_scroll(&mut self) {
+        self.scroll = self.scroll.clamp(0.0, (self.content_h - self.view.h).max(0.0));
     }
 
     fn say(&mut self, text: String, cx: &mut Cx) {
@@ -333,7 +382,10 @@ impl Hub {
         };
         c.text(label, r, Font::BodyBold, ink, Align::Center);
         if let Some(id) = id {
-            self.hits.add(r, id);
+            let scrolled = matches!(id, Id::Install(_) | Id::Open(_) | Id::Remove(_) | Id::Update);
+            if !scrolled || (r.y >= self.view.y && r.bottom() <= self.view.bottom()) {
+                self.hits.add(r, id);
+            }
         }
     }
 
@@ -346,7 +398,7 @@ impl Hub {
         let t = self.theme.clone();
         let w = cx.w;
         c.gradient_v(rect(0.0, 0.0, w, m::TITLE_H), t.hdr1, t.hdr2);
-        self.logo(c, 3, rect(14.0, (m::TITLE_H - 18.0) / 2.0, 18.0, 18.0));
+        self.logo(c, SUITE_LOGO, rect(14.0, (m::TITLE_H - 18.0) / 2.0, 18.0, 18.0));
         c.text(self.s.title, rect(40.0, 0.0, 200.0, m::TITLE_H), Font::BodyBold, if cx.active { t.t1 } else { t.t3 }, Align::Left);
         let cap_x = w - 3.0 * m::CAPTION_W;
         let glyphs = [(Id::Min, '\u{E921}'), (Id::Max, if cx.maximized { '\u{E923}' } else { '\u{E922}' }), (Id::Close, '\u{E8BB}')];
@@ -403,17 +455,37 @@ impl Hub {
         let hot = matches!(self.hover, Some(Id::Install(k) | Id::Open(k) | Id::Remove(k)) if k == i);
         c.fill_round(card, 18.0, if hot { t.card.mix(t.t1, 0.03) } else { t.card });
         c.stroke_round(card, 18.0, t.sep, 1.0);
-        self.logo(c, i, rect(card.x + 20.0, card.y + (card.h - 60.0) / 2.0, 60.0, 60.0));
-        // à droite, les boutons
+        self.logo(c, i, rect(card.x + 18.0, card.y + 18.0, 56.0, 56.0));
+        let x = card.x + 92.0;
+        let text_w = (card.right() - 20.0 - x).max(60.0);
+        // le nom et l'état
         let installed = self.installed[i];
-        let mut right = card.right() - 20.0;
-        let by = card.y + (card.h - 34.0) / 2.0;
+        let name_w = c.text_width(app.name(), Font::Large).min(text_w);
+        c.text(app.name(), rect(x, card.y + 16.0, text_w, 24.0), Font::Large, t.t1, Align::Left);
+        let (state, ink) = match (installed, app.available()) {
+            (true, _) => (s.installed, t.green),
+            (false, true) => (s.not_installed, t.t3),
+            (false, false) => (s.coming_soon, t.accent),
+        };
+        let pw = c.text_width(state, Font::SmallBold) + 18.0;
+        if name_w + 12.0 + pw <= text_w {
+            let pill = rect(x + name_w + 12.0, card.y + 18.0, pw, 20.0);
+            c.fill_round(pill, 10.0, ink.fade(0.16));
+            c.text(state, pill, Font::SmallBold, ink, Align::Center);
+        }
+        // ce que fait l'application, sur deux lignes au plus
+        let desc = rect(x, card.y + 44.0, text_w, 38.0);
+        c.clip(desc);
+        c.text_block(s.desc[i], desc, Font::Small, t.t2);
+        c.unclip();
+        // en bas à droite, les boutons
+        let mut right = card.right() - 18.0;
+        let by = card.bottom() - 18.0 - 32.0;
         match self.busy {
             Some((k, install)) if k == i => {
                 let label = if install { s.installing } else { s.removing };
                 let bw = c.text_width(label, Font::BodyBold) + 40.0;
-                self.button(c, rect(right - bw, by, bw, 34.0), label, true, None);
-                right -= bw;
+                self.button(c, rect(right - bw, by, bw, 32.0), label, true, None);
             }
             // pas encore dans cette version : ni bouton ni installation
             _ if !installed && !app.available() => {}
@@ -422,38 +494,21 @@ impl Hub {
                 let (label, id) = if installed { (s.open, Id::Open(i)) } else { (s.install, Id::Install(i)) };
                 let bw = (c.text_width(label, Font::BodyBold) + 40.0).max(96.0);
                 let enabled = !(others_busy && !installed);
-                self.button(c, rect(right - bw, by, bw, 34.0), label, true, enabled.then_some(id));
+                self.button(c, rect(right - bw, by, bw, 32.0), label, true, enabled.then_some(id));
                 right -= bw;
                 if installed {
                     let rw = c.text_width(s.remove, Font::BodyBold) + 32.0;
-                    self.button(c, rect(right - 10.0 - rw, by, rw, 34.0), s.remove, false, (!others_busy).then_some(Id::Remove(i)));
-                    right -= rw + 10.0;
+                    self.button(c, rect(right - 10.0 - rw, by, rw, 32.0), s.remove, false, (!others_busy).then_some(Id::Remove(i)));
                 }
             }
         }
-        // au milieu, le nom, l'état et ce que fait l'application
-        let x = card.x + 100.0;
-        let text_w = (right - 20.0 - x).max(60.0);
-        let name_w = c.text_width(app.name(), Font::Large);
-        c.text(app.name(), rect(x, card.y + 24.0, text_w, 24.0), Font::Large, t.t1, Align::Left);
-        let (state, ink) = match (installed, app.available()) {
-            (true, _) => (s.installed, t.green),
-            (false, true) => (s.not_installed, t.t3),
-            (false, false) => (s.coming_soon, t.accent),
-        };
-        let pw = c.text_width(state, Font::SmallBold) + 18.0;
-        if x + name_w + 12.0 + pw < right - 20.0 {
-            let pill = rect(x + name_w + 12.0, card.y + 26.0, pw, 20.0);
-            c.fill_round(pill, 10.0, ink.fade(0.16));
-            c.text(state, pill, Font::SmallBold, ink, Align::Center);
-        }
-        c.text(s.desc[i], rect(x, card.y + 54.0, text_w, 20.0), Font::Body, t.t2, Align::Left);
     }
 
     fn paint_footer(&mut self, c: &mut Canvas, cx: &PaintCx) {
         let t = self.theme.clone();
         let s = self.s;
-        let y = cx.h - 44.0;
+        let y = cx.h - FOOT_H;
+        c.fill(rect(0.0, y, cx.w, FOOT_H), t.bg);
         c.hline(0.0, y, cx.w, t.sep);
         let v = plume_update::VERSION;
         let status = match &self.upd {
@@ -498,18 +553,41 @@ impl Handler for Hub {
         let t = self.theme.clone();
         self.hits.clear();
         c.clear(t.bg);
-        let cw = (cx.w - 64.0).clamp(300.0, 780.0);
+        // la liste défile entre la barre de titre et le pied
+        self.view = rect(0.0, m::TITLE_H, cx.w, (cx.h - m::TITLE_H - FOOT_H).max(0.0));
+        self.clamp_scroll();
+        let top = m::TITLE_H - self.scroll;
+        let cw = (cx.w - 64.0).clamp(300.0, 1100.0);
         let x = (cx.w - cw) / 2.0;
-        let mut y = m::TITLE_H + 30.0;
+        c.clip(self.view);
+        let mut y = top + 30.0;
         c.text(self.s.welcome, rect(x, y, cw, 34.0), Font::Hero, t.t1, Align::Left);
         y += 40.0;
         let sub = if self.installed.iter().any(|&b| b) { self.s.sub_some } else { self.s.sub_none };
         c.text(sub, rect(x, y, cw, 20.0), Font::Body, t.t3, Align::Left);
         y += 40.0;
         y += self.paint_update(c, x, y, cw);
-        for i in 0..ALL.len() {
-            self.paint_app(c, i, rect(x, y, cw, 104.0));
-            y += 118.0;
+        // deux colonnes dès que chaque carte garde une largeur confortable
+        let cols = if cw >= 760.0 { 2 } else { 1 };
+        let card_w = (cw - GAP * (cols - 1) as f32) / cols as f32;
+        for (n, i) in apps::SHOWN.into_iter().enumerate() {
+            let (col, row) = (n % cols, n / cols);
+            let card = rect(x + col as f32 * (card_w + GAP), y + row as f32 * (CARD_H + GAP), card_w, CARD_H);
+            self.cards[i] = (card.y - top, card.bottom() - top);
+            if card.bottom() >= self.view.y && card.y <= self.view.bottom() {
+                self.paint_app(c, i, card);
+            }
+        }
+        let rows = COUNT.div_ceil(cols);
+        y += rows as f32 * (CARD_H + GAP) + 16.0;
+        c.unclip();
+        self.content_h = y - top;
+        // la barre de défilement, quand tout ne tient pas
+        if self.content_h > self.view.h + 1.0 {
+            let track = self.view.inset_xy(0.0, 6.0);
+            let h = (track.h * self.view.h / self.content_h).max(36.0);
+            let at = track.y + (track.h - h) * self.scroll / (self.content_h - self.view.h);
+            c.fill_round(rect(cx.w - 9.0, at, 5.0, h), 2.5, t.t3.fade(0.45));
         }
         self.paint_footer(c, cx);
         self.paint_head(c, cx);
@@ -542,6 +620,25 @@ impl Handler for Hub {
                 {
                     self.act(a, cx);
                 }
+                cx.repaint();
+            }
+            Event::Wheel { dy, .. } => {
+                self.scroll -= dy * 72.0;
+                self.clamp_scroll();
+                // ce qui est sous la souris a changé
+                self.hover = None;
+                cx.repaint();
+            }
+            // Page précédente / suivante, Début / Fin
+            Event::Key { vk: vk @ 0x21..=0x24, .. } => {
+                let page = (self.view.h - 60.0).max(60.0);
+                self.scroll = match vk {
+                    0x21 => self.scroll - page,
+                    0x22 => self.scroll + page,
+                    0x24 => 0.0,
+                    _ => self.content_h,
+                };
+                self.clamp_scroll();
                 cx.repaint();
             }
             Event::Key { vk: 0x74, .. } => {

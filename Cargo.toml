@@ -3,7 +3,7 @@
 # `cargo build --release -p plume-suite`, `-p plume-fex`, `-p plume-mail`.
 [workspace]
 resolver = "3"
-members = ["apps/web", "apps/suite", "apps/fex", "apps/mail", "crates/fex-core", "crates/mail-core", "crates/plume-ui", "crates/plume-update"]
+members = ["apps/web", "apps/suite", "apps/fex", "apps/mail", "apps/viewer", "apps/music", "apps/convert", "apps/calendar", "apps/pdf", "apps/clipboard", "apps/backup", "apps/clean", "apps/task", "apps/media", "apps/passwords", "apps/launcher", "apps/drop", "crates/fex-core", "crates/mail-core", "crates/plume-ui", "crates/plume-update"]
 
 default-members = ["apps/web"]
 exclude = ["launcher", "vendor/wry"]

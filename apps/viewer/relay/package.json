@@ -1,0 +1,12 @@
+{
+  "name": "plume-viewer-relay",
+  "private": true,
+  "description": "Plume Viewer relay: puts a PC and a viewer in touch (Cloudflare Worker).",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.45.0"
+  }
+}
