@@ -1,9 +1,14 @@
 # Plume Mail UI tests
 
 `test_mail.py` drives the real Plume Mail window from end to end: first launch, adding an account, a refused
-password, folders, reading (plain and HTML), saving an attachment, search, reply, reply to all, a new message
-with an attachment, flags, delete, languages and themes, reading without a server, removing the account, and
-the whole connection again over real TLS.
+password, folders, reading (plain and HTML), saving an attachment, search (subject, people, and the text of
+messages on the server), reply, reply to all, a new message with an attachment, a signature, address
+suggestions, drafts kept on the server and sent from there, flags, delete, new mail pushed by the server,
+conversations, languages and themes, reading without a server, removing the account, and the whole connection
+again over real TLS.
+
+`test_oauth.py` does *Sign in with Microsoft* from end to end against a fake sign-in page: PKCE, the browser
+coming back to Plume Mail, the token exchange and renewal, then reading and sending with the token (XOAUTH2).
 
 It never uses the real mouse or keyboard, and never a real mail account:
 
@@ -30,6 +35,7 @@ cargo build --profile fast -p plume-mail --features test-hook
 
 ```bash
 python apps/mail/tests/ui/test_mail.py
+python apps/mail/tests/ui/test_oauth.py
 ```
 
 Profiles, the test certificate and screenshots go to `target/mail-ui/`.

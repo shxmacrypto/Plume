@@ -2,6 +2,44 @@
 
 Toutes les nouveautés de Plume, version après version (en anglais : [CHANGELOG.md](CHANGELOG.md)). Le site les affiche sur sa page « Notes de version ».
 
+## 1.0.0 - 2026-11-11
+
+Plume devient **Plume Suite** : trois petites applications natives au même visage, installées et mises à jour ensemble.
+
+- **Plume Web**, le navigateur que vous connaissez.
+- **Plume FEx**, un explorateur de fichiers qui cherche dans tout le PC à la frappe.
+- **Plume Mail**, une messagerie pour vos comptes IMAP, Outlook.com et Microsoft 365.
+
+Déjà sur Plume 0.7 ? Acceptez la barre de mise à jour comme d'habitude : elle installe Plume Suite avec Plume Web dedans, garde votre profil, et vous ajoutez FEx et Mail depuis l'application Plume Suite si vous les voulez.
+
+### Plume Suite
+- **Une application pour installer les autres** : Plume Suite présente Plume Web, FEx et Mail avec *Installer*, *Ouvrir* et *Retirer*. Rien n'est téléchargé : l'installeur contient déjà les trois.
+- **Une mise à jour pour tout** : une nouvelle version s'annonce dans Plume Suite et dans chaque application (un bouton dans sa barre de titre). Un clic met à jour la suite et toutes les applications installées, vérifiées avec le SHA-256 publié avec la version.
+- **Une seule entrée dans Paramètres › Applications** : *Plume Suite*. La désinstaller retire toutes les applications ; vos données restent dans `%LOCALAPPDATA%\Plume`.
+
+### Plume FEx (nouveau)
+- Les dossiers s'ouvrent en quelques millisecondes, et la recherche répond à la frappe, dans le dossier ouvert ou partout, avec la syntaxe d'Everything (mots, jokers, expressions régulières, types, tailles, dates, doublons).
+- Sans droits d'administrateur : l'index suit le journal des modifications NTFS. Les clés USB, cartes mémoire et lecteurs réseau sont indexés aussi, et quittent les résultats quand on les débranche.
+- **Recherche dans le contenu des fichiers** (`content:`, ou le menu des filtres), un **volet d'aperçu** (Alt+P), un affichage en **miniatures** (Ctrl+Maj+2) et **annuler** (Ctrl+Z) pour renommer, nouveau dossier, déplacer et supprimer.
+- Windows fait le travail sur les fichiers : le vrai menu contextuel de l'Explorateur, la Corbeille, les fenêtres de copie, le glisser-déposer.
+- Archives : extraire ZIP, 7z, RAR et tar ; créer un **ZIP ou un 7z protégé par mot de passe AES-256** (un 7z cache aussi les noms de fichiers), ou un RAR quand WinRAR est installé.
+- La taille des dossiers tirée de l'index, les serveurs en **SFTP** (bêta, avec la progression de chaque transfert), des onglets, sombre et clair, français et anglais.
+- En option : *Ouvrir dans Plume FEx* dans le menu des dossiers, et un réglage réversible qui ouvre les dossiers et Win+E dans Plume FEx.
+
+### Plume Mail (nouveau)
+- Plusieurs comptes IMAP, serveurs remplis d'après l'adresse ; TLS assuré par Windows lui-même.
+- **Se connecter avec Microsoft** pour Outlook.com, Hotmail et Microsoft 365 : la page de Microsoft s'ouvre dans votre navigateur, Plume Mail ne voit jamais votre mot de passe.
+- **Le nouveau courrier arrive tout seul** en quelques secondes (IMAP IDLE).
+- Les **conversations** regroupées dans la liste, les **brouillons** gardés sur le serveur, une **signature** par compte, des **suggestions d'adresses**, et la **recherche dans le texte** des messages (sur le serveur aussi).
+- Les messages HTML affichés en texte lisible : aucune image distante, rien ne s'exécute. Mots de passe et jetons gardés chiffrés par Windows. La boîte s'ouvre hors connexion.
+
+### Plume Web
+- **Des onglets entre les fenêtres** : glissez un onglet hors de la barre pour l'ouvrir dans une nouvelle fenêtre, ou sur une autre fenêtre Plume pour l'y déplacer, sans recharger. Les autres onglets s'écartent pendant que vous réordonnez.
+- **Les pages de Plume en onglets** (Paramètres › Onglets, désactivé par défaut) : Paramètres, Historique, Téléchargements et les autres pages de Plume s'ouvrent comme de vrais onglets (`plume://settings`…).
+- Le panneau de téléchargement vidéo et audio s'ouvre tout de suite ; l'analyse le complète.
+- La barre *Enregistrer le mot de passe* survit aux redirections qui suivent une connexion.
+- Corrigé : Plume 0.7.0 et 0.7.1 pouvaient se fermer au démarrage quand le PC était sur batterie.
+
 ## 0.7.1 - 2026-11-10
 
 Les mises à jour fonctionnent même quand GitHub est lent, et on voit toujours ce qu'elles font.

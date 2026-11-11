@@ -1,13 +1,13 @@
 <p align="center">
-  <img src="assets/logo256.png" width="112" alt="Plume logo">
+  <img src="assets/brand/plume-suite-256.png" width="112" alt="Plume Suite logo">
 </p>
 
-<h1 align="center">Plume</h1>
+<h1 align="center">Plume Suite</h1>
 
 <p align="center">
-  <b>The browser that weighs nothing.</b><br>
-  An ultra-light web browser for Windows, written in Rust — one ~2.6 MB file.<br>
-  <i>Le navigateur qui ne pèse rien — ultra-léger, écrit en Rust, un installeur de 2,6 Mo.</i>
+  <b>Light, native apps for Windows, with one look.</b><br>
+  A web browser, a file explorer and a mail app, written in Rust, installed and updated together.<br>
+  <i>Des applications légères et natives pour Windows : un navigateur, un explorateur de fichiers et une messagerie.</i>
 </p>
 
 <p align="center">
@@ -19,24 +19,36 @@
 </p>
 
 <p align="center">
-  <img src="docs/screens/home.png" width="860" alt="Plume's new tab page: tabs, address bar, search, a clock, favorites and frequent sites">
+  <img src="assets/brand/family.png" width="560" alt="The Plume Suite family: Plume Web, Plume FEx and Plume Mail">
 </p>
 
 ---
 
-> **The Plume suite (work in progress, on the `suite` branch).** Plume is growing into three small native apps
-> with one look: Plume Web (this browser), [Plume FEx](apps/fex) (a file explorer with instant search) and
-> [Plume Mail](apps/mail). The plan and the state of the work are in [docs/suite/PLAN.md](docs/suite/PLAN.md).
+| App | What it is |
+|---|---|
+| **Plume Suite** | The app that installs, opens, updates and removes the others. Nothing to download: the installer holds them all. |
+| **Plume Web** | An ultra-light web browser on the WebView2 engine already in Windows. |
+| **[Plume FEx](apps/fex)** | A file explorer that opens folders in milliseconds and searches the whole PC as you type, without administrator rights. |
+| **[Plume Mail](apps/mail)** | A mail app for IMAP accounts, Outlook.com and Microsoft 365, that never loads a remote image. |
 
-## Features
+Each app is a single program drawn by Windows itself (FEx and Mail use Direct2D, no web view). When a new version
+is out, every app shows it in its title bar and Plume Suite updates them all in one click.
 
-- **Tiny** — a ~2.6 MB installer, no admin rights needed. It renders pages with the WebView2 (Microsoft Edge) engine already on Windows, so it ships no browser engine of its own.
+<p align="center">
+  <img src="docs/screens/home.png" width="860" alt="Plume Web's new tab page: tabs, address bar, search, a clock, favorites and frequent sites">
+</p>
+
+## Plume Web
+
+The browser that weighs nothing.
+
+- **Tiny** — no admin rights needed. It renders pages with the WebView2 (Microsoft Edge) engine already on Windows, so it ships no browser engine of its own.
 - **Memory saver** — background tabs are suspended, then unloaded after a few minutes (unless they play audio). Restored tabs sleep until you open them.
 - **Ad & tracker blocker** — ~3,600 domains plus cosmetic filters, a per-site toggle and Edge tracking prevention.
 - **Encrypted passwords** — a vault locked by one master password (Argon2id + AES-256-GCM). Plume offers to save logins, fills them for you and imports CSV exports.
 - **Import** — history, favorites and their icons from Chrome, Edge, Brave, Opera, Opera GX, Vivaldi and Firefox.
 - **Chrome extensions** — install from the Chrome Web Store, pin them in the toolbar, open them as floating popups or in a side panel.
-- **Tabs your way** — groups, pinned tabs, vertical tabs, multiple windows, InPrivate windows, drag to reorder.
+- **Tabs your way** — groups, pinned tabs, vertical tabs, multiple windows, InPrivate windows, drag to reorder or into another window.
 - **Reading** — reader mode, read aloud, page translation, dark mode per site.
 - **Video & audio download** — MP4, WEBM, MKV, MP3, WAV, FLAC… via yt-dlp + FFmpeg, installed on demand.
 - **Plume DevTools** — a docked panel with console, elements, network, storage and performance.
@@ -59,23 +71,33 @@ And much more, each feature optional and free when switched off:
   <img src="docs/screens/downloads.png" width="420" alt="The downloads bubble under the toolbar button">
 </p>
 
+## Plume FEx and Plume Mail
+
+- **[Plume FEx](apps/fex)**: instant search with Everything's syntax, search inside files, a preview pane, thumbnails,
+  undo, the real Explorer context menu, archives (ZIP and 7z with a password), folder sizes, SFTP servers, tabs.
+- **[Plume Mail](apps/mail)**: several accounts, *Sign in with Microsoft*, new mail pushed by the server,
+  conversations, drafts kept on the server, signatures, address suggestions, search in the text of messages,
+  HTML shown as text with nothing loaded or run, the mailbox kept offline.
+
+Their READMEs list what they do, their keys and what they don't do yet.
+
 ## Install
 
-1. Download [`PlumeSetup.exe`](https://github.com/shxmacrypto/plume/releases/latest/download/PlumeSetup.exe) and run it. Plume installs for your account in `%LOCALAPPDATA%\Programs\Plume` (no admin rights), adds Start menu and desktop shortcuts, and opens.
+1. Download [`PlumeSetup.exe`](https://github.com/shxmacrypto/plume/releases/latest/download/PlumeSetup.exe) and run it. Plume Suite installs for your account in `%LOCALAPPDATA%\Programs\Plume` (no admin rights), adds Start menu and desktop shortcuts, and opens: pick the apps you want and click *Install*.
 2. Windows SmartScreen may warn about an *unknown publisher* because the installer is not code-signed: click **More info → Run anyway**. Each release ships a `PlumeSetup.exe.sha256` file so you can check the download.
 3. Windows Security may also block the installer or Plume the first time and call it a threat. It's a false positive: Microsoft's automatic scan flags new programs that aren't code-signed yet. Open **Windows Security → Virus & threat protection → Protection history**, select the Plume entry, choose **Actions → Allow on device**, then run the installer again. You only need to do this once.
 
-Silent install: `PlumeSetup.exe --quiet` (add `--no-desktop` to skip the desktop shortcut).
+Silent install: `PlumeSetup.exe --quiet` (add `--no-desktop` to skip the desktop shortcut). `PlumeSetup.exe --install web` (or `fex`, `mail`) installs one app without a window.
 
-Requires Windows 10 or 11 (64-bit) with the **WebView2 Runtime**, which is preinstalled on Windows 11 and on up-to-date Windows 10.
+Requires Windows 10 or 11 (64-bit). Plume Web also needs the **WebView2 Runtime**, which is preinstalled on Windows 11 and on up-to-date Windows 10.
 
-**Updates:** when a new version is out, Plume shows a bar under the address bar. *Install update* downloads `PlumeSetup.exe` from this repository's releases, checks it against the SHA-256 that GitHub publishes, and installs it; *Restart now* finishes the job and reopens your tabs. If GitHub is slow or unreachable, the bar says so and offers *Try again* and *Download from GitHub*.
+**Updates:** when a new version is out, Plume Suite and each app say so (Plume Web with a bar under the address bar, FEx and Mail with a button in their title bar). One click downloads `PlumeSetup.exe` from this repository's releases, checks it against the SHA-256 that GitHub publishes, and updates the suite and every installed app. If GitHub is slow or unreachable, it says so and offers *Try again* and *Download from GitHub*. Plume 0.7 installs Plume Suite 1.0 the same way, through its update bar.
 
-**Uninstall:** Windows Settings › Apps › Plume. You choose whether to keep your data (`%LOCALAPPDATA%\Plume`).
+**Uninstall:** one app from Plume Suite (*Remove*), or everything from Windows Settings › Apps › Plume Suite. Your data stays in `%LOCALAPPDATA%\Plume`.
 
 ## Privacy
 
-Plume has no account and no telemetry. Your history, favorites and settings stay in `%LOCALAPPDATA%\Plume`, and passwords are encrypted there. Plume itself only goes online when you ask it to, plus:
+No Plume app has an account or telemetry. Everything stays in `%LOCALAPPDATA%\Plume`. Plume FEx goes online only for the SFTP servers you connect to; Plume Mail only talks to your mail servers (and to Microsoft's sign-in page for a Microsoft account). Plume Suite and each app check this repository's latest release at start (the same request as below). Plume Web only goes online when you ask it to, plus:
 
 | Request | When | Can be turned off |
 |---|---|---|
@@ -105,9 +127,9 @@ Plume builds with the **GNU** Rust toolchain, so Visual Studio is not needed.
    ```powershell
    .\build.ps1
    ```
-   The result is the installer `dist\PlumeSetup.exe` plus `dist\PlumeSetup.exe.sha256`.
+   The result is the installer `dist\PlumeSetup.exe` plus `dist\PlumeSetup.exe.sha256`. It holds Plume Suite, Plume Web, Plume FEx and Plume Mail.
 
-Run the tests with `cargo test --release` (Rust) and `node --test tests/ui07.test.js` (interface functions: calculator, fuzzy search, QR codes). Tests that need the network are marked `#[ignore]`.
+Run the tests with `cargo test --workspace` (Rust) and `node --test tests/ui07.test.js` (Plume Web's interface functions: calculator, fuzzy search, QR codes). Tests that need the network are marked `#[ignore]`. FEx, Mail and the installer also have end-to-end scenarios that drive the real windows (`apps/*/tests`).
 
 Before a commit, these two commands must have nothing left to say (`rustup component add clippy rustfmt` installs them):
 
@@ -123,21 +145,27 @@ The code style is set in `rustfmt.toml` (lines up to 160 columns). `vendor/wry` 
 ## Publish a new version
 
 ```powershell
-.\release.ps1 0.7.1            # bump the version, build, commit, tag, push and publish the release
-.\release.ps1 0.7.1 -DryRun    # preview, change nothing
+.\release.ps1 1.0.1            # bump the version, build, commit, tag, push and publish the release
+.\release.ps1 1.0.1 -DryRun    # preview, change nothing
 ```
 
-1. Describe the changes under a `## 0.7.1 - YYYY-MM-DD` heading in [`CHANGELOG.md`](CHANGELOG.md), and the same in French in [`CHANGELOG.fr.md`](CHANGELOG.fr.md). The English text becomes the GitHub release notes; both are shown on the website's *Release notes* page (`site-notes.ps1`, run by the script, copies them there).
+1. Describe the changes under a `## 1.0.1 - YYYY-MM-DD` heading in [`CHANGELOG.md`](CHANGELOG.md), and the same in French in [`CHANGELOG.fr.md`](CHANGELOG.fr.md). The English text becomes the GitHub release notes; both are shown on the website's *Release notes* page (`site-notes.ps1`, run by the script, copies them there).
 2. Run the script. It publishes with the [GitHub CLI](https://cli.github.com/) (`gh`) if it is installed. Otherwise it opens the prefilled release page and the `dist` folder, and you drop in the two files. When the notes are too long for the page address, the script copies them to the clipboard instead: paste them into the description.
 3. The download link `releases/latest/download/PlumeSetup.exe` always points to the newest release. The script also writes the new version into the website's `js/config.js` (`..\..\PlumeSite`); refresh the site's *What's new* section, its screenshots and this README (`docs/screens`), then push the site.
-4. Installed copies of Plume see the new version within a day (right away with *Settings › About › Check now*) and install it in one click.
+4. Installed copies see the new version at their next start (right away with *Check now* in Plume Suite) and install it in one click.
 
-The version number has a single source: `version` in `Cargo.toml`.
+The version number has a single source: `version` in `Cargo.toml` (`[workspace.package]`, shared by every app).
 
 ## Project layout
 
 ```
-src/main.rs        windows, tabs, events (Rust, wry + tao + WebView2)
+apps/suite/        Plume Suite: install, open, update and remove the apps
+apps/fex/          Plume FEx (see its README)                apps/mail/   Plume Mail (see its README)
+crates/plume-ui/   the native interface kit of FEx, Mail and Suite (Win32, Direct2D, DirectWrite)
+crates/fex-core/   FEx without interface: listing, index, change journal, query language
+crates/mail-core/  Mail without interface: IMAP, SMTP, messages, OAuth, the kept mailbox
+crates/plume-update/  the update check and download shared by every app
+src/main.rs        Plume Web: windows, tabs, events (Rust, wry + tao + WebView2)
 src/settings.json  every setting: default per mode, section, network use; read by settings.rs and the interface
 src/settings.rs    defaults, migration of older profiles, mode switch, resets
 src/perf.rs        process memory / CPU, battery, metered connection
@@ -160,13 +188,13 @@ src/devtools.rs    bridge to the Chrome DevTools Protocol for Plume DevTools
 src/setup.rs       installed Plume: shortcuts, Settings › Apps entry, uninstall
 src/defbrowser.rs  default browser: Windows registration, links handed to the Plume window already open
 src/update.rs      in-app updates: GitHub release, download, SHA-256 check
-launcher/          PlumeSetup.exe: embeds plume.exe + WebView2Loader.dll and installs them
+launcher/          PlumeSetup.exe: embeds the four programs and installs, updates and removes them
 assets/            logo, icon, ad list
 ```
 
 ## Credits
 
-Built with [wry](https://github.com/tauri-apps/wry) and [tao](https://github.com/tauri-apps/tao) (Tauri), [webview2-com](https://github.com/wravery/webview2-rs), [windows-rs](https://github.com/microsoft/windows-rs), [serde_json](https://github.com/serde-rs/json), [RustCrypto](https://github.com/RustCrypto) `aes-gcm`, `argon2`, `sha1` and `sha2`, and [miniz_oxide](https://github.com/Frommi/miniz_oxide).
+Built with [mail-parser](https://github.com/stalwartlabs/mail-parser), [zip](https://github.com/zip-rs/zip2), [sevenz-rust2](https://github.com/hasenbanck/sevenz-rust2), [schannel](https://github.com/steffengy/schannel-rs), [regex-automata](https://github.com/rust-lang/regex) and [memchr](https://github.com/BurntSushi/memchr), [wry](https://github.com/tauri-apps/wry) and [tao](https://github.com/tauri-apps/tao) (Tauri), [webview2-com](https://github.com/wravery/webview2-rs), [windows-rs](https://github.com/microsoft/windows-rs), [serde_json](https://github.com/serde-rs/json), [RustCrypto](https://github.com/RustCrypto) `aes-gcm`, `argon2`, `sha1` and `sha2`, and [miniz_oxide](https://github.com/Frommi/miniz_oxide).
 
 - QR codes follow the ISO/IEC 18004 algorithm as described by Project Nayuki's reference implementation.
 - Optional online services: [Have I Been Pwned](https://haveibeenpwned.com/Passwords) (Pwned Passwords), [Frankfurter](https://www.frankfurter.app/) (exchange rates), [Open-Meteo](https://open-meteo.com/) (weather), Bing (picture of the day).

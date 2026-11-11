@@ -2,6 +2,44 @@
 
 All notable changes to Plume. Each `## x.y.z` section becomes the release notes when you run `.\release.ps1 x.y.z`.
 
+## 1.0.0 - 2026-11-11
+
+Plume becomes **Plume Suite**: three small native apps with one look, installed and updated together.
+
+- **Plume Web**, the browser you know.
+- **Plume FEx**, a file explorer with instant search of the whole PC.
+- **Plume Mail**, a mail app for your IMAP accounts, Outlook.com and Microsoft 365.
+
+Already on Plume 0.7? Accept the update bar as usual: it installs Plume Suite with Plume Web inside, keeps your profile, and you add FEx and Mail from the Plume Suite app if you want them.
+
+### Plume Suite
+- **One app to install the others**: Plume Suite lists Plume Web, FEx and Mail with *Install*, *Open* and *Remove*. Nothing is downloaded: the installer already holds all three.
+- **One update for everything**: a new version shows up in Plume Suite and in each app (a button in its title bar). One click updates the suite and every installed app, checked against the SHA-256 published with the release.
+- **One entry in Windows Settings › Apps**: *Plume Suite*. Uninstalling removes every app; your data stays in `%LOCALAPPDATA%\Plume`.
+
+### Plume FEx (new)
+- Folders open in a few milliseconds, and instant search as you type, in the open folder or everywhere, with Everything's search syntax (words, wildcards, regular expressions, types, sizes, dates, duplicates).
+- No administrator rights: the index follows the NTFS change journal. USB sticks, memory cards and network drives are indexed too, and leave the results when unplugged.
+- **Search inside files** (`content:`, or the filter menu), a **preview pane** (Alt+P), a **thumbnails** view (Ctrl+Shift+2) and **undo** (Ctrl+Z) for rename, new folder, move and delete.
+- Windows does the file work: the real Explorer context menu, Recycle Bin, copy dialogs, drag and drop.
+- Archives: extract ZIP, 7z, RAR and tar; create **ZIP or 7z with an AES-256 password** (a 7z hides the file names too), or RAR when WinRAR is installed.
+- Folder sizes from the index, servers over **SFTP** (beta, with the progress of each transfer), tabs, dark and light, English and French.
+- Optional: *Open in Plume FEx* in the folder menu, and a reversible switch that makes folders and Win+E open in Plume FEx.
+
+### Plume Mail (new)
+- Several IMAP accounts, servers filled in from the address; TLS done by Windows itself.
+- **Sign in with Microsoft** for Outlook.com, Hotmail and Microsoft 365: Microsoft's own page opens in your browser, Plume Mail never sees your password.
+- **New mail arrives by itself** within seconds (IMAP IDLE).
+- **Conversations** grouped in the list, **drafts** kept on the server, a **signature** per account, **address suggestions**, and **search in the text** of messages (on the server too).
+- HTML messages shown as readable text: no remote image, nothing runs. Passwords and tokens kept encrypted by Windows. The mailbox opens offline.
+
+### Plume Web
+- **Tabs between windows**: drag a tab out of the tab bar to open it in a new window, or onto another Plume window to move it there, without reloading. Other tabs slide aside while you reorder.
+- **Plume pages as tabs** (Settings › Tabs, off by default): Settings, History, Downloads and the other Plume pages open as real tabs (`plume://settings`…).
+- The video and audio download panel opens at once; the analysis fills it in.
+- The *Save password* bar survives the redirects that follow a login.
+- Fixed: Plume 0.7.0 and 0.7.1 could close at start when the PC ran on battery.
+
 ## 0.7.1 - 2026-11-10
 
 Updates now work when GitHub is slow, and you can always see what they are doing.

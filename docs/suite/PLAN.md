@@ -80,15 +80,23 @@ the Plume Mail scenario.
 - **File work**: the Explorer context menu itself (Open with, Send to, other programs' entries), cut, copy,
   paste, delete, Properties, rename in place, new folder, copy as path, drag out, drop in.
 - **Archives**: extract here or to a folder (ZIP, 7z, RAR, tar, gz and what Windows' `tar.exe` reads); create
-  ZIP; ZIP with a password (AES-256) read and written in the program; RAR with a password through WinRAR.
+  ZIP or 7z; ZIP and 7z with a password (AES-256; a 7z hides the names too) read and written in the program; RAR
+  with a password through WinRAR.
+- **Comfort**: preview pane (Alt+P: pictures decoded by WIC, text, folder contents), thumbnails view
+  (Ctrl+Shift+2, Windows' own thumbnails), undo (Ctrl+Z) for rename, new folder, paste or move, and delete to the
+  Recycle Bin (restored from its `$I` and `$R` files).
 - **Instant search**: an index of every fixed drive; results as you type, from the open folder or everywhere;
   the search syntax below; a filter button (type of items, match case, whole word, path, regular expression);
   sorting by name, folder, date or size over all results; export of every result to CSV. The index leaves
-  memory after 90 seconds without a search and comes back in half a second.
+  memory after 90 seconds without a search and comes back in half a second. `content:` (or the filter menu)
+  searches inside files: text, code and documents up to 64 MB, binaries and offline files skipped, checked
+  last so the name tests narrow the work first. USB sticks, cards and network drives join the index when they
+  appear, are read again every 15 minutes and leave the results when unplugged.
 - **Folder sizes** (optional): the size of each folder, straight from the index; sorting by size then ranks
   folders and files together.
 - **Servers (SFTP, beta)**: connect with `user@host`, browse, upload (menu, paste or drop), download, rename,
-  new folder, delete (after a confirmation: a server has no recycle bin).
+  new folder, delete (after a confirmation: a server has no recycle bin). The status bar shows the progress of a
+  transfer (bytes received for a download, items sent for an upload).
 - **Windows integration**: "Open in Plume FEx" on folders, and the optional default-explorer switch with a
   backup of what it replaces.
 - **One window per profile**: a second launch hands its folders to the running window as new tabs.
@@ -99,7 +107,16 @@ the Plume Mail scenario.
 
 - **Accounts**: IMAP to read, SMTP to send, over TLS done by Windows itself (SChannel) with Windows'
   certificate checks. The servers of the usual providers are filled in from the address. The password goes to
-  Windows' Credential Manager, never to a file.
+  Windows' Credential Manager, never to a file. **Sign in with Microsoft** (OAuth 2 with PKCE, the browser
+  coming back to a loopback address): the lasting token takes the password's place, split over several
+  Credential Manager entries when long, and IMAP and SMTP sign in with XOAUTH2.
+- **Push**: a second connection per account waits on the inbox (IDLE, renewed every 25 minutes) and new mail
+  shows up within seconds; without IDLE, the inbox is still checked every three minutes.
+- **Conversations** from `Message-ID` and `References` (a union of everything a message cites), one line per
+  conversation with a count, opened under its head. **Drafts** kept in the server's Drafts folder (APPEND with
+  `\Draft`, replaced by number with UIDPLUS, removed once sent). **Signature** per account. **Address
+  suggestions** from the people in the kept mailbox. **Search** in the text: the kept messages first, then
+  `UID SEARCH TEXT` on the server, which also brings older messages into the list.
 - **Mailbox**: folders (the usual ones named in the interface language), the 500 most recent messages of a
   folder, unread and flagged marks, attachments, search in the folder (accents and case ignored).
 - **Reading**: text with wrapped lines; an HTML message is turned into readable text (lists, links, quotes)
@@ -218,30 +235,29 @@ Prefixes can be stacked: `file:case:regex:^Main`.
 
 Plume FEx:
 
-- Drives without a change journal (FAT, exFAT) are indexed at the first launch but not followed afterwards.
-  Removable and network drives are not indexed; the search box filters the open folder there.
+- Fixed drives without a change journal (FAT, exFAT) are indexed at the first launch but not followed
+  afterwards; removable and network drives are read again every 15 minutes rather than followed live.
 - The list shows the first 10,000 results of a search (the total is always counted, the export has them all).
-- Search does not look inside files, and does not know dates of creation or last access.
-- Only the details view exists: no thumbnails or preview pane yet. Undo (Ctrl+Z) is not wired. The tab strip
-  does not reorder.
-- Encrypted 7z archives are not supported. Creating a RAR needs WinRAR; a RAR password with characters outside
-  ASCII goes through WinRAR's command line.
+- Search inside files reads plain text (UTF-8, UTF-16): it does not open the inside of Office documents or PDFs.
+  Search does not know dates of creation or last access.
+- The tab strip does not reorder. Undo covers the last changes made in FEx itself, not those of other programs.
+- Creating a RAR needs WinRAR; a RAR password with characters outside ASCII goes through WinRAR's command line.
 - SFTP is a beta. Tested against a real SFTP server program on the development PC, without network or
   password: **the password prompt of a real server has not been tested**. A new server's key is accepted and
-  remembered at the first connection; a changed key is refused. No progress bar during a transfer, and an
-  upload replaces a file of the same name.
+  remembered at the first connection; a changed key is refused. An upload replaces a file of the same name.
 - The default-explorer switch was tested on a scratch registry key only.
 
 Plume Mail:
 
-- Microsoft accounts (Outlook.com, Hotmail, Microsoft 365) need to sign in through Microsoft's page (OAuth),
-  which is not built yet. Gmail, Yahoo and iCloud need an app password.
-- No calendar, no contacts, no conversation threads, no drafts saved on the server, no signatures.
+- *Sign in with Microsoft* needs Plume Mail's application ID at Microsoft, built in with
+  `PLUME_MAIL_MS_CLIENT_ID`; it was tested against a fake sign-in page, **not yet against Microsoft itself**.
+- Gmail, Yahoo and iCloud need an app password. Google only allows its own sign-in page for Gmail after a paid
+  security audit, and limits unaudited apps to 100 users who must sign in again every 7 days.
+- No calendar, no address book (suggestions come from the mail itself).
 - HTML messages are shown as text: no layout, no images.
-- New mail is checked every three minutes and on demand (no push).
-- Search covers the open folder (subject and people), not the text of messages.
-- Tested against a mail server written for the tests (IMAP, SMTP, with and without TLS), not against the big
-  providers.
+- Conversations group the messages of one folder (a reply you sent stays in Sent).
+- Tested against a mail server written for the tests (IMAP, SMTP, IDLE, SEARCH, XOAUTH2, with and without TLS),
+  not against the big providers.
 
 ## Roadmap
 
@@ -250,18 +266,17 @@ Plume Mail:
 - [x] **2. File work**: selection, cut/copy/paste, delete, rename, new folder, context menus, drag and drop,
       Properties, archives with passwords.
 - [x] **3. Search**: index, journal refresh, Everything's query language, filters, export, folder sizes.
-- [ ] **4. Comfort**: icon and thumbnail views, preview pane, undo, a settings page, tab reordering, search
-      inside files. *Done: column resizing, snap layouts, folder sizes.*
+- [x] **4. Comfort**: thumbnail view, preview pane, undo, search inside files, column resizing, snap layouts,
+      folder sizes. *Still open: a settings page, tab reordering.*
 - [x] **5. Windows**: right-click entry, default-explorer switch, single-window handoff.
 - [ ] **6. Servers**: SFTP out of beta (password prompt verified on real servers, host key shown before it is
-      trusted, transfer progress, drag out).
-- [ ] **7. Mail**: sign-in through the provider's page (Microsoft, Google), conversation threads, drafts,
-      contacts and calendar, push, an HTML view that stays safe.
-- [ ] **8. Suite**: browser moved to `apps/browser`, one installer with component choice, updates, website,
-      release notes. *Done: the website, not published: a home page for the suite and one page per app. It lives in
-      `web/PlumeSiteSuite`, the branch `suite` of the website's repository in its own folder, so that
-      `web/PlumeSite` (branch `main`, what a release updates and what gets pushed) stays as published. Plume FEx and Plume Mail show "Coming soon" until `released` in its
-      `js/config.js` says otherwise. Their screenshots are still test captures, to be replaced by demo ones.*
+      trusted, drag out). *Done: transfer progress.*
+- [x] **7. Mail**: sign-in through Microsoft's page, conversation threads, drafts on the server, signatures,
+      address suggestions, push, search in the text. *Still open: calendar, an HTML view that stays safe, Google
+      sign-in (blocked by Google's audit).*
+- [x] **8. Suite**: Plume Suite (install, open, update, remove the apps), one installer holding every app, one
+      update for all, website with a page per app, release notes. Released as **1.0.0**. *Still open: the
+      browser moved to `apps/browser`.*
 
 ## Third-party code
 
@@ -277,3 +292,5 @@ these libraries, all under licenses compatible with it:
 | `zip` | ZIP archives with AES passwords | MIT |
 | `schannel` | TLS through Windows | MIT |
 | `mail-parser` | reading messages (MIME, encodings) | Apache-2.0 or MIT |
+| `sevenz-rust2` | 7z archives with AES passwords | Apache-2.0 |
+| `sha2` | the PKCE of *Sign in with Microsoft* | MIT or Apache-2.0 |

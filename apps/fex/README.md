@@ -1,17 +1,22 @@
 # Plume FEx
 
 A fast, native file explorer for Windows 10 and 11, with the look of Plume and instant search of the whole PC.
-Part of the Plume suite (not released yet).
+Part of Plume Suite: install it from the Plume Suite app.
 
 - Hand-built interface in Rust: Win32, Direct2D and DirectWrite. No web view. One 2.7 MB program.
 - Folders open in a few milliseconds; the list stays current while files change.
 - Instant search as you type, in the open folder or everywhere, with Everything's search syntax: words,
   phrases, wildcards, regular expressions, types of files, sizes, dates, duplicates, empty folders.
-- No administrator rights: the index follows the NTFS change journal.
+- Search inside files too (`content:` or *Search inside files* in the filters): text, code, documents.
+- No administrator rights: the index follows the NTFS change journal. USB sticks, memory cards and network
+  drives are indexed when they appear and read again from time to time.
+- A preview pane (Alt+P) for pictures, text and folders, and a thumbnails view (Ctrl+Shift+2).
+- Undo (Ctrl+Z) for a rename, a new folder, a move or paste, and a delete to the Recycle Bin.
 - Windows does the file work: the real Explorer context menu, Recycle Bin, copy and move dialogs, drag and drop.
 - Archives: extract ZIP, 7z, RAR and tar; create ZIP or 7z, with a password (AES-256) if you want one (a 7z hides the file names too).
 - Folder sizes, straight from the index.
-- Servers over SFTP (beta), through the OpenSSH client that ships with Windows.
+- Servers over SFTP (beta), through the OpenSSH client that ships with Windows, with the progress of each
+  transfer.
 - Optional: "Open in Plume FEx" in the right-click menu of folders, and a switch that makes folders and Win+E
   open in Plume FEx (off by default, reversible).
 - English and French; dark and light.
@@ -44,6 +49,9 @@ Starting it again while it runs opens the folder in a new tab of the same window
 | F2, Delete, Shift+Delete | rename, recycle, delete for good |
 | Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+Shift+C | copy, cut, paste, copy as path |
 | Ctrl+Shift+N | new folder |
+| Ctrl+Z | undo the last change |
+| Alt+P | preview pane |
+| Ctrl+Shift+2, Ctrl+Shift+6 | thumbnails, details |
 | Alt+Enter | Properties |
 | Ctrl+H | show or hide hidden items |
 | F5, Ctrl+R | refresh |
