@@ -9,6 +9,7 @@ pub mod menu;
 pub mod ops;
 pub mod places;
 pub mod sftp;
+pub mod undo;
 /// Les boîtes de dialogue de Windows (où enregistrer, quel dossier, quels fichiers) : celles du kit commun.
 pub use crate::ui::dialogs;
 

@@ -1,6 +1,7 @@
 //! Ce que l'on fait aux fichiers et à la fenêtre : menus contextuels, renommer, supprimer, couper, copier,
 //! coller, nouveau dossier, propriétés, réglages. Les opérations elles-mêmes sont confiées au shell de Windows.
 
+use super::undo::Undo;
 use super::{
     App, EditKind, Id, LIST_TOP, ROW_H, i18n,
     model::{Location, Restore, leaf},
@@ -43,6 +44,8 @@ mod cmd {
     pub const ASC: u32 = 0x700D;
     pub const DESC: u32 = 0x700E;
     pub const HIDDEN: u32 = 0x700F;
+    pub const PREVIEW: u32 = 0x7050;
+    pub const UNDO: u32 = 0x7051;
     pub const EXT: u32 = 0x7010;
     pub const TERMINAL: u32 = 0x7011;
     pub const PROPERTIES: u32 = 0x7012;
@@ -97,7 +100,7 @@ pub(super) fn with_app(win: &Window, f: impl FnOnce(&mut App, &mut Cx)) {
 
 impl App {
     /// Lance un travail qui peut ouvrir des boîtes de dialogue, une fois l'événement en cours terminé.
-    fn later(&self, f: impl FnOnce(&Window) + Send + 'static) {
+    pub(super) fn later(&self, f: impl FnOnce(&Window) + Send + 'static) {
         self.win.sender().send(move |_, cx| cx.after(f));
     }
 
@@ -221,6 +224,9 @@ impl App {
                 .check(cmd::DESC, s.descending, !tab.asc);
             m.sub(s.sort_by, sort);
             m.sep().item(cmd::PASTE, s.paste).item(cmd::NEW_FOLDER, s.new_folder);
+            if !self.undo.is_empty() {
+                m.item(cmd::UNDO, s.undo);
+            }
         }
         m.item(cmd::SELECT_ALL, s.select_all);
         m.sep().check(cmd::HIDDEN, s.show_hidden, self.set.show_hidden);
@@ -322,6 +328,7 @@ impl App {
             .check(cmd::HIDDEN, s.show_hidden, self.set.show_hidden)
             .check(cmd::EXT, s.show_ext, !self.set.hide_ext)
             .check(cmd::FOLDER_SIZES, s.folder_sizes, self.set.folder_sizes)
+            .check(cmd::PREVIEW, s.preview_pane, self.set.preview)
             .sep()
             .sub(s.theme, theme)
             .sub(s.language, language);
@@ -436,6 +443,8 @@ impl App {
             cmd::NEW_FOLDER => self.new_folder(),
             cmd::SELECT_ALL => self.tab_mut().select_all(),
             cmd::HIDDEN => self.set_show_hidden(!self.set.show_hidden),
+            cmd::PREVIEW => self.toggle_preview(),
+            cmd::UNDO => self.undo_last(),
             cmd::EXT => {
                 self.set.hide_ext = !self.set.hide_ext;
                 self.set.save();
@@ -566,13 +575,35 @@ impl App {
         }
         self.later(move |win| {
             menu::invoke(win, &paths, verb, shift);
-            with_app(win, |app, _| app.check_now());
+            with_app(win, |app, _| {
+                // vers la Corbeille (pas Maj+Suppr) : ce qui a disparu pourra revenir avec Ctrl+Z
+                if verb == "delete" && !shift {
+                    let gone: Vec<PathBuf> = paths.into_iter().filter(|p| !p.exists()).collect();
+                    if !gone.is_empty() {
+                        app.remember(Undo::Recycled(gone));
+                    }
+                }
+                app.check_now();
+            });
         });
     }
 
     /// Colle le presse-papiers dans le dossier ouvert.
     pub(super) fn paste(&mut self) {
         let Some(dir) = self.tab().loc.path().map(|p| p.to_path_buf()) else { return };
+        // ce que le collage va créer : les noms qui n'existent pas encore ici (un doublon renommé n'est pas suivi)
+        let hwnd = self.win.hwnd;
+        let moved = ops::clipboard_cut(hwnd);
+        let items: Vec<(PathBuf, PathBuf)> = ops::clipboard_files(hwnd)
+            .into_iter()
+            .filter_map(|from| {
+                let to = dir.join(from.file_name()?);
+                (!to.exists() && from.parent() != Some(dir.as_path())).then_some((from, to))
+            })
+            .collect();
+        if !items.is_empty() {
+            self.remember(Undo::Pasted { moved, items });
+        }
         self.later(move |win| {
             menu::invoke(win, &[dir], "paste", false);
             with_app(win, |app, _| app.check_now());
@@ -584,6 +615,7 @@ impl App {
         self.end_edit(true);
         match ops::new_folder(&dir, self.s.new_folder) {
             Ok(name) => {
+                self.remember(Undo::NewFolder(dir.join(&name)));
                 let i = self.cur;
                 let tab = self.tab_mut();
                 tab.filter.clear();
@@ -737,9 +769,13 @@ impl App {
         }
         let Some(path) = tab.path_of(row) else { return };
         let hwnd = self.win.hwnd.0 as isize;
+        let old_name = old.to_string();
         self.later(move |win| {
             let ok = ops::rename(windows::Win32::Foundation::HWND(hwnd as _), &path, &new);
             with_app(win, |app, _| {
+                if ok {
+                    app.remember(Undo::Rename { now: path.with_file_name(&new), old_name });
+                }
                 let Some(i) = app.tabs.iter().position(|t| t.id == tab_id) else { return };
                 if ok {
                     let tab = &mut app.tabs[i];
@@ -753,9 +789,21 @@ impl App {
     // ───────────────────────── clavier ─────────────────────────
 
     /// Touches des opérations sur les fichiers. Renvoie vrai si la touche a été comprise.
+    /// Ouvre ou ferme le volet d'aperçu (Alt+P, comme dans l'Explorateur).
+    pub(super) fn toggle_preview(&mut self) {
+        self.set.preview = !self.set.preview;
+        self.set.save();
+        self.win.repaint();
+    }
+
     pub(super) fn key_more(&mut self, vk: u16, mods: Mods, cx: &mut Cx) -> bool {
         let Mods { ctrl, shift, alt } = mods;
         let letter = |c: char| vk == c as u16;
+        if alt && !ctrl && !shift && letter('P') {
+            self.toggle_preview();
+            cx.repaint();
+            return true;
+        }
         // sur un serveur : supprimer demande confirmation (pas de corbeille), coller envoie des fichiers
         if matches!(self.tab().loc, Location::Remote { .. }) {
             match vk {
@@ -780,6 +828,7 @@ impl App {
                 let paths = self.tab().selected_paths();
                 self.copy_paths(&paths);
             }
+            _ if letter('Z') && ctrl && !shift => self.undo_last(),
             _ if letter('C') && ctrl => self.verb("copy", false),
             _ if letter('X') && ctrl => self.verb("cut", false),
             _ if letter('V') && ctrl => self.paste(),

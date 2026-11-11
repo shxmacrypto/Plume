@@ -106,6 +106,28 @@ pub fn clipboard_files(owner: HWND) -> Vec<PathBuf> {
     }
 }
 
+/// Les fichiers du presse-papiers ont-ils été coupés (et non copiés) ? Le format « Preferred DropEffect » le dit.
+pub fn clipboard_cut(owner: HWND) -> bool {
+    use windows::Win32::System::DataExchange::{GetClipboardData, RegisterClipboardFormatW};
+    unsafe {
+        let format = RegisterClipboardFormatW(windows::core::w!("Preferred DropEffect"));
+        if format == 0 || OpenClipboard(Some(owner)).is_err() {
+            return false;
+        }
+        let mut cut = false;
+        if let Ok(h) = GetClipboardData(format) {
+            let mem = windows::Win32::Foundation::HGLOBAL(h.0);
+            let p = GlobalLock(mem) as *const u32;
+            if !p.is_null() {
+                cut = *p & 2 != 0; // DROPEFFECT_MOVE
+                let _ = GlobalUnlock(mem);
+            }
+        }
+        let _ = CloseClipboard();
+        cut
+    }
+}
+
 /// Place un texte dans le presse-papiers.
 pub fn copy_text(owner: HWND, text: &str) -> bool {
     let data: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();

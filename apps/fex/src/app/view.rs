@@ -51,6 +51,10 @@ impl App {
         let t = self.theme.clone();
         c.clear(t.bg);
         self.paint_list(c, cx, &t, dt);
+        if self.lay.preview.w > 0.0 {
+            let pane = self.lay.preview;
+            self.paint_preview(c, &t, pane);
+        }
         self.paint_nav(c, &t);
         self.paint_status(c, &t);
         self.paint_head(c, cx, &t);
@@ -75,6 +79,9 @@ impl App {
         let mut body = rect(0.0, top, w, (h - top - m::STATUS_H).max(0.0));
         let nav_w = if self.set.nav_open && w >= 520.0 { self.set.nav_w.min(w - 300.0).max(120.0) } else { 0.0 };
         let nav = body.cut_left(nav_w);
+        // le volet d'aperçu prend la droite, quand la fenêtre est assez large
+        let pw = if self.set.preview && w - nav_w >= 640.0 { ((w - nav_w) * 0.32).clamp(260.0, 460.0) } else { 0.0 };
+        let preview = body.cut_right(pw);
         let mut list = body;
         let searching = matches!(self.tabs[self.cur].loc, Location::Search { .. });
         let scope = list.cut_top(if searching { 38.0 } else { 0.0 });
@@ -90,6 +97,7 @@ impl App {
         let max_scroll = (rows * ROW_H + LIST_TOP + 10.0 - list.h).max(0.0);
         self.lay = Lay {
             w,
+            preview,
             nav,
             header,
             list,

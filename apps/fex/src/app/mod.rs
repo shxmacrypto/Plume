@@ -7,7 +7,9 @@ pub mod i18n;
 pub mod load;
 pub mod model;
 pub mod remote;
+pub mod preview;
 mod search;
+pub mod undo;
 pub mod settings;
 pub mod sheet;
 mod view;
@@ -194,6 +196,8 @@ pub struct NavRow {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Lay {
     pub w: f32,
+    /// Volet d'aperçu (vide quand il est fermé).
+    pub preview: Rect,
     pub nav: Rect,
     pub header: Rect,
     pub list: Rect,
@@ -215,6 +219,9 @@ pub struct App {
     pub s: &'static Strings,
     /// Version plus récente de la suite, si elle existe.
     pub update: Option<String>,
+    pub preview: preview::Preview,
+    /// Ce que Ctrl+Z peut défaire, le plus récent à la fin.
+    pub undo: Vec<undo::Undo>,
     pub set: Settings,
     pub icons: Icons,
     pub dates: Dates,
@@ -281,6 +288,8 @@ impl App {
         load::spawn_places(win.sender(), set.pinned.clone());
         let mut app = App {
             update: None,
+            preview: preview::Preview::new(gfx.clone()),
+            undo: Vec::new(),
             win,
             theme,
             s,

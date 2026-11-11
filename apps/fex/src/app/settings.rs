@@ -38,6 +38,8 @@ pub struct Settings {
     pub col_folder: f32,
     /// Afficher la taille des dossiers (calculée par l'index, qui reste alors en mémoire pendant qu'on navigue).
     pub folder_sizes: bool,
+    /// Volet d'aperçu à droite de la liste (Alt+P).
+    pub preview: bool,
     pub win: Option<Placement>,
     pub pinned: Vec<PathBuf>,
     /// Les serveurs SFTP déjà visités (« utilisateur@hôte ») : jamais leur mot de passe.
@@ -102,6 +104,7 @@ impl Settings {
             cols: COLS,
             col_folder: 0.0,
             folder_sizes: false,
+            preview: false,
             win: None,
             pinned: vec![],
             servers: vec![],
@@ -127,6 +130,7 @@ impl Settings {
             s.nav_open = b("nav_open", s.nav_open);
             s.search_everywhere = b("search_everywhere", s.search_everywhere);
             s.folder_sizes = b("folder_sizes", s.folder_sizes);
+            s.preview = b("preview", s.preview);
             s.col_folder = Some(f("col_folder", 0.0)).filter(|w| *w > 0.0).map_or(0.0, |w| w.clamp(60.0, 900.0));
             s.nav_w = f("nav_w", s.nav_w).clamp(140.0, 480.0);
             if let Some(cols) = v.get("cols").and_then(Value::as_array) {
@@ -198,6 +202,7 @@ impl Settings {
             "cols": self.cols,
             "col_folder": self.col_folder,
             "folder_sizes": self.folder_sizes,
+            "preview": self.preview,
             "search_everywhere": self.search_everywhere,
             "pinned": self.pinned.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
             "servers": self.servers,
