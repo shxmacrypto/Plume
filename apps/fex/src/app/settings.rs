@@ -40,8 +40,9 @@ pub struct Settings {
     pub folder_sizes: bool,
     /// Volet d'aperçu à droite de la liste (Alt+P).
     pub preview: bool,
-    /// Vue « Vignettes » (sinon « Détails »).
+    /// Vue en icônes (sinon « Détails »), et leur taille : 0 très grandes, 1 grandes, 2 moyennes, 3 petites.
     pub thumbs: bool,
+    pub icon_size: u8,
     pub win: Option<Placement>,
     pub pinned: Vec<PathBuf>,
     /// Les serveurs SFTP déjà visités (« utilisateur@hôte ») : jamais leur mot de passe.
@@ -108,6 +109,7 @@ impl Settings {
             folder_sizes: false,
             preview: false,
             thumbs: false,
+            icon_size: 1,
             win: None,
             pinned: vec![],
             servers: vec![],
@@ -135,6 +137,7 @@ impl Settings {
             s.folder_sizes = b("folder_sizes", s.folder_sizes);
             s.preview = b("preview", s.preview);
             s.thumbs = b("thumbs", s.thumbs);
+            s.icon_size = v.get("icon_size").and_then(Value::as_u64).map_or(s.icon_size, |k| k.min(3) as u8);
             s.col_folder = Some(f("col_folder", 0.0)).filter(|w| *w > 0.0).map_or(0.0, |w| w.clamp(60.0, 900.0));
             s.nav_w = f("nav_w", s.nav_w).clamp(140.0, 480.0);
             if let Some(cols) = v.get("cols").and_then(Value::as_array) {
@@ -208,6 +211,7 @@ impl Settings {
             "folder_sizes": self.folder_sizes,
             "preview": self.preview,
             "thumbs": self.thumbs,
+            "icon_size": self.icon_size,
             "search_everywhere": self.search_everywhere,
             "pinned": self.pinned.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
             "servers": self.servers,

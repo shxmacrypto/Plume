@@ -46,7 +46,9 @@ mod cmd {
     pub const HIDDEN: u32 = 0x700F;
     pub const PREVIEW: u32 = 0x7050;
     pub const UNDO: u32 = 0x7051;
-    pub const VIEW_THUMBS: u32 = 0x7053;
+    /// Taille des icônes : très grandes, grandes, moyennes, petites ; puis les détails.
+    pub const VIEW_SIZE: u32 = 0x7060;
+    pub const VIEW_DETAILS: u32 = 0x7064;
     pub const EXT: u32 = 0x7010;
     pub const TERMINAL: u32 = 0x7011;
     pub const PROPERTIES: u32 = 0x7012;
@@ -331,8 +333,8 @@ impl App {
             .check(cmd::EXT, s.show_ext, !self.set.hide_ext)
             .check(cmd::FOLDER_SIZES, s.folder_sizes, self.set.folder_sizes)
             .check(cmd::PREVIEW, s.preview_pane, self.set.preview)
-            .check(cmd::VIEW_THUMBS, s.view_thumbs, self.set.thumbs)
             .sep()
+            .sub(s.view, self.view_items())
             .sub(s.theme, theme)
             .sub(s.language, language);
         // Plume FEx dans Windows : entrée du clic droit, explorateur par défaut (jamais pendant un essai)
@@ -340,6 +342,29 @@ impl App {
             m.sep().check(cmd::CONTEXT_ENTRY, s.ctx_entry, classes.has_entry(&exe)).check(cmd::DEFAULT_EXPLORER, s.default_explorer, classes.is_default(&exe));
         }
         m.sep().item(cmd::ABOUT, s.about);
+        cx.after(move |win| {
+            if let Some(id) = m.show(win, at, true) {
+                with_app(win, |app, cx| app.command(id, cx));
+            }
+        });
+    }
+
+    /// Les tailles de la vue, comme le menu « Affichage » de l'Explorateur.
+    fn view_items(&self) -> Menu {
+        let s = self.s;
+        let mut m = Menu::new();
+        for (k, label) in [s.view_xl, s.view_large, s.view_medium, s.view_small].into_iter().enumerate() {
+            m.check(cmd::VIEW_SIZE + k as u32, label, self.set.thumbs && self.set.icon_size as usize == k);
+        }
+        m.check(cmd::VIEW_DETAILS, s.view_details, !self.set.thumbs);
+        m
+    }
+
+    /// Le menu du bouton « Affichage ».
+    pub(super) fn view_menu(&mut self, cx: &mut Cx) {
+        let Some(button) = self.hits.rect_of(|id| *id == Id::ViewMenu) else { return };
+        let at = self.win.to_screen(crate::ui::pt(button.right(), button.bottom() + 4.0));
+        let m = self.view_items();
         cx.after(move |win| {
             if let Some(id) = m.show(win, at, true) {
                 with_app(win, |app, cx| app.command(id, cx));
@@ -450,7 +475,8 @@ impl App {
             cmd::HIDDEN => self.set_show_hidden(!self.set.show_hidden),
             cmd::PREVIEW => self.toggle_preview(),
             cmd::UNDO => self.undo_last(),
-            cmd::VIEW_THUMBS => self.set_thumbs(!self.set.thumbs),
+            id if (cmd::VIEW_SIZE..cmd::VIEW_SIZE + 4).contains(&id) => self.set_view(Some((id - cmd::VIEW_SIZE) as u8)),
+            cmd::VIEW_DETAILS => self.set_view(None),
             cmd::EXT => {
                 self.set.hide_ext = !self.set.hide_ext;
                 self.set.save();
@@ -805,9 +831,12 @@ impl App {
     // ───────────────────────── clavier ─────────────────────────
 
     /// Touches des opérations sur les fichiers. Renvoie vrai si la touche a été comprise.
-    /// Vue « Vignettes » ou « Détails » (Ctrl+Maj+2 et Ctrl+Maj+6, comme dans l'Explorateur).
-    pub(super) fn set_thumbs(&mut self, on: bool) {
-        self.set.thumbs = on;
+    /// Une taille d'icônes (0 très grandes … 3 petites), ou les détails (None).
+    pub(super) fn set_view(&mut self, size: Option<u8>) {
+        self.set.thumbs = size.is_some();
+        if let Some(k) = size {
+            self.set.icon_size = k.min(3);
+        }
         self.set.save();
         let tab = self.tab_mut();
         (tab.scroll, tab.target) = (0.0, 0.0);
@@ -827,8 +856,13 @@ impl App {
     pub(super) fn key_more(&mut self, vk: u16, mods: Mods, cx: &mut Cx) -> bool {
         let Mods { ctrl, shift, alt } = mods;
         let letter = |c: char| vk == c as u16;
-        if ctrl && shift && !alt && (letter('2') || letter('6')) {
-            self.set_thumbs(letter('2'));
+        // Ctrl+Maj+1 à 4 : très grandes, grandes, moyennes, petites icônes ; Ctrl+Maj+6 : détails (l'Explorateur)
+        if ctrl
+            && shift
+            && !alt
+            && let Some(k) = ['1', '2', '3', '4', '6'].iter().position(|c| letter(*c))
+        {
+            self.set_view(if k == 4 { None } else { Some(k as u8) });
             cx.repaint();
             return true;
         }

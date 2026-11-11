@@ -128,6 +128,8 @@ fn state(app: &App) -> Value {
         "cols": app.columns().iter().map(|(col, x, w)| json!([format!("{col:?}"), x, w])).collect::<Vec<_>>(),
         "folder_sizes": app.set.folder_sizes,
         "thumbs": app.set.thumbs,
+        "icon_size": app.set.icon_size,
+        "tile": [app.tile().w, app.tile().h],
         "transfer": app.transfer.as_ref().map(|tr| json!({ "done": tr.done.load(std::sync::atomic::Ordering::Relaxed), "total": tr.total.load(std::sync::atomic::Ordering::Relaxed) })),
         "grid_cols": app.grid_cols(),
         "thumbs_ready": app.thumbs_ready(),

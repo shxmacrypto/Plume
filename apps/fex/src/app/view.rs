@@ -93,14 +93,17 @@ impl App {
         let fy = m::TITLE_H + (m::BAR_H - m::FIELD_H) / 2.0;
         let left = PAD + 4.0 * (m::NB_W + 2.0) + 6.0;
         let more_x = w - PAD - m::NB_W;
+        // le bouton « Affichage » est juste à gauche de « … »
+        let view_x = more_x - 2.0 - m::NB_W;
         let sw = if w >= 560.0 { (w * 0.24).clamp(170.0, 300.0) } else { 0.0 };
-        let search = rect(more_x - 6.0 - sw, fy, sw, m::FIELD_H);
+        let search = rect(view_x - 6.0 - sw, fy, sw, m::FIELD_H);
         let addr = rect(left, fy, (search.x - 8.0 - left).max(60.0), m::FIELD_H);
         let rows = self.tabs[self.cur].rows() as f32;
         // en vignettes : des lignes de cases
         let (lines, lh) = if self.set.thumbs {
-            let cols = ((list.w - super::thumbs::GPAD - 16.0) / super::thumbs::TILE_W).floor().max(1.0);
-            ((rows / cols).ceil(), super::thumbs::TILE_H)
+            let tile = self.tile();
+            let cols = ((list.w - super::thumbs::GPAD - 16.0) / tile.w).floor().max(1.0);
+            ((rows / cols).ceil(), tile.h)
         } else {
             (rows, ROW_H)
         };
@@ -634,10 +637,15 @@ impl App {
             (Id::Forward, &icons::FORWARD, !tab.fwd.is_empty()),
             (Id::Up, &icons::UP, tab.loc.parent().is_some()),
             (Id::Refresh, &icons::RELOAD, true),
+            (Id::ViewMenu, if self.set.thumbs { &icons::VIEW_GRID } else { &icons::VIEW_LIST }, true),
             (Id::More, &icons::MORE, true),
         ];
         for (k, (id, ic, enabled)) in buttons.into_iter().enumerate() {
-            let bx = if id == Id::More { w - PAD - m::NB_W } else { PAD + k as f32 * (m::NB_W + 2.0) };
+            let bx = match id {
+                Id::More => w - PAD - m::NB_W,
+                Id::ViewMenu => w - PAD - 2.0 * m::NB_W - 2.0,
+                _ => PAD + k as f32 * (m::NB_W + 2.0),
+            };
             let r = rect(bx, by, m::NB_W, m::NB_H);
             if enabled {
                 if self.hover == Some(id) {

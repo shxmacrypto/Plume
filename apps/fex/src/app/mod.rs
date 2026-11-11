@@ -105,6 +105,8 @@ pub enum Id {
     Up,
     Refresh,
     More,
+    /// Le bouton « Affichage » : la taille des icônes, ou les détails.
+    ViewMenu,
     Crumb(usize),
     Address,
     Search,
@@ -1596,6 +1598,7 @@ impl App {
             Id::Up => self.up(),
             Id::Refresh => self.refresh(),
             Id::More => self.more_menu(cx),
+            Id::ViewMenu => self.view_menu(cx),
             Id::Crumb(i) => {
                 if let Some(loc) = self.crumbs.get(i).cloned() {
                     if loc == self.tab().loc { self.start_address_edit() } else { self.navigate(loc) }
@@ -1629,9 +1632,18 @@ impl App {
         }
     }
 
-    fn wheel(&mut self, p: Pt, dy: f32, cx: &mut Cx) {
+    fn wheel(&mut self, p: Pt, dy: f32, ctrl: bool, cx: &mut Cx) {
         if self.lay.nav.contains(p) || self.sheet.is_some() {
             return;
+        }
+        // Ctrl+molette, comme dans l'Explorateur : vers le haut, des icônes plus grandes ; tout en bas, les détails
+        if ctrl && self.lay.list.contains(p) {
+            let now = if self.set.thumbs { self.set.icon_size as i32 } else { 4 };
+            let next = (now + if dy > 0.0 { -1 } else { 1 }).clamp(0, 4);
+            if next != now {
+                self.set_view(if next == 4 { None } else { Some(next as u8) });
+            }
+            return cx.repaint();
         }
         if matches!(self.edit, Some(EditKind::Rename { .. })) {
             self.end_edit(true);
@@ -1777,7 +1789,7 @@ impl Handler for App {
                     cx.repaint();
                 }
             }
-            Event::Wheel { p, dy, .. } => self.wheel(p, dy, cx),
+            Event::Wheel { p, dy, mods, .. } => self.wheel(p, dy, mods.ctrl, cx),
             Event::Key { vk, mods, .. } => {
                 if self.key(vk, mods, cx) {
                     cx.handled();
