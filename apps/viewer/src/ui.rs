@@ -70,6 +70,12 @@ pub struct Live {
     pub since: Instant,
     pub linked: bool,
     session: rtc::Session,
+    /// The viewer of this session, on the relay, and whether it left before the link (a phone that went to sleep
+    /// while the person at the PC accepted): the next viewer then takes its place instead of being told "busy".
+    from: String,
+    viewer_gone: bool,
+    /// Which session this is: the events of a session that was replaced are ignored.
+    run: u64,
 }
 
 pub struct App {
@@ -88,6 +94,8 @@ pub struct App {
     pw_key: Option<Vec<u8>>,
     pub asks: Vec<Ask>,
     pub live: Option<Live>,
+    /// Sessions started so far (each one's number, see `Live::run`).
+    runs: u64,
     pub editing: bool,
     edit_pending: bool,
     pub autostart: bool,
@@ -161,6 +169,7 @@ impl App {
             pw_key,
             asks: Vec::new(),
             live: None,
+            runs: 0,
             editing: false,
             edit_pending: false,
             autostart: sys::autostart(),
@@ -228,6 +237,12 @@ impl App {
             FromRelay::Join(from) => self.note(format!("join {from}")),
             FromRelay::Gone(from) => {
                 self.note(format!("gone {from}"));
+                if let Some(l) = &mut self.live
+                    && !l.linked
+                    && l.from == from
+                {
+                    l.viewer_gone = true;
+                }
                 if self.gate.gone(&from) {
                     self.asks.retain(|a| a.from != from);
                 }
@@ -235,6 +250,15 @@ impl App {
             }
             FromRelay::Msg(from, msg) => {
                 self.note(format!("msg {from} {}", msg["t"].as_str().unwrap_or("?")));
+                // the accepted viewer left before the link (or never linked: a link takes a few seconds), this one takes
+                // its place
+                if self.live.as_ref().is_some_and(|l| !l.linked && l.from != from && (l.viewer_gone || l.since.elapsed() > Duration::from_secs(10)))
+                    && let Some(old) = self.live.take()
+                {
+                    self.note(format!("replaced {}", old.from));
+                    old.session.end();
+                    self.gate.busy = false;
+                }
                 let key = self.pw_key.clone();
                 let salt = self.store.pw_salt.clone();
                 let sec = Secrets { id: &self.store.id, code: &self.code, password: key.as_deref().map(|k| (salt.as_str(), k)) };
@@ -274,24 +298,31 @@ impl App {
         let relay = self.relay.clone();
         let r = ready.clone();
         let sender = self.win.sender();
+        self.runs += 1;
+        let run = self.runs;
         let session = rtc::start(
             ready.sdp.clone(),
             move |res| match res {
                 Ok(sdp) => relay.send(&r.from, gate::answer(&r, &sdp), false),
-                Err(_) => relay.send(&r.from, json!({ "t": "refused", "why": "busy" }), true),
+                // the offer could not be read: say so (it is not a busy PC)
+                Err(_) => relay.send(&r.from, json!({ "t": "refused", "why": "offer" }), true),
             },
             move |ev| {
                 sender.send(move |h, cx| {
                     if let Some(app) = with_app(h) {
-                        app.on_session(ev, cx);
+                        app.on_session(run, ev, cx);
                     }
                 });
             },
         );
-        self.live = Some(Live { name: ready.name, mode: ready.mode, since: Instant::now(), linked: false, session });
+        self.live = Some(Live { name: ready.name, mode: ready.mode, since: Instant::now(), linked: false, session, from: ready.from, viewer_gone: false, run });
     }
 
-    pub fn on_session(&mut self, ev: SessionEvent, cx: &mut Cx) {
+    pub fn on_session(&mut self, run: u64, ev: SessionEvent, cx: &mut Cx) {
+        // a session that was replaced by another one: nothing to do
+        if self.live.as_ref().map(|l| l.run) != Some(run) {
+            return;
+        }
         match ev {
             SessionEvent::Linked => {
                 self.note("linked".into());

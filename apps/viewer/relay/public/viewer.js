@@ -30,6 +30,9 @@ const T = {
   ended: ['The session ended.', 'La session est terminée.'],
   forged: ['The answer was not signed by this PC: connection stopped.', 'La réponse n\'était pas signée par ce PC : connexion arrêtée.'],
   relay: ['The relay cannot be reached.', 'Le relais est injoignable.'],
+  asleep: ['The connection stopped while this page was in the background (the phone went to sleep or left the browser). Keep this page open, then try again.',
+    'La connexion s\'est arrêtée pendant que cette page était en arrière-plan (le téléphone s\'est mis en veille ou a quitté le navigateur). Gardez cette page ouverte, puis réessayez.'],
+  offer: ['This PC could not read the connection request of this browser.', 'Ce PC n\'a pas pu lire la demande de connexion de ce navigateur.'],
   t_kbd: ['Keyboard', 'Clavier'], t_win: ['Windows key', 'Touche Windows'], t_rclick: ['Next tap is a right-click', 'Le prochain appui est un clic droit'],
   t_fs: ['Full screen', 'Plein écran'], t_quit: ['Disconnect', 'Se déconnecter'],
 };
@@ -87,7 +90,8 @@ function connect(id, secret) {
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/join?id=' + id);
   S = { id, ws, nv, secret, mode, tries: [mode, mode === 'code' ? 'password' : null].filter(Boolean) };
   ws.onerror = () => fail(t('relay'));
-  ws.onclose = () => { if (S && S.ws === ws && !S.linked) fail(S.lastErr || t('relay')); };
+  ws.onclose = () => { if (S && S.ws === ws && !S.linked) fail(S.lastErr || (S.hidden ? t('asleep') : t('relay'))); };
+  awake(true);
   ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', name: deviceName(), nv }));
   ws.onmessage = async (ev) => {
     let m;
@@ -96,9 +100,28 @@ function connect(id, secret) {
   };
 }
 
+// the screen stays on while we wait and while the session lasts (otherwise a phone that locks drops the connection)
+let wake = null;
+async function awake(on) {
+  try {
+    if (on && !wake && navigator.wakeLock && document.visibilityState === 'visible') {
+      wake = await navigator.wakeLock.request('screen');
+      wake.addEventListener('release', () => { wake = null; });
+    } else if (!on && wake) {
+      const w = wake; wake = null; await w.release();
+    }
+  } catch { wake = null; }
+}
+document.addEventListener('visibilitychange', () => {
+  if (!S) return;
+  if (document.visibilityState === 'hidden') S.hidden = true;
+  else awake(true); // the lock is released while hidden: take it again
+});
+
 function fail(text) {
   const s = S;
   S = null;
+  awake(false);
   if (s) {
     try { s.ws.close(); } catch {}
     try { s.pc && s.pc.close(); } catch {}

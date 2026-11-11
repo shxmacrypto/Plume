@@ -379,3 +379,37 @@ fn run(offer: &str, answer: impl FnOnce(Result<String, String>), events: &impl F
     let _ = l.drain();
     result
 }
+
+/// The offers of every browser are accepted: Safari's and Chrome's hide the phone's address behind a `.local` name,
+/// add a reflexive address with `raddr 0.0.0.0`, IPv6 or TCP candidates.
+#[cfg(test)]
+mod offers {
+    use std::{sync::Arc, time::Instant};
+    use str0m::{RtcConfig, change::SdpOffer};
+
+    fn try_offer(cands: &str) -> Result<(), String> {
+        let sdp = format!(
+            "v=0\r\no=- 4155234960385128463 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=extmap-allow-mixed\r\na=msid-semantic: WMS\r\n\
+m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\n{cands}a=ice-ufrag:Zx1y\r\na=ice-pwd:7Hq3sX9bL2mN5pR8tV1wY4zA\r\na=ice-options:trickle\r\n\
+a=fingerprint:sha-256 6B:8B:5D:EA:59:04:20:23:29:C8:87:1C:CD:87:32:BE:DD:8C:66:A5:8E:50:55:EA:8C:D3:B6:5C:09:5E:D6:BC\r\na=setup:actpass\r\na=mid:0\r\na=sctp-port:5000\r\na=max-message-size:262144\r\n"
+        );
+        let offer = SdpOffer::from_sdp_string(&sdp).map_err(|e| format!("parse: {e}"))?;
+        let mut rtc = RtcConfig::new().set_crypto_provider(Arc::new(str0m::crypto::from_feature_flags())).build(Instant::now());
+        rtc.sdp_api().accept_offer(offer).map(|_| ()).map_err(|e| format!("accept: {e}"))
+    }
+
+    #[test]
+    fn every_browser_offer_is_accepted() {
+        let cases = [
+            ("no candidates", ""),
+            ("ip host", "a=candidate:1 1 udp 2113937151 192.168.1.20 51234 typ host generation 0 network-cost 999\r\n"),
+            ("mdns host", "a=candidate:1 1 udp 2113937151 7b0d1c2e-3f40-4a5b-8c6d-7e8f9a0b1c2d.local 51234 typ host generation 0 network-cost 999\r\n"),
+            ("srflx raddr 0", "a=candidate:2 1 udp 1677729535 203.0.113.5 51234 typ srflx raddr 0.0.0.0 rport 0 generation 0 network-cost 999\r\n"),
+            ("ipv6 host", "a=candidate:3 1 udp 2122262783 2001:db8::1 51235 typ host generation 0 network-cost 999\r\n"),
+            ("tcp host", "a=candidate:4 1 tcp 1518283007 192.168.1.20 9 typ host tcptype active generation 0 network-cost 999\r\n"),
+        ];
+        for (name, c) in cases {
+            assert_eq!(try_offer(c), Ok(()), "{name}");
+        }
+    }
+}
