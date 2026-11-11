@@ -22,10 +22,10 @@ use std::{
     path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 /// Un travail confié au fil d'un serveur : il reçoit la session, ou la raison pour laquelle il n'y en a pas.
@@ -112,6 +112,34 @@ impl Item {
             folder: None,
         }
     }
+}
+
+/// L'avancement d'un transfert, partagé avec le fil qui le fait. `total` à 0 : taille inconnue (un dossier).
+#[derive(Default)]
+pub struct Transfer {
+    pub total: AtomicU64,
+    pub done: AtomicU64,
+    pub running: AtomicBool,
+}
+
+/// Octets d'un fichier, ou de tout ce que contient un dossier.
+pub fn local_size(p: &std::path::Path) -> u64 {
+    match std::fs::symlink_metadata(p) {
+        Ok(m) if m.is_dir() => std::fs::read_dir(p).map(|r| r.flatten().map(|e| local_size(&e.path())).sum()).unwrap_or(0),
+        Ok(m) => m.len(),
+        Err(_) => 0,
+    }
+}
+
+/// Tant que le transfert dure, regarde ce qui est déjà arrivé sur ce PC (un téléchargement s'écrit au fur et à mesure).
+fn watch_local(t: Arc<Transfer>, targets: Vec<PathBuf>, sender: Sender) {
+    std::thread::spawn(move || {
+        while t.running.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_millis(250));
+            t.done.store(targets.iter().map(|p| local_size(p)).sum(), Ordering::Relaxed);
+            sender.send(|_, cx| cx.repaint());
+        }
+    });
 }
 
 impl App {
@@ -295,7 +323,20 @@ impl App {
             many => self.s.count(many.len() as u64, self.s.item),
         };
         self.remote_busy(self.s.fill(self.s.sftp_downloading, &[&what]));
+        // la taille attendue : celle des fichiers de la liste (un dossier : inconnue, on montre ce qui arrive)
+        let tab = self.tab();
+        let total: Option<u64> = items
+            .iter()
+            .map(|(p, dir)| if *dir { None } else { tab.row_of(p.rsplit('/').next().unwrap_or_default()).map(|r| tab.item(r).size) })
+            .sum();
+        let transfer = Arc::new(Transfer::default());
+        transfer.total.store(total.unwrap_or(0), Ordering::Relaxed);
+        transfer.running.store(true, Ordering::Relaxed);
+        self.transfer = Some(transfer.clone());
+        // un fichier comme un dossier arrive dans `to` sous son nom
+        let targets: Vec<PathBuf> = items.iter().map(|(p, _)| to.join(windows_name(p.rsplit('/').next().unwrap_or_default()))).collect();
         let sender = self.win.sender();
+        watch_local(transfer.clone(), targets, sender);
         self.remote_job(&server, move |session| {
             let result = session.map_err(str::to_string).and_then(|s| {
                 std::fs::create_dir_all(&to).map_err(|e| e.to_string())?;
@@ -306,6 +347,7 @@ impl App {
                 }
                 Ok(())
             });
+            transfer.running.store(false, Ordering::Relaxed);
             to_app(&sender, move |app, cx| app.remote_done(result, Done::Downloaded { to, open }, cx));
         });
     }
@@ -324,17 +366,25 @@ impl App {
         };
         self.remote_busy(self.s.fill(self.s.sftp_uploading, &[&what]));
         let message = Some(self.s.fill(self.s.sftp_uploaded, &[&what]));
+        let sizes: Vec<u64> = files.iter().map(|f| local_size(f)).collect();
+        let transfer = Arc::new(Transfer::default());
+        transfer.total.store(sizes.iter().sum(), Ordering::Relaxed);
+        transfer.running.store(true, Ordering::Relaxed);
+        self.transfer = Some(transfer.clone());
         let sender = self.win.sender();
         let (to, link) = (dir.clone(), server.clone());
         self.remote_job(&server, move |session| {
             let result = session.map_err(str::to_string).and_then(|s| {
-                for f in &files {
+                for (f, size) in files.iter().zip(&sizes) {
                     let Some(name) = f.file_name().map(|n| n.to_string_lossy().into_owned()) else { continue };
                     // un dossier arrive dans le dossier du serveur sous son nom ; un fichier reçoit le sien
                     if f.is_dir() { s.put(f, &to, true)? } else { s.put(f, &sftp::join(&to, &name), false)? }
+                    transfer.done.fetch_add(*size, Ordering::Relaxed);
+                    to_app(&sender, |_, cx| cx.repaint());
                 }
                 Ok(())
             });
+            transfer.running.store(false, Ordering::Relaxed);
             to_app(&sender, move |app, cx| app.remote_done(result, Done::Changed { server: link, dir, select: names, rename: false, message }, cx));
         });
     }
@@ -385,6 +435,7 @@ impl App {
         self.jobs = self.jobs.saturating_sub(1);
         if self.jobs == 0 {
             self.busy = None;
+            self.transfer = None;
         }
         // même après une erreur, le dossier du serveur a pu changer en partie : on le relit
         if let Done::Changed { server, dir, select, rename, .. } = &done {

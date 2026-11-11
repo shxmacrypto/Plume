@@ -503,7 +503,22 @@ impl App {
         }
         c.text(&text, rect(st.x + 14.0, st.y, (st.w - 150.0).max(0.0), st.h), Font::Small, t.t3, Align::Left);
         if let Some((label, _)) = &self.busy {
-            c.text(label, rect(st.right() - 474.0, st.y, 460.0, st.h), Font::Small, t.t2, Align::Right);
+            // un transfert : la part déjà faite (ou ce qui est arrivé, si la taille est inconnue), et une barre
+            let mut label = label.clone();
+            if let Some(tr) = &self.transfer {
+                use std::sync::atomic::Ordering::Relaxed;
+                let (done, total) = (tr.done.load(Relaxed), tr.total.load(Relaxed));
+                if total > 0 {
+                    let part = (done as f64 / total as f64).clamp(0.0, 1.0);
+                    label = format!("{label}  ·  {} %  ({} / {})", (part * 100.0).round() as u32, s.size(done.min(total)), s.size(total));
+                    let bar = rect(st.x, st.y, st.w, 2.0);
+                    c.fill(bar, t.fill);
+                    c.fill(rect(bar.x, bar.y, bar.w * part as f32, bar.h), t.accent);
+                } else if done > 0 {
+                    label = format!("{label}  ·  {}", s.size(done));
+                }
+            }
+            c.text(&label, rect(st.right() - 474.0, st.y, 460.0, st.h), Font::Small, t.t2, Align::Right);
         } else if !self.ix.is_ready() && !self.ix.sleeping() {
             // premier lancement : l'index des disques se construit
             let n = self.ix.progress.entries.load(std::sync::atomic::Ordering::Relaxed);

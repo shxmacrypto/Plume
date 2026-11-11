@@ -17,6 +17,9 @@ if not (os.path.isfile(SERVER) and os.path.isfile(CLIENT)):
 d = fixture("fixture14")
 with open(os.path.join(d, "Alpha", "Inner", "deep.bin"), "wb") as f:
     f.write(b"x" * 1000)
+BIG = 400 * 1024 * 1024  # assez gros pour voir l'avancement d'un téléchargement
+with open(os.path.join(d, "Gamma", "big.bin"), "wb") as f:
+    f.truncate(BIG)
 local = os.path.join(OUT, "sftp-local")
 shutil.rmtree(local, ignore_errors=True)
 os.makedirs(os.path.join(local, "Folder up", "sub"))
@@ -128,6 +131,29 @@ try:
     deep = os.path.join(local, "downloads", "Alpha", "Inner", "deep.bin")
     ready(lambda s: os.path.isfile(deep), "folder downloaded")
     check("a folder is downloaded with everything inside", os.path.getsize(deep) == 1000 and os.path.isfile(os.path.join(local, "downloads", "Alpha", "inside.txt")))
+    # a big download shows how far it is
+    x.dbl(row("Gamma")); ready(lambda s: s["loc"] == URL + "/Gamma", "in Gamma")
+    menu(row("big.bin"), "Download to…")
+    seen_progress = None
+    end = time.time() + 120
+    while time.time() < end:
+        st = x.state()
+        tr = st.get("transfer")
+        if tr and tr["total"] == BIG and 0 < tr["done"] < BIG:
+            seen_progress = tr
+            x.shot("sftp-progress")
+            break
+        if os.path.isfile(os.path.join(local, "downloads", "big.bin")) and os.path.getsize(os.path.join(local, "downloads", "big.bin")) == BIG and not st["busy"]:
+            break
+        time.sleep(0.1)
+    check("a download shows its progress (bytes received out of the size)", seen_progress is not None, seen_progress)
+    end = time.time() + 180
+    while time.time() < end and (x.state()["busy"] or os.path.getsize(os.path.join(local, "downloads", "big.bin")) != BIG):
+        time.sleep(0.3)
+    st = x.state()
+    check("once done, the progress goes away", st.get("transfer") is None and not st["busy"], st.get("transfer"))
+    os.remove(os.path.join(local, "downloads", "big.bin"))
+    x.click("Up"); ready(lambda s: s["loc"] == URL, "back up")
     # delete: asks first, because a server has no recycle bin
     x.click(row("a2.txt")); x.click(row("Folder up"), ctrl=True)
     x.key(VK["DELETE"])

@@ -729,10 +729,13 @@ impl Index {
     }
 }
 
+/// Ce qui donne l'index à un travail, le temps d'une mise à jour.
+pub type Lend<'a> = dyn FnMut(&mut dyn FnMut(&mut Index)) + 'a;
+
 /// Relit `dirs` sur le disque et met l'index d'accord, puis lit les sous-dossiers nouveaux, jusqu'au bout.
 /// `with` donne l'index (pris le temps d'une mise à jour seulement : les recherches continuent entre deux).
 /// `stop` interrompt. Renvoie vrai si quelque chose a changé.
-pub fn walk(dirs: Vec<u32>, with: &mut dyn FnMut(&mut dyn FnMut(&mut Index)), stop: &dyn Fn() -> bool) -> bool {
+pub fn walk(dirs: Vec<u32>, with: &mut Lend, stop: &dyn Fn() -> bool) -> bool {
     let mut todo: Vec<(u32, bool)> = dirs.into_iter().map(|d| (d, false)).collect();
     let mut changed = false;
     while !todo.is_empty() && !stop() {

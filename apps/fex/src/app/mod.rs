@@ -262,6 +262,8 @@ pub struct App {
     pub ix: Arc<search::SearchIndex>,
     /// Travail de fond en cours (extraction, compression) : son libellé et son début ; et combien sont en cours.
     pub busy: Option<(String, Instant)>,
+    /// Transfert en cours avec un serveur : son avancement.
+    pub transfer: Option<std::sync::Arc<remote::Transfer>>,
     jobs: usize,
     /// Boîte de dialogue ouverte (mot de passe d'une archive).
     pub sheet: Option<sheet::Sheet>,
@@ -292,6 +294,7 @@ impl App {
             update: None,
             preview: preview::Preview::new(gfx.clone()),
             undo: Vec::new(),
+            transfer: None,
             thumbs: Default::default(),
             win,
             theme,
