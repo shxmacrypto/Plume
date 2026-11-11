@@ -115,6 +115,82 @@ fn roots() -> Vec<PathBuf> {
         .collect()
 }
 
+// ───────────────────────── disques sans journal suivi ─────────────────────────
+
+/// Disques que le journal ne suit pas : clés USB et cartes (DRIVE_REMOVABLE = 2), lecteurs réseau (DRIVE_REMOTE = 4).
+/// Ils sont lus quand ils apparaissent, retirés quand ils disparaissent, et relus en entier de temps en temps.
+/// PLUME_FEX_EXTRA_ROOTS (essais) : une liste de dossiers à la place ; avec PLUME_FEX_INDEX_ROOTS seul, aucun.
+fn extra_roots() -> Vec<PathBuf> {
+    if let Some(v) = std::env::var_os("PLUME_FEX_EXTRA_ROOTS") {
+        return std::env::split_paths(&v).filter(|p| p.is_dir()).collect();
+    }
+    if std::env::var_os("PLUME_FEX_INDEX_ROOTS").is_some() {
+        return vec![];
+    }
+    let mask = unsafe { GetLogicalDrives() };
+    (0..26u32)
+        .filter(|i| mask & (1 << i) != 0)
+        .map(|i| format!("{}:\\", (b'A' + i as u8) as char))
+        .filter(|root| {
+            let w: Vec<u16> = root.encode_utf16().chain(Some(0)).collect();
+            matches!(unsafe { GetDriveTypeW(PCWSTR(w.as_ptr())) }, 2 | 4)
+        })
+        .map(PathBuf::from)
+        // un lecteur de cartes vide, un partage injoignable : rien à lire
+        .filter(|p| p.is_dir())
+        .collect()
+}
+
+fn root_key(p: &Path) -> String {
+    p.display().to_string().trim_end_matches('\\').to_lowercase()
+}
+
+fn ms_env(name: &str, default: Duration) -> Duration {
+    std::env::var(name).ok().and_then(|v| v.parse().ok()).map_or(default, Duration::from_millis)
+}
+
+/// Les disques sans journal que l'index contient déjà (ceux de la dernière fois) : (numéro de la racine, dernière lecture).
+type Extras = std::collections::HashMap<String, (u32, Option<Instant>)>;
+
+fn adopt_extras(s: &SearchIndex, plan: &Plan) -> Extras {
+    let fixed: HashSet<String> = plan.roots.iter().map(|r| root_key(r)).collect();
+    let ix = s.index.read().unwrap();
+    ix.roots().into_iter().filter(|(_, name)| !fixed.contains(&name.to_lowercase())).map(|(id, name)| (name.to_lowercase(), (id, None))).collect()
+}
+
+/// Met l'index d'accord avec les disques sans journal présents. Vrai si quelque chose a changé.
+fn follow_extras(s: &SearchIndex, extras: &mut Extras, every: Duration) -> bool {
+    let present: std::collections::HashMap<String, PathBuf> = extra_roots().into_iter().map(|p| (root_key(&p), p)).collect();
+    let mut changed = false;
+    let gone: Vec<String> = extras.keys().filter(|k| !present.contains_key(*k)).cloned().collect();
+    for k in gone {
+        if let Some((id, _)) = extras.remove(&k) {
+            s.index.write().unwrap().drop_root(id);
+            changed = true;
+        }
+    }
+    for (k, path) in present {
+        let due = extras.get(&k).is_none_or(|(_, at)| at.is_none_or(|t| t.elapsed() >= every));
+        if !due || s.stopping() {
+            continue;
+        }
+        let id = match extras.get(&k) {
+            Some((id, _)) => *id,
+            None => {
+                changed = true;
+                s.index.write().unwrap().add_root(&path)
+            }
+        };
+        let dirs = s.index.read().unwrap().dirs_under(id);
+        changed |= index::walk(dirs, &mut |f| f(&mut s.index.write().unwrap()), &|| s.stopping());
+        extras.insert(k, (id, Some(Instant::now())));
+    }
+    if changed {
+        s.version.fetch_add(1, Ordering::Relaxed);
+    }
+    changed
+}
+
 /// Racine du volume d'un dossier indexé : « C:\ » pour « C:\Users\… ».
 fn volume_of(root: &Path) -> PathBuf {
     let s = root.display().to_string();
@@ -294,6 +370,11 @@ fn service(s: &SearchIndex, sender: Sender, dir: &Path) {
     let Some((mut positions, mut dirty)) = open(s, &plan, sender) else { return };
     s.touch();
     let (mut last_save, mut last_watch) = (Instant::now(), Instant::now());
+    // clés USB, cartes, lecteurs réseau : regardés toutes les 10 s, relus en entier toutes les 15 min
+    let (extra_check, extra_every) = (ms_env("PLUME_FEX_EXTRA_CHECK_MS", Duration::from_secs(10)), ms_env("PLUME_FEX_EXTRA_EVERY_MS", Duration::from_secs(15 * 60)));
+    let mut extras = adopt_extras(s, &plan);
+    dirty |= follow_extras(s, &mut extras, extra_every);
+    let mut last_extra = Instant::now();
     while !s.stopping() {
         std::thread::sleep(Duration::from_millis(100));
         // en sommeil : l'index n'est plus en mémoire ; il y revient (en une demi-seconde) dès qu'on veut chercher
@@ -303,11 +384,18 @@ fn service(s: &SearchIndex, sender: Sender, dir: &Path) {
                     Some((p, d)) => (positions, dirty) = (p, d),
                     None => return,
                 }
+                extras = adopt_extras(s, &plan);
+                dirty |= follow_extras(s, &mut extras, extra_every);
+                last_extra = Instant::now();
                 s.asleep.store(false, Ordering::Relaxed);
                 s.touch();
                 last_watch = Instant::now();
             }
             continue;
+        }
+        if last_extra.elapsed() >= extra_check {
+            last_extra = Instant::now();
+            dirty |= follow_extras(s, &mut extras, extra_every);
         }
         // veille : le journal dit quels dossiers ont changé
         if last_watch.elapsed() >= WATCH_EVERY {

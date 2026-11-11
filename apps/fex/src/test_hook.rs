@@ -69,6 +69,11 @@ fn point(app: &App, cmd: &Value) -> Option<Pt> {
     if let Some(id) = cmd.get("id").and_then(Value::as_str) {
         if let Some(n) = id.strip_prefix("Row(").and_then(|r| r.strip_suffix(')')).and_then(|n| n.parse::<usize>().ok()) {
             let l = app.lay.list;
+            // en vignettes : le milieu de la case
+            if app.set.thumbs {
+                let r = app.tile_rect(n);
+                return Some(pt(r.x + r.w / 2.0, r.y + r.h / 2.0));
+            }
             let y = l.y + LIST_TOP + n as f32 * ROW_H - app.tab().scroll + ROW_H / 2.0;
             // « blank » : dans le vide à droite du nom plutôt que sur le nom
             let x = if cmd.get("blank").and_then(Value::as_bool).unwrap_or(false) { l.right() - 60.0 } else { l.x + 44.0 };
@@ -122,6 +127,9 @@ fn state(app: &App) -> Value {
         "search_asc": tab.search_sort.1,
         "cols": app.columns().iter().map(|(col, x, w)| json!([format!("{col:?}"), x, w])).collect::<Vec<_>>(),
         "folder_sizes": app.set.folder_sizes,
+        "thumbs": app.set.thumbs,
+        "grid_cols": app.grid_cols(),
+        "thumbs_ready": app.thumbs_ready(),
         "preview": {
             "on": app.set.preview,
             "shown": app.lay.preview.w > 0.0,

@@ -51,6 +51,9 @@ impl App {
         let t = self.theme.clone();
         c.clear(t.bg);
         self.paint_list(c, cx, &t, dt);
+        if self.set.thumbs {
+            self.paint_tiles(c, &t);
+        }
         if self.lay.preview.w > 0.0 {
             let pane = self.lay.preview;
             self.paint_preview(c, &t, pane);
@@ -85,7 +88,7 @@ impl App {
         let mut list = body;
         let searching = matches!(self.tabs[self.cur].loc, Location::Search { .. });
         let scope = list.cut_top(if searching { 38.0 } else { 0.0 });
-        let header = list.cut_top(m::HEADER_H);
+        let header = list.cut_top(if self.set.thumbs { 0.0 } else { m::HEADER_H });
         let status = rect(0.0, h - m::STATUS_H, w, m::STATUS_H);
         let fy = m::TITLE_H + (m::BAR_H - m::FIELD_H) / 2.0;
         let left = PAD + 4.0 * (m::NB_W + 2.0) + 6.0;
@@ -94,7 +97,14 @@ impl App {
         let search = rect(more_x - 6.0 - sw, fy, sw, m::FIELD_H);
         let addr = rect(left, fy, (search.x - 8.0 - left).max(60.0), m::FIELD_H);
         let rows = self.tabs[self.cur].rows() as f32;
-        let max_scroll = (rows * ROW_H + LIST_TOP + 10.0 - list.h).max(0.0);
+        // en vignettes : des lignes de cases
+        let (lines, lh) = if self.set.thumbs {
+            let cols = ((list.w - super::thumbs::GPAD - 16.0) / super::thumbs::TILE_W).floor().max(1.0);
+            ((rows / cols).ceil(), super::thumbs::TILE_H)
+        } else {
+            (rows, ROW_H)
+        };
+        let max_scroll = (lines * lh + LIST_TOP + 10.0 - list.h).max(0.0);
         self.lay = Lay {
             w,
             preview,
@@ -171,8 +181,9 @@ impl App {
             _ => None,
         };
 
-        // ── en-tête des colonnes
-        for &(col, x, w) in &cols {
+        // ── en-tête des colonnes (pas en vignettes)
+        let header_cols = if self.set.thumbs { vec![] } else { cols.clone() };
+        for &(col, x, w) in &header_cols {
             let label = match col {
                 Col::Name => s.col_name,
                 Col::Date => s.col_date,
@@ -209,7 +220,7 @@ impl App {
             }
         }
         // le bord gauche de chaque colonne réglable se tire (par-dessus les zones de clic des en-têtes)
-        if sortable {
+        if sortable && !self.set.thumbs {
             for &(col, x, _) in cols.iter().filter(|c| c.0 != Col::Name) {
                 self.hits.add(rect(x - 4.0, header.y, 8.0, header.h), Id::ColSplit(col));
             }
@@ -221,6 +232,8 @@ impl App {
         let scroll = c.snap(tab.scroll);
         let first = ((scroll - LIST_TOP) / ROW_H).floor().max(0.0) as usize;
         let last = (((scroll + list.h - LIST_TOP) / ROW_H).ceil().max(0.0) as usize).min(rows);
+        // en vignettes, la grille est dessinée par `paint_tiles`
+        let (first, last) = if self.set.thumbs { (0, 0) } else { (first, last) };
         let slow = matches!(tab.load, Load::Loading(since) if since.elapsed().as_millis() > 150);
         let dim = tab.stale && slow;
         let renaming = match &self.edit {

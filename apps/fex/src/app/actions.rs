@@ -46,6 +46,7 @@ mod cmd {
     pub const HIDDEN: u32 = 0x700F;
     pub const PREVIEW: u32 = 0x7050;
     pub const UNDO: u32 = 0x7051;
+    pub const VIEW_THUMBS: u32 = 0x7053;
     pub const EXT: u32 = 0x7010;
     pub const TERMINAL: u32 = 0x7011;
     pub const PROPERTIES: u32 = 0x7012;
@@ -330,6 +331,7 @@ impl App {
             .check(cmd::EXT, s.show_ext, !self.set.hide_ext)
             .check(cmd::FOLDER_SIZES, s.folder_sizes, self.set.folder_sizes)
             .check(cmd::PREVIEW, s.preview_pane, self.set.preview)
+            .check(cmd::VIEW_THUMBS, s.view_thumbs, self.set.thumbs)
             .sep()
             .sub(s.theme, theme)
             .sub(s.language, language);
@@ -448,6 +450,7 @@ impl App {
             cmd::HIDDEN => self.set_show_hidden(!self.set.show_hidden),
             cmd::PREVIEW => self.toggle_preview(),
             cmd::UNDO => self.undo_last(),
+            cmd::VIEW_THUMBS => self.set_thumbs(!self.set.thumbs),
             cmd::EXT => {
                 self.set.hide_ext = !self.set.hide_ext;
                 self.set.save();
@@ -743,7 +746,13 @@ impl App {
             (name.clone(), name[..stem].encode_utf16().count())
         };
         let y = l.y + LIST_TOP + row as f32 * ROW_H - tab.scroll;
-        let r = rect(x + 30.0, y + 3.0, (w - 40.0).max(40.0), ROW_H - 6.0);
+        let r = if self.set.thumbs {
+            // sous la miniature, à la place du nom
+            let tile = self.tile_rect(row);
+            rect(tile.x + 6.0, tile.bottom() - 34.0, tile.w - 12.0, 24.0)
+        } else {
+            rect(x + 30.0, y + 3.0, (w - 40.0).max(40.0), ROW_H - 6.0)
+        };
         self.edit = Some(EditKind::Rename { tab: tab.id, name });
         self.edit_rect = r;
         self.win.edit_show(r, &text, &self.edit_style(self.theme.solid, Some((0, select)), ""));
@@ -792,6 +801,18 @@ impl App {
     // ───────────────────────── clavier ─────────────────────────
 
     /// Touches des opérations sur les fichiers. Renvoie vrai si la touche a été comprise.
+    /// Vue « Vignettes » ou « Détails » (Ctrl+Maj+2 et Ctrl+Maj+6, comme dans l'Explorateur).
+    pub(super) fn set_thumbs(&mut self, on: bool) {
+        self.set.thumbs = on;
+        self.set.save();
+        let tab = self.tab_mut();
+        (tab.scroll, tab.target) = (0.0, 0.0);
+        if let Some(f) = self.tab().focus {
+            self.reveal(f);
+        }
+        self.win.repaint();
+    }
+
     /// Ouvre ou ferme le volet d'aperçu (Alt+P, comme dans l'Explorateur).
     pub(super) fn toggle_preview(&mut self) {
         self.set.preview = !self.set.preview;
@@ -802,6 +823,11 @@ impl App {
     pub(super) fn key_more(&mut self, vk: u16, mods: Mods, cx: &mut Cx) -> bool {
         let Mods { ctrl, shift, alt } = mods;
         let letter = |c: char| vk == c as u16;
+        if ctrl && shift && !alt && (letter('2') || letter('6')) {
+            self.set_thumbs(letter('2'));
+            cx.repaint();
+            return true;
+        }
         if alt && !ctrl && !shift && letter('P') {
             self.toggle_preview();
             cx.repaint();

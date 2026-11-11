@@ -673,10 +673,88 @@ impl Index {
         }
     }
 
+    /// Ajoute un disque branché après la construction (clé USB, lecteur réseau) : sa racine seule ; son contenu se
+    /// lit ensuite avec [`Index::walk`]. Renvoie le numéro de la racine.
+    pub fn add_root(&mut self, root: &Path) -> u32 {
+        let mut keys = NameKeys::new();
+        let name = root.display().to_string();
+        let id = self.add(name.trim_end_matches('\\'), NO_PARENT, 0, 0, F_DIR, &mut keys);
+        if let Some(fid) = listing::dir_id(root) {
+            self.dir_ids.insert(fid, id);
+        }
+        id
+    }
+
+    /// Un disque débranché : sa racine et tout ce qu'elle contient sortent des recherches.
+    pub fn drop_root(&mut self, root: u32) {
+        let Some(f) = self.flags.get_mut(root as usize) else { return };
+        *f |= F_DELETED;
+        // un enfant suit toujours son dossier parent : une passe suffit
+        for i in root as usize + 1..self.len() {
+            let p = self.parent[i];
+            if p != NO_PARENT && self.flags[p as usize] & F_DELETED != 0 {
+                self.flags[i] |= F_DELETED;
+            }
+        }
+    }
+
+    /// Les racines de l'index (non supprimées) : (numéro, nom tel que « E: »).
+    pub fn roots(&self) -> Vec<(u32, String)> {
+        (0..self.len() as u32).filter(|&i| self.parent[i as usize] == NO_PARENT && self.flags[i as usize] & F_DELETED == 0).map(|i| (i, self.name(i).to_string())).collect()
+    }
+
+    /// Les dossiers (non supprimés) sous `root`, `root` compris, dans l'ordre de l'index.
+    pub fn dirs_under(&self, root: u32) -> Vec<u32> {
+        let mut inside = vec![false; self.len()];
+        let mut out = vec![];
+        if (root as usize) < self.len() && self.flags[root as usize] & F_DELETED == 0 {
+            inside[root as usize] = true;
+            out.push(root);
+        }
+        for i in root as usize + 1..self.len() {
+            let p = self.parent[i];
+            if p != NO_PARENT && inside[p as usize] && self.flags[i] & F_DELETED == 0 {
+                inside[i] = true;
+                if self.flags[i] & F_DIR != 0 && self.flags[i] & F_LINK == 0 {
+                    out.push(i as u32);
+                }
+            }
+        }
+        out
+    }
+
     /// Nombre d'éléments supprimés encore présents dans les tableaux.
     pub fn deleted(&self) -> usize {
         self.flags.iter().filter(|&&f| f & F_DELETED != 0).count()
     }
+}
+
+/// Relit `dirs` sur le disque et met l'index d'accord, puis lit les sous-dossiers nouveaux, jusqu'au bout.
+/// `with` donne l'index (pris le temps d'une mise à jour seulement : les recherches continuent entre deux).
+/// `stop` interrompt. Renvoie vrai si quelque chose a changé.
+pub fn walk(dirs: Vec<u32>, with: &mut dyn FnMut(&mut dyn FnMut(&mut Index)), stop: &dyn Fn() -> bool) -> bool {
+    let mut todo: Vec<(u32, bool)> = dirs.into_iter().map(|d| (d, false)).collect();
+    let mut changed = false;
+    while !todo.is_empty() && !stop() {
+        let chunk: Vec<(u32, bool)> = todo.drain(..todo.len().min(256)).collect();
+        let mut paths = vec![];
+        with(&mut |ix| paths = chunk.iter().map(|&(d, fresh)| (d, fresh, ix.path(d))).collect());
+        let (mut batch, mut denied) = (vec![], vec![]);
+        for (dir, fresh, path) in paths {
+            match list_for_sync(&path) {
+                Ok(listing) => batch.push(DirSync { dir, listing, fresh }),
+                Err(e) if e.kind() == io::ErrorKind::PermissionDenied => denied.push(dir),
+                Err(_) => {}
+            }
+        }
+        with(&mut |ix| {
+            denied.iter().for_each(|&d| ix.deny(d));
+            let (new_dirs, c) = ix.sync_dirs(&batch);
+            changed |= c;
+            todo.extend(new_dirs.into_iter().map(|d| (d, true)));
+        });
+    }
+    changed
 }
 
 // ───────────────────────── fichier ─────────────────────────
@@ -881,6 +959,36 @@ mod tests {
             todo = new_dirs.into_iter().map(|d| (d, true)).collect();
         }
         changed
+    }
+
+    #[test]
+    fn drives_come_and_go() {
+        let (a, b) = (tree("index-extra-a"), tree("index-extra-b"));
+        let (progress, cancel) = (Progress::default(), AtomicBool::new(false));
+        let mut ix = build(std::slice::from_ref(&a.0), 2, &progress, &cancel);
+        ix.compute_rank(2);
+        // un disque branché : sa racine, puis tout son contenu
+        let root = ix.add_root(&b.0);
+        let mut with = |f: &mut dyn FnMut(&mut Index)| f(&mut ix);
+        assert!(walk(vec![root], &mut with, &|| false));
+        assert_eq!(ix.roots().len(), 2);
+        let main = ix.find(&b.0.join("Projets").join("Plume").join("src").join("main.rs")).unwrap();
+        assert_eq!(ix.size_of(main), 12);
+        assert_eq!(ix.dirs_under(root).len(), 5);
+        // relu sans changement : rien ne bouge ; un fichier ajouté : il arrive
+        let dirs = ix.dirs_under(root);
+        let mut with = |f: &mut dyn FnMut(&mut Index)| f(&mut ix);
+        assert!(!walk(dirs, &mut with, &|| false));
+        std::fs::write(b.0.join("Photos").join("new.jpg"), b"abc").unwrap();
+        let dirs = ix.dirs_under(root);
+        let mut with = |f: &mut dyn FnMut(&mut Index)| f(&mut ix);
+        assert!(walk(dirs, &mut with, &|| false));
+        assert!(ix.find(&b.0.join("Photos").join("new.jpg")).is_some());
+        // débranché : il disparaît, l'autre reste
+        ix.drop_root(root);
+        assert!(ix.find(&b.0.join("Photos").join("new.jpg")).is_none());
+        assert_eq!(ix.roots().len(), 1);
+        assert!(ix.find(&a.0.join("notes.txt")).is_some());
     }
 
     #[test]

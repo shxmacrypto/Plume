@@ -129,6 +129,11 @@ fn load(path: &Path) -> Content {
 }
 
 impl App {
+    /// La fabrique WIC du fil de l'interface (images faites de pixels en mémoire).
+    pub(super) fn preview_wic(&self) -> IWICImagingFactory {
+        self.preview.gfx.wic.clone()
+    }
+
     /// Le chemin de l'élément qui a le focus (dans un dossier du PC ou une recherche).
     fn preview_target(&self) -> Option<PathBuf> {
         let tab = self.tab();

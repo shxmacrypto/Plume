@@ -11,6 +11,7 @@ pub mod remote;
 mod search;
 pub mod settings;
 pub mod sheet;
+pub mod thumbs;
 pub mod undo;
 mod view;
 
@@ -222,6 +223,7 @@ pub struct App {
     pub preview: preview::Preview,
     /// Ce que Ctrl+Z peut défaire, le plus récent à la fin.
     pub undo: Vec<undo::Undo>,
+    pub thumbs: thumbs::Thumbs,
     pub set: Settings,
     pub icons: Icons,
     pub dates: Dates,
@@ -290,6 +292,7 @@ impl App {
             update: None,
             preview: preview::Preview::new(gfx.clone()),
             undo: Vec::new(),
+            thumbs: Default::default(),
             win,
             theme,
             s,
@@ -926,23 +929,25 @@ impl App {
     /// Fait défiler la liste juste assez pour montrer la ligne `row`.
     pub fn reveal(&mut self, row: usize) {
         let h = self.lay.list.h;
+        let (cols, lh) = (self.grid_cols(), self.line_h());
         let tab = self.tab_mut();
-        let y = row as f32 * ROW_H;
+        let y = (row / cols) as f32 * lh;
         if y < tab.target {
             tab.target = y;
-        } else if h > 0.0 && y + ROW_H + LIST_TOP + 10.0 > tab.target + h {
-            tab.target = y + ROW_H + LIST_TOP + 10.0 - h;
+        } else if h > 0.0 && y + lh + LIST_TOP + 10.0 > tab.target + h {
+            tab.target = y + lh + LIST_TOP + 10.0 - h;
         }
         tab.target = tab.target.max(0.0);
         tab.scroll = tab.target;
     }
 
     fn rows_per_page(&self) -> usize {
-        ((self.lay.list.h / ROW_H).floor() as usize).max(2) - 1
+        (((self.lay.list.h / self.line_h()).floor() as usize).max(2) - 1) * self.grid_cols()
     }
 
     fn move_focus(&mut self, vk: u16, mods: Mods) {
         let page = self.rows_per_page();
+        let cols = self.grid_cols();
         let tab = self.tab_mut();
         let rows = tab.rows();
         if rows == 0 || tab.stale {
@@ -950,8 +955,11 @@ impl App {
         }
         let cur = tab.focus.filter(|&f| f < rows);
         let new = match vk {
-            K_UP => cur.map_or(0, |f| f.saturating_sub(1)),
-            K_DOWN => cur.map_or(0, |f| (f + 1).min(rows - 1)),
+            // en vignettes, haut et bas changent de ligne de la grille, gauche et droite de case
+            K_UP => cur.map_or(0, |f| f.saturating_sub(cols)),
+            K_DOWN => cur.map_or(0, |f| (f + cols).min(rows - 1)),
+            K_LEFT => cur.map_or(0, |f| f.saturating_sub(1)),
+            K_RIGHT => cur.map_or(0, |f| (f + 1).min(rows - 1)),
             K_HOME => 0,
             K_END => rows - 1,
             K_PRIOR => cur.map_or(0, |f| f.saturating_sub(page)),
@@ -1311,12 +1319,19 @@ impl App {
         if y < 0.0 {
             return None;
         }
+        if self.set.thumbs {
+            return self.tile_at(p.x, y);
+        }
         let r = (y / ROW_H) as usize;
         (r < tab.rows() && p.x >= l.x + 6.0 && p.x < l.right() - 14.0).then_some(r)
     }
 
     /// Le point est-il sur l'icône ou le nom de la ligne (et non dans le vide à sa droite) ?
     fn on_name(&self, row: usize, p: Pt) -> bool {
+        // en vignettes, toute la case compte
+        if self.set.thumbs {
+            return true;
+        }
         row.checked_sub(self.first_row).and_then(|k| self.name_right.get(k)).is_some_and(|&right| p.x <= right + 6.0)
     }
 
@@ -1508,6 +1523,9 @@ impl App {
 
     /// Met la sélection en accord avec le rectangle de sélection.
     fn lasso_update(&mut self) {
+        if self.set.thumbs {
+            return self.lasso_tiles();
+        }
         let (l, p) = (self.lay.list, self.mouse);
         let Drag::Lasso { y0, ctrl, base, .. } = &self.drag else { return };
         let (y0, ctrl) = (*y0, *ctrl);
@@ -1694,7 +1712,7 @@ impl App {
                 let n = self.tabs.len();
                 self.activate_tab(if shift { (self.cur + n - 1) % n } else { (self.cur + 1) % n });
             }
-            v if ctrl && (letter('1')..=letter('9')).contains(&v) => {
+            v if ctrl && !shift && (letter('1')..=letter('9')).contains(&v) => {
                 let n = (v - letter('1')) as usize;
                 self.activate_tab(if n == 8 { self.tabs.len() - 1 } else { n });
             }
@@ -1713,6 +1731,7 @@ impl App {
                 }
             }
             K_UP | K_DOWN | K_HOME | K_END | K_PRIOR | K_NEXT if !alt => self.move_focus(vk, mods),
+            K_LEFT | K_RIGHT if !alt && self.set.thumbs => self.move_focus(vk, mods),
             K_SPACE if ctrl => {
                 if let Some(f) = self.tab().focus {
                     self.tab_mut().toggle(f);
