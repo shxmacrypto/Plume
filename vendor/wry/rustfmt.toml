@@ -1,0 +1,3 @@
+# A copy of someone else's code (see PLUME.md): it keeps its own layout, so that it stays easy to compare
+# with the original. `cargo fmt --all` leaves this folder alone.
+disable_all_formatting = true

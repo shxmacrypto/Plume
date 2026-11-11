@@ -18,9 +18,7 @@ use windows::{
         },
         UI::{
             Shell::{FOLDERID_Desktop, IShellLinkW, KF_FLAG_DEFAULT, SHGetKnownFolderPath, ShellLink},
-            WindowsAndMessaging::{
-                IDYES, MB_DEFBUTTON2, MB_ICONINFORMATION, MB_ICONQUESTION, MB_ICONWARNING, MB_YESNO, MESSAGEBOX_STYLE, MessageBoxW,
-            },
+            WindowsAndMessaging::{IDYES, MB_DEFBUTTON2, MB_ICONINFORMATION, MB_ICONQUESTION, MB_ICONWARNING, MB_YESNO, MESSAGEBOX_STYLE, MessageBoxW},
         },
     },
     core::{HSTRING, Interface},
@@ -47,6 +45,12 @@ pub fn data_dir() -> PathBuf {
 
 pub fn exe() -> PathBuf {
     install_dir().join("plume.exe")
+}
+
+/// Plume Suite est installée à côté : c'est elle qui tient l'entrée de Paramètres › Applications, et le dossier
+/// contient d'autres applications. Plume Web ne s'occupe alors que de ses propres fichiers.
+pub fn in_suite() -> bool {
+    install_dir().join("plume-suite.exe").is_file()
 }
 
 fn start_menu() -> PathBuf {
@@ -93,16 +97,12 @@ pub fn running() -> bool {
 fn reg_sz(name: &str, value: &str) -> bool {
     let w: Vec<u16> = value.encode_utf16().chain(Some(0)).collect();
     unsafe {
-        RegSetKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(UNINSTALL_KEY), &HSTRING::from(name), REG_SZ.0, Some(w.as_ptr() as _), (w.len() * 2) as u32)
-            .is_ok()
+        RegSetKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(UNINSTALL_KEY), &HSTRING::from(name), REG_SZ.0, Some(w.as_ptr() as _), (w.len() * 2) as u32).is_ok()
     }
 }
 
 fn reg_dword(name: &str, value: u32) -> bool {
-    unsafe {
-        RegSetKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(UNINSTALL_KEY), &HSTRING::from(name), REG_DWORD.0, Some(&value as *const u32 as _), 4)
-            .is_ok()
-    }
+    unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(UNINSTALL_KEY), &HSTRING::from(name), REG_DWORD.0, Some(&value as *const u32 as _), 4).is_ok() }
 }
 
 fn shortcut(lnk: &Path, exe: &Path) -> windows::core::Result<()> {
@@ -133,26 +133,25 @@ pub fn register(with_desktop: bool) -> bool {
     }
     let (dir, exe) = (install_dir(), exe());
     let mut ok = shortcut(&start_menu().join("Plume.lnk"), &exe).is_ok();
-    if with_desktop {
-        if let Some(d) = desktop() {
-            ok &= shortcut(&d.join("Plume.lnk"), &exe).is_ok();
-        }
+    if with_desktop && let Some(d) = desktop() {
+        ok &= shortcut(&d.join("Plume.lnk"), &exe).is_ok();
     }
     let q = format!("\"{}\"", exe.display());
     let owner = crate::REPO.split('/').next().unwrap_or("Plume");
-    ok &= reg_sz("DisplayName", "Plume")
-        && reg_sz("DisplayVersion", crate::VERSION)
-        && reg_sz("Publisher", owner)
-        && reg_sz("DisplayIcon", &format!("{},0", exe.display()))
-        && reg_sz("InstallLocation", &dir.display().to_string())
-        && reg_sz("UninstallString", &format!("{q} --uninstall"))
-        && reg_sz("QuietUninstallString", &format!("{q} --uninstall --quiet"))
-        && reg_sz("URLInfoAbout", &format!("https://github.com/{}", crate::REPO))
-        && reg_sz("URLUpdateInfo", &format!("https://github.com/{}/releases", crate::REPO))
-        && reg_sz("HelpLink", &format!("https://github.com/{}/issues", crate::REPO))
-        && reg_dword("EstimatedSize", dir_kb(&dir))
-        && reg_dword("NoModify", 1)
-        && reg_dword("NoRepair", 1);
+    ok &= in_suite()
+        || reg_sz("DisplayName", "Plume")
+            && reg_sz("DisplayVersion", crate::VERSION)
+            && reg_sz("Publisher", owner)
+            && reg_sz("DisplayIcon", &format!("{},0", exe.display()))
+            && reg_sz("InstallLocation", &dir.display().to_string())
+            && reg_sz("UninstallString", &format!("{q} --uninstall"))
+            && reg_sz("QuietUninstallString", &format!("{q} --uninstall --quiet"))
+            && reg_sz("URLInfoAbout", &format!("https://github.com/{}", crate::REPO))
+            && reg_sz("URLUpdateInfo", &format!("https://github.com/{}/releases", crate::REPO))
+            && reg_sz("HelpLink", &format!("https://github.com/{}/issues", crate::REPO))
+            && reg_dword("EstimatedSize", dir_kb(&dir))
+            && reg_dword("NoModify", 1)
+            && reg_dword("NoRepair", 1);
     // proposé comme navigateur dans Applications par défaut (l'utilisateur choisit lui-même)
     crate::defbrowser::register(&exe);
     ok
@@ -208,8 +207,11 @@ pub fn uninstall(quiet: bool) -> i32 {
     if let Some(d) = desktop() {
         let _ = std::fs::remove_file(d.join("Plume.lnk"));
     }
-    unsafe {
-        let _ = RegDeleteTreeW(HKEY_CURRENT_USER, &HSTRING::from(UNINSTALL_KEY));
+    let suite = in_suite();
+    if !suite {
+        unsafe {
+            let _ = RegDeleteTreeW(HKEY_CURRENT_USER, &HSTRING::from(UNINSTALL_KEY));
+        }
     }
     crate::defbrowser::unregister();
     let data = data_dir();
@@ -221,12 +223,15 @@ pub fn uninstall(quiet: bool) -> i32 {
             let _ = std::fs::remove_dir_all(data.join(d));
         }
     }
-    // Un exe en cours d'exécution ne peut pas s'effacer : cmd le fera une fois Plume fermé.
-    let _ = Command::new("cmd")
-        .raw_arg(format!("/c ping -n 3 127.0.0.1 >nul & rmdir /s /q \"{}\"", install_dir().display()))
-        .current_dir(std::env::temp_dir())
-        .creation_flags(NO_WINDOW)
-        .spawn();
+    // Un exe en cours d'exécution ne peut pas s'effacer : cmd le fera une fois Plume fermé. Avec Plume Suite, seuls
+    // les fichiers du navigateur partent ; le dossier garde les autres applications.
+    let dir = install_dir();
+    let clean = if suite {
+        format!("del /f /q \"{}\" \"{}\"", dir.join("plume.exe").display(), dir.join("WebView2Loader.dll").display())
+    } else {
+        format!("rmdir /s /q \"{}\"", dir.display())
+    };
+    let _ = Command::new("cmd").raw_arg(format!("/c ping -n 3 127.0.0.1 >nul & {clean}")).current_dir(std::env::temp_dir()).creation_flags(NO_WINDOW).spawn();
     if !quiet {
         dialog(tr("Plume has been uninstalled.", "Plume a été désinstallé."), MB_ICONINFORMATION);
     }

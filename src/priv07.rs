@@ -146,11 +146,7 @@ impl App {
         }
         let h = import::host_of(url);
         let m = self.cfg["contSites"].as_object()?;
-        m.iter()
-            .find(|(k, _)| h == **k || h.ends_with(&format!(".{k}")))
-            .and_then(|(_, v)| v.as_u64())
-            .map(|c| c as u32)
-            .filter(|c| self.cont_ok(*c))
+        m.iter().find(|(k, _)| h == **k || h.ends_with(&format!(".{k}"))).and_then(|(_, v)| v.as_u64()).map(|c| c as u32).filter(|c| self.cont_ok(*c))
     }
 
     /// Conteneur d'un nouvel onglet : demandé (lien ouvert depuis un conteneur, « ouvrir dans… »), site associé, ou celui de l'espace.
@@ -181,7 +177,10 @@ impl App {
         }
         let dirs: Vec<String> = self.ext_meta.as_object().map(|m| m.values().filter_map(|e| e["dir"].as_str().map(String::from)).collect()).unwrap_or_default();
         unsafe {
-            let Some(p7) = v.webview().cast::<ICoreWebView2_13>().ok().and_then(|w| w.Profile().ok()).and_then(|p| p.cast::<ICoreWebView2Profile7>().ok()) else { return };
+            let Some(p7) = v.webview().cast::<ICoreWebView2_13>().ok().and_then(|w| w.Profile().ok()).and_then(|p| p.cast::<ICoreWebView2Profile7>().ok())
+            else {
+                return;
+            };
             for d in dirs {
                 let _ = p7.AddBrowserExtension(&HSTRING::from(d), &ProfileAddBrowserExtensionCompletedHandler::create(Box::new(|_, _| Ok(()))));
             }
@@ -191,7 +190,8 @@ impl App {
     /// Données des conteneurs supprimés : effacées au démarrage suivant, avant que WebView2 n'ouvre les profils.
     /// WebView2 range le profil « plume-c<n> » dans EBWebView\WV2Profile_plume-c<n>.
     pub fn cont_gc(dir: &std::path::Path, cfg: &Value) {
-        let ids: Vec<String> = cfg["contList"].as_array().map(|l| l.iter().filter_map(|c| c["id"].as_u64()).map(|i| format!("plume-c{i}")).collect()).unwrap_or_default();
+        let ids: Vec<String> =
+            cfg["contList"].as_array().map(|l| l.iter().filter_map(|c| c["id"].as_u64()).map(|i| format!("plume-c{i}")).collect()).unwrap_or_default();
         let Ok(rd) = std::fs::read_dir(dir.join("EBWebView")) else { return };
         for e in rd.flatten() {
             let n = e.file_name().to_string_lossy().to_string();
@@ -243,10 +243,12 @@ impl App {
         let mut out = vec![(0, self.ui.webview())];
         let all = self.tabs.iter().chain(self.others.iter().flat_map(|w| w.tabs.iter())).chain(self.x.stash.iter().flat_map(|s| s.1.iter()));
         for t in all {
-            if t.cont > 0 && !t.private && !out.iter().any(|(c, _)| *c == t.cont) {
-                if let Some(v) = &t.view {
-                    out.push((t.cont, v.webview()));
-                }
+            if t.cont > 0
+                && !t.private
+                && !out.iter().any(|(c, _)| *c == t.cont)
+                && let Some(v) = &t.view
+            {
+                out.push((t.cont, v.webview()));
             }
         }
         out
@@ -259,7 +261,7 @@ impl App {
         }
         let keep = strs(&c["clearKeep"]);
         let (ck, ca, hi, st) = (c["clrCookies"] == true, c["clrCache"] == true, c["clrHist"] == true, c["clrStorage"] == true);
-        let _ = self.window.set_visible(false); // la fenêtre disparaît tout de suite
+        self.window.set_visible(false); // la fenêtre disparaît tout de suite
         if hi {
             self.history.retain(|h| kept(&keep, &import::host_of(h["u"].as_str().unwrap_or(""))));
             self.closed.clear();
@@ -356,7 +358,7 @@ impl App {
     pub fn priv_page(&mut self, i: usize, v: &Value) {
         let t = &self.tabs[i];
         let mut bl = t.bl.clone();
-        bl.sort_by(|a, b| b.1.cmp(&a.1));
+        bl.sort_by_key(|site| std::cmp::Reverse(site.1));
         let mut rep = json!({"id": t.id, "u": t.url, "https": t.url.starts_with("https://"), "blocked": t.blocked,
                              "bl": bl.iter().map(|(h, n)| json!([h, n])).collect::<Vec<_>>(), "third": v["third"], "perms": v["perms"], "cookies": Value::Null});
         let cm = t.view.as_ref().and_then(|w| unsafe { w.webview().cast::<ICoreWebView2_2>().ok()?.CookieManager().ok() });
@@ -407,7 +409,10 @@ impl App {
             json!({"i": k, "o": x["o"], "u": x["u"]})
         };
         let weak: Vec<Value> = a["weak"].as_array().map(|l| l.iter().map(item).collect()).unwrap_or_default();
-        let reused: Vec<Vec<Value>> = a["reused"].as_array().map(|g| g.iter().map(|l| l.as_array().map(|l| l.iter().map(item).collect()).unwrap_or_default()).collect()).unwrap_or_default();
+        let reused: Vec<Vec<Value>> = a["reused"]
+            .as_array()
+            .map(|g| g.iter().map(|l| l.as_array().map(|l| l.iter().map(item).collect()).unwrap_or_default()).collect())
+            .unwrap_or_default();
         self.js(&format!("pwAuditRes({})", json!({"weak": weak, "reused": reused, "n": a["n"]})));
     }
 
@@ -451,10 +456,10 @@ impl App {
         let pw = pw.to_string();
         let p = self.proxy.clone();
         std::thread::spawn(move || {
-            if let Ok(n) = pwgen::hibp_check(&pw) {
-                if n > 0 {
-                    let _ = p.send_event(Ev::Do(Box::new(move |app: &mut App| app.js(&format!("toast('pw-breached',{{n:{n}}})")))));
-                }
+            if let Ok(n) = pwgen::hibp_check(&pw)
+                && n > 0
+            {
+                let _ = p.send_event(Ev::Do(Box::new(move |app: &mut App| app.js(&format!("toast('pw-breached',{{n:{n}}})")))));
             }
         });
     }
@@ -487,7 +492,13 @@ impl App {
                     Ok(()) => app.toast("hello-on"),
                     Err(e) => {
                         app.cfg["hello"] = json!(false);
-                        app.toast(if e == "unsupported" { "hello-unsupported" } else if e == "canceled" { "hello-canceled" } else { "hello-failed" });
+                        app.toast(if e == "unsupported" {
+                            "hello-unsupported"
+                        } else if e == "canceled" {
+                            "hello-canceled"
+                        } else {
+                            "hello-failed"
+                        });
                         app.save();
                     }
                 }
@@ -527,7 +538,7 @@ impl App {
             return false;
         }
         let (id, item) = (self.tabs[i].id, item.clone());
-        let hwnd = self.window.hwnd() as isize;
+        let hwnd = self.window.hwnd();
         let msg = if self.lang() == "fr" { "Plume : remplir le mot de passe" } else { "Plume: fill in the password" };
         let p = self.proxy.clone();
         std::thread::spawn(move || {

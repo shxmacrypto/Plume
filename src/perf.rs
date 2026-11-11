@@ -3,7 +3,7 @@
 use windows::Win32::{
     Foundation::{CloseHandle, FILETIME, HANDLE},
     NetworkManagement::IpHelper::GetNetworkConnectivityHint,
-    Networking::WinSock::{NetworkConnectivityCostHintFixed, NetworkConnectivityCostHintVariable, NL_NETWORK_CONNECTIVITY_HINT},
+    Networking::WinSock::{NL_NETWORK_CONNECTIVITY_HINT, NetworkConnectivityCostHintFixed, NetworkConnectivityCostHintVariable},
     System::{
         Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS},
         ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX},

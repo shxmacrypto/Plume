@@ -113,7 +113,14 @@ fn format_args(kind: &str, fmt: &str, h: u64) -> Vec<String> {
     let audio = |codec: &str| vec![s("-f"), s("bestaudio/best"), s("-x"), s("--audio-format"), s(codec), s("--audio-quality"), s("0")];
     match kind {
         "mp3" | "wav" | "flac" | "opus" | "m4a" | "aac" | "ogg" => audio(if kind == "ogg" { "vorbis" } else { kind }),
-        "mp4" => vec![s("-f"), format!("bv*[height<={h}][ext=mp4]+ba[ext=m4a]/bv*[height<={h}]+ba/b[height<={h}]/b"), s("--merge-output-format"), s("mp4"), s("--remux-video"), s("mp4")],
+        "mp4" => vec![
+            s("-f"),
+            format!("bv*[height<={h}][ext=mp4]+ba[ext=m4a]/bv*[height<={h}]+ba/b[height<={h}]/b"),
+            s("--merge-output-format"),
+            s("mp4"),
+            s("--remux-video"),
+            s("mp4"),
+        ],
         "webm" => vec![s("-f"), format!("bv*[height<={h}][ext=webm]+ba[ext=webm]/bv*[height<={h}]+ba/b"), s("--merge-output-format"), s("webm")],
         "mkv" => vec![s("-f"), format!("bv*[height<={h}]+ba/b"), s("--merge-output-format"), s("mkv")],
         "mov" | "avi" => vec![s("-f"), format!("bv*[height<={h}]+ba/b"), s("--recode-video"), s(kind)],
@@ -127,7 +134,9 @@ pub fn start(url: String, kind: String, fmt: String, h: u64, title: String, p: E
     let id = DL_ID.fetch_add(1, Ordering::Relaxed) + 1;
     let dir = std::env::var_os("USERPROFILE").map(|u| PathBuf::from(u).join("Downloads")).unwrap_or_else(std::env::temp_dir);
     let label = format!("{title} ({})", kind.to_uppercase());
-    let _ = p.send_event(Ev::Dl(json!({"id": id, "name": label, "path": "", "url": url, "total": 0, "recv": 0, "state": "run", "media": true, "t": crate::now_ms()})));
+    let _ = p.send_event(Ev::Dl(
+        json!({"id": id, "name": label, "path": "", "url": url, "total": 0, "recv": 0, "state": "run", "media": true, "t": crate::now_ms()}),
+    ));
     std::thread::spawn(move || {
         let mut c = cmd();
         c.args(format_args(&kind, &fmt, if h == 0 { 4320 } else { h }))

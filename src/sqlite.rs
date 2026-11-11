@@ -21,9 +21,7 @@ pub fn query(path: &std::path::Path, sql: &str) -> Result<Vec<Vec<String>>, Stri
         let lib = LoadLibraryW(w!("winsqlite3.dll")).map_err(|_| "winsqlite3.dll introuvable".to_string())?;
         macro_rules! f {
             ($n:literal, $t:ty) => {
-                std::mem::transmute::<_, $t>(
-                    GetProcAddress(lib, PCSTR(concat!($n, "\0").as_ptr())).ok_or(concat!("sqlite: ", $n))?,
-                )
+                std::mem::transmute::<_, $t>(GetProcAddress(lib, PCSTR(concat!($n, "\0").as_ptr())).ok_or(concat!("sqlite: ", $n))?)
             };
         }
         let open: Open = f!("sqlite3_open_v2", Open);

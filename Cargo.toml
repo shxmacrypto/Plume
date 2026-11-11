@@ -1,6 +1,6 @@
 [package]
 name = "plume"
-version = "0.7.1"
+version = "1.0.0"
 edition = "2024"
 build = "build.rs"
 
@@ -13,6 +13,7 @@ aes-gcm = { version = "0.10", default-features = false, features = ["aes", "allo
 argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
 miniz_oxide = "0.8"
 sha2 = "0.10"
+plume-update = { path = "crates/plume-update" }
 sha1 = "0.10"
 windows-future = "0.2"
 windows = { version = "0.61", features = [
@@ -44,12 +45,38 @@ windows = { version = "0.61", features = [
     "Storage_Streams",
 ] }
 
+# Suite Plume : le navigateur (ce paquet, encore à la racine), Plume Suite, Plume FEx et Plume Mail partagent un
+# espace de travail et une seule version (ci-dessous et `version` de [package] : release.ps1 change les deux).
+# `cargo build --release` construit le navigateur seul ; les autres : `cargo build --release -p plume-suite` etc.
+[workspace]
+members = [".", "apps/suite", "apps/fex", "apps/mail", "crates/fex-core", "crates/mail-core", "crates/plume-ui", "crates/plume-update"]
+
+default-members = ["."]
+exclude = ["launcher", "vendor/wry"]
+
+[workspace.package]
+version = "1.0.0"
+
 [profile.release]
 opt-level = "s"
 lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# Plume FEx : la vitesse (liste, tri, recherche) passe avant la taille de l'exe
+[profile.release.package.fex-core]
+opt-level = 3
+[profile.release.package.plume-fex]
+opt-level = 3
+
+# Construction rapide pour les essais de Plume FEx (pas de LTO) : `cargo build --profile fast -p plume-fex`
+[profile.fast]
+inherits = "release"
+opt-level = 2
+lto = false
+codegen-units = 16
+strip = false
 
 # wry avec le nom de profil WebView2 (conteneurs, #19) : voir vendor/wry/PLUME.md
 [patch.crates-io]

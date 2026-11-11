@@ -6,16 +6,14 @@ use windows::{
     Win32::{
         Foundation::{CloseHandle, HANDLE, HWND, LPARAM, WAIT_ABANDONED, WAIT_OBJECT_0, WPARAM},
         System::{
-            Registry::{
-                HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegDeleteKeyW, RegDeleteTreeW, RegGetValueW, RegSetKeyValueW,
-            },
+            Registry::{HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegDeleteKeyW, RegDeleteTreeW, RegGetValueW, RegSetKeyValueW},
             Threading::{CreateMutexW, ReleaseMutex, WaitForSingleObject},
         },
         UI::{
             Shell::{SHCNE_ASSOCCHANGED, SHCNF_IDLIST, SHChangeNotify, ShellExecuteW},
             WindowsAndMessaging::{
-                AllowSetForegroundWindow, EnumWindows, GetPropW, GetWindowThreadProcessId, IsWindowVisible, RemovePropW, SMTO_ABORTIFHUNG,
-                SW_SHOWNORMAL, SendMessageTimeoutW, SetPropW, WM_COPYDATA,
+                AllowSetForegroundWindow, EnumWindows, GetPropW, GetWindowThreadProcessId, IsWindowVisible, RemovePropW, SMTO_ABORTIFHUNG, SW_SHOWNORMAL,
+                SendMessageTimeoutW, SetPropW, WM_COPYDATA,
             },
         },
     },
@@ -52,17 +50,14 @@ fn set(key: &str, name: Option<&str>, value: &str) -> bool {
     let data: Vec<u16> = value.encode_utf16().chain(Some(0)).collect();
     let name = name.map(HSTRING::from);
     let name = name.as_ref().map_or(PCWSTR::null(), |n| PCWSTR(n.as_ptr()));
-    unsafe {
-        RegSetKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(key), name, REG_SZ.0, Some(data.as_ptr() as _), (data.len() * 2) as u32).is_ok()
-    }
+    unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(key), name, REG_SZ.0, Some(data.as_ptr() as _), (data.len() * 2) as u32).is_ok() }
 }
 
 fn get(key: &str, name: &str) -> Option<String> {
     let mut buf = [0u16; 260];
     let mut len = (buf.len() * 2) as u32;
     let ok = unsafe {
-        RegGetValueW(HKEY_CURRENT_USER, &HSTRING::from(key), &HSTRING::from(name), RRF_RT_REG_SZ, None, Some(buf.as_mut_ptr() as _), Some(&mut len))
-            .is_ok()
+        RegGetValueW(HKEY_CURRENT_USER, &HSTRING::from(key), &HSTRING::from(name), RRF_RT_REG_SZ, None, Some(buf.as_mut_ptr() as _), Some(&mut len)).is_ok()
     };
     ok.then(|| String::from_utf16_lossy(&buf[..buf.iter().position(|&c| c == 0).unwrap_or(buf.len())]))
 }

@@ -64,10 +64,11 @@ pub fn migrate(cfg: &mut Value) {
     let v = cfg["cfgV"].as_u64().unwrap_or(1);
     // 3 : l'économie de batterie s'allume dès le passage sur batterie en mode Complet aussi (avant : sous 20 %),
     // sauf si l'utilisateur l'avait réglée lui-même
-    if v == 2 && !modified(cfg).iter().any(|k| k == "battWhen") {
-        if let Some(o) = cfg.as_object_mut() {
-            o.remove("battWhen");
-        }
+    if v == 2
+        && !modified(cfg).iter().any(|k| k == "battWhen")
+        && let Some(o) = cfg.as_object_mut()
+    {
+        o.remove("battWhen");
     }
     let u = ultra(cfg);
     // profil d'avant les réglages 0.7 : une valeur différente du défaut vient de l'utilisateur

@@ -4,10 +4,7 @@
 //! Rien n'est actif tant que le panneau est fermé.
 use serde_json::{Value, json};
 use tao::event_loop::EventLoopProxy;
-use webview2_com::{
-    CallDevToolsProtocolMethodCompletedHandler, DevToolsProtocolEventReceivedEventHandler,
-    Microsoft::Web::WebView2::Win32::*,
-};
+use webview2_com::{CallDevToolsProtocolMethodCompletedHandler, DevToolsProtocolEventReceivedEventHandler, Microsoft::Web::WebView2::Win32::*};
 use windows::core::{HSTRING, PWSTR};
 
 use crate::Ev;
@@ -43,7 +40,8 @@ const EVENTS: &[&str] = &[
 ];
 
 /// Domaines CDP que l'UI a le droit d'appeler.
-const ALLOWED: &[&str] = &["HeapProfiler.collectGarbage", "Runtime.", "DOM.", "CSS.", "Overlay.", "Network.", "Log.", "Page.reload", "Performance.", "DOMStorage.", "Emulation."];
+const ALLOWED: &[&str] =
+    &["HeapProfiler.collectGarbage", "Runtime.", "DOM.", "CSS.", "Overlay.", "Network.", "Log.", "Page.reload", "Performance.", "DOMStorage.", "Emulation."];
 
 #[derive(Default)]
 pub struct DevTools {

@@ -73,8 +73,12 @@ END
     std::fs::write(&pp, "@type %*\r\n").unwrap(); // pas de gcc : préprocesseur « identité »
     let ok = std::process::Command::new("windres")
         .arg(format!("--preprocessor={}", pp.display()))
-        .args(["-O", "coff", "-i"]).arg(&rc).arg("-o").arg(&obj)
-        .status().is_ok_and(|s| s.success());
+        .args(["-O", "coff", "-i"])
+        .arg(&rc)
+        .arg("-o")
+        .arg(&obj)
+        .status()
+        .is_ok_and(|s| s.success());
     if ok {
         println!("cargo:rustc-link-arg={}", obj.display());
     } else {

@@ -1,7 +1,10 @@
 //! Extensions Chrome : téléchargement depuis le Chrome Web Store (CRX), décompression
 //! (CRX → ZIP, extracteur maison avec miniz_oxide, pur Rust) et lecture du manifeste.
 use serde_json::{Value, json};
-use std::{fs, path::{Component, Path, PathBuf}};
+use std::{
+    fs,
+    path::{Component, Path, PathBuf},
+};
 use windows::{
     Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, Urlmon::URLDownloadToFileW},
     core::HSTRING,
@@ -17,9 +20,7 @@ pub const RECOMMENDED: &[(&str, &str, &str)] = &[
 
 /// Extrait l'identifiant (32 lettres a-p) d'un lien du Chrome Web Store ou d'un ID brut.
 pub fn store_id(link: &str) -> Option<String> {
-    link.split(|c: char| !c.is_ascii_alphanumeric())
-        .find(|s| s.len() == 32 && s.bytes().all(|b| (b'a'..=b'p').contains(&b)))
-        .map(String::from)
+    link.split(|c: char| !c.is_ascii_alphanumeric()).find(|s| s.len() == 32 && s.bytes().all(|b| (b'a'..=b'p').contains(&b))).map(String::from)
 }
 
 /// Télécharge et décompresse une extension dans `root/<id>`. Renvoie le dossier.
@@ -29,9 +30,10 @@ pub fn fetch(id: &str, root: &Path) -> Result<PathBuf, String> {
          &acceptformat=crx2,crx3&x=id%3D{id}%26installsource%3Dondemand%26uc"
     );
     let tmp = std::env::temp_dir().join(format!("plume-{id}.crx"));
-    unsafe { let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED); }
-    unsafe { URLDownloadToFileW(None, &HSTRING::from(url), &HSTRING::from(tmp.as_path()), 0, None) }
-        .map_err(|e| format!("download: {e}"))?;
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+    }
+    unsafe { URLDownloadToFileW(None, &HSTRING::from(url), &HSTRING::from(tmp.as_path()), 0, None) }.map_err(|e| format!("download: {e}"))?;
     let data = fs::read(&tmp).map_err(|e| e.to_string())?;
     let _ = fs::remove_file(&tmp);
     let dir = root.join(id);
@@ -119,10 +121,8 @@ fn unzip_filter(z: &[u8], dir: &Path, only: Option<&[&str]>) -> Result<(), Strin
 
 /// Infos utiles du manifeste : page popup, page d'options, icône (data: URI).
 pub fn manifest_info(dir: &Path) -> Value {
-    let m: Value = fs::read_to_string(dir.join("manifest.json"))
-        .ok()
-        .and_then(|s| serde_json::from_str(s.trim_start_matches('\u{feff}')).ok())
-        .unwrap_or_default();
+    let m: Value =
+        fs::read_to_string(dir.join("manifest.json")).ok().and_then(|s| serde_json::from_str(s.trim_start_matches('\u{feff}')).ok()).unwrap_or_default();
     let popup = m["action"]["default_popup"].as_str().or(m["browser_action"]["default_popup"].as_str()).unwrap_or("");
     let options = m["options_ui"]["page"].as_str().or(m["options_page"].as_str()).unwrap_or("");
     // plus grande icône ≤ 64 px
@@ -158,7 +158,10 @@ pub fn b64(d: &[u8]) -> String {
 mod tests {
     #[test]
     fn store_id_parse() {
-        assert_eq!(super::store_id("https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh?hl=fr").as_deref(), Some("ddkjiahejlhfcafbddmgiahcphecmpfh"));
+        assert_eq!(
+            super::store_id("https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh?hl=fr").as_deref(),
+            Some("ddkjiahejlhfcafbddmgiahcphecmpfh")
+        );
         assert_eq!(super::store_id("https://example.com/"), None);
     }
 

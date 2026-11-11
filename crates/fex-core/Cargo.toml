@@ -1,0 +1,20 @@
+[package]
+name = "fex-core"
+version.workspace = true
+edition = "2024"
+description = "Plume FEx core: fast folder listing, Windows-style sorting, file index and Everything-style search. No interface."
+license = "MIT"
+
+[dependencies]
+memchr = "2"
+# expressions régulières de la recherche (« regex: »), sans les tables Unicode dont on ne se sert pas
+regex-automata = { version = "0.4", default-features = false, features = ["std", "syntax", "meta", "hybrid", "perf-inline", "perf-literal-substring", "unicode-case", "unicode-perl", "unicode-word-boundary"] }
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
+    "Win32_System_SystemInformation",
+] }

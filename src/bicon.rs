@@ -1,6 +1,9 @@
 //! Vraies icônes des navigateurs : lues directement dans leur .exe installé (aucune image embarquée),
 //! converties en petit fichier .ico (data: URI) pour l'interface.
-use std::{os::windows::ffi::OsStrExt, path::{Path, PathBuf}};
+use std::{
+    os::windows::ffi::OsStrExt,
+    path::{Path, PathBuf},
+};
 use windows::Win32::{
     Graphics::Gdi::*,
     UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, HICON, ICONINFO, PrivateExtractIconsW},
@@ -11,7 +14,11 @@ pub fn exe_for(browser: &str) -> Option<PathBuf> {
     let env = |k: &str| std::env::var_os(k).map(PathBuf::from).unwrap_or_default();
     let (local, pf, pf86) = (env("LOCALAPPDATA"), env("ProgramFiles"), env("ProgramFiles(x86)"));
     let c: Vec<PathBuf> = match browser {
-        "Google Chrome" => vec![pf.join(r"Google\Chrome\Application\chrome.exe"), pf86.join(r"Google\Chrome\Application\chrome.exe"), local.join(r"Google\Chrome\Application\chrome.exe")],
+        "Google Chrome" => vec![
+            pf.join(r"Google\Chrome\Application\chrome.exe"),
+            pf86.join(r"Google\Chrome\Application\chrome.exe"),
+            local.join(r"Google\Chrome\Application\chrome.exe"),
+        ],
         "Microsoft Edge" => vec![pf86.join(r"Microsoft\Edge\Application\msedge.exe"), pf.join(r"Microsoft\Edge\Application\msedge.exe")],
         "Brave" => vec![pf.join(r"BraveSoftware\Brave-Browser\Application\brave.exe"), local.join(r"BraveSoftware\Brave-Browser\Application\brave.exe")],
         "Vivaldi" => vec![local.join(r"Vivaldi\Application\vivaldi.exe"), pf.join(r"Vivaldi\Application\vivaldi.exe")],
@@ -43,14 +50,16 @@ pub fn data_uri(exe: &Path, size: i32) -> Option<String> {
         let mut px = vec![0u8; (size * size * 4) as usize];
         if ok {
             let dc = CreateCompatibleDC(None);
-            let mut bi = BITMAPINFO::default();
-            bi.bmiHeader = BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: size,
-                biHeight: size, // de bas en haut, comme dans un .ico
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB.0,
+            let mut bi = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: size,
+                    biHeight: size, // de bas en haut, comme dans un .ico
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB.0,
+                    ..Default::default()
+                },
                 ..Default::default()
             };
             GetDIBits(dc, ii.hbmColor, 0, size as u32, Some(px.as_mut_ptr() as _), &mut bi, DIB_RGB_COLORS);

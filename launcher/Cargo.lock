@@ -4,4 +4,4 @@ version = 4
 
 [[package]]
 name = "plume-launcher"
-version = "0.7.1"
+version = "1.0.0"

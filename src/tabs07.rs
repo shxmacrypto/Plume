@@ -28,8 +28,11 @@ pub struct Split {
     pub ratio: f64,
 }
 
+/// Un raccourci personnalisé : (touche virtuelle, Ctrl, Maj, Alt, commande).
+pub type Shortcut = (u32, bool, bool, bool, Cmd);
+
 /// Raccourcis personnalisés (réglages *Key), consultés avant les raccourcis fixes.
-pub static KEYS: RwLock<Vec<(u32, bool, bool, bool, Cmd)>> = RwLock::new(Vec::new());
+pub static KEYS: RwLock<Vec<Shortcut>> = RwLock::new(Vec::new());
 
 /// « Ctrl+Shift+A » → (touche virtuelle, Ctrl, Maj, Alt).
 pub fn parse_combo(s: &str) -> Option<(u32, bool, bool, bool)> {
@@ -61,7 +64,7 @@ pub fn custom_accel(vk: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Cmd> 
 
 fn ms_of(period: &str) -> u64 {
     match period {
-        "12h" => 12 * 3600_000,
+        "12h" => 12 * 3_600_000,
         "1d" => 86_400_000,
         "3d" => 3 * 86_400_000,
         "30d" => 30 * 86_400_000,
@@ -117,11 +120,15 @@ impl App {
         let c = &self.cfg;
         let mut k = vec![];
         for (on, key, cmd) in [("palette", "palKey", Cmd::Palette), ("tabSearch", "tsKey", Cmd::TabSearch), ("split", "splitKey", Cmd::Split)] {
-            if c[on] == true && let Some((vk, a, b, d)) = parse_combo(c[key].as_str().unwrap_or("")) {
+            if c[on] == true
+                && let Some((vk, a, b, d)) = parse_combo(c[key].as_str().unwrap_or(""))
+            {
                 k.push((vk, a, b, d, cmd));
             }
         }
-        if c["zen"] != "off" && let Some((vk, a, b, d)) = parse_combo(c["zenKey"].as_str().unwrap_or("")) {
+        if c["zen"] != "off"
+            && let Some((vk, a, b, d)) = parse_combo(c["zenKey"].as_str().unwrap_or(""))
+        {
             k.push((vk, a, b, d, Cmd::Zen));
         }
         *KEYS.write().unwrap() = k;
@@ -202,7 +209,11 @@ impl App {
         let split = self.x.split.map(|s| [s.a, s.b]).unwrap_or_default();
         // jamais un onglet dont un téléchargement est en cours
         let old = |app: &App, t: &Tab| {
-            !t.url.is_empty() && !t.private && t.lv + limit < now && !split.contains(&t.id) && !(skip && (t.pinned || t.group > 0 || app.protected(t)))
+            !t.url.is_empty()
+                && !t.private
+                && t.lv + limit < now
+                && !split.contains(&t.id)
+                && !(skip && (t.pinned || t.group > 0 || app.protected(t)))
                 && !app.dl_running(t.id)
         };
         let mut gone: Vec<Value> = vec![];
@@ -242,7 +253,10 @@ impl App {
         let total = if vert { size.width as i32 } else { size.height as i32 };
         let first = ((total - gap) as f64 * sp.ratio.clamp(0.15, 0.85)) as i32;
         let second = (total - gap - first).max(0);
-        let rect = |x: i32, y: i32, w: i32, h: i32| Rect { position: PhysicalPosition::new(x, y).into(), size: PhysicalSize::new(w.max(0) as u32, h.max(0) as u32).into() };
+        let rect = |x: i32, y: i32, w: i32, h: i32| Rect {
+            position: PhysicalPosition::new(x, y).into(),
+            size: PhysicalSize::new(w.max(0) as u32, h.max(0) as u32).into(),
+        };
         if vert {
             (rect(pos.x, pos.y, first, size.height as i32), rect(pos.x + first + gap, pos.y, second, size.height as i32))
         } else {
@@ -305,10 +319,10 @@ impl App {
         self.sync_scroll(false);
         let act = self.tabs.get(self.active).map(|t| t.id);
         let other = if act == Some(sp.a) { sp.b } else { sp.a };
-        if let Some(i) = self.idx(other) {
-            if let Some(v) = &self.tabs[i].view {
-                let _ = v.set_visible(false);
-            }
+        if let Some(i) = self.idx(other)
+            && let Some(v) = &self.tabs[i].view
+        {
+            let _ = v.set_visible(false);
         }
         self.relayout();
         self.push();
@@ -575,7 +589,9 @@ impl App {
             "tab-space" => {
                 // envoyer un onglet dans un autre espace
                 let sp = v["sp"].as_u64().unwrap_or(0) as u32;
-                if sp != self.x.space && let Some(i) = self.idx(id).filter(|_| self.tabs.len() > 1) {
+                if sp != self.x.space
+                    && let Some(i) = self.idx(id).filter(|_| self.tabs.len() > 1)
+                {
                     let mut t = self.tabs.remove(i);
                     if let Some(w) = &t.view {
                         let _ = w.set_visible(false);
@@ -672,7 +688,11 @@ impl App {
                     if let Some(n) = self.notes.as_mut() {
                         for t in &tabs {
                             if let Some(txt) = t["note"].as_str() {
-                                let k = if self.cfg["notesScope"] == "tab" { format!("url:{}", str_of(&t["u"]).split('#').next().unwrap_or("")) } else { format!("site:{}", import::host_of(&str_of(&t["u"]))) };
+                                let k = if self.cfg["notesScope"] == "tab" {
+                                    format!("url:{}", str_of(&t["u"]).split('#').next().unwrap_or(""))
+                                } else {
+                                    format!("site:{}", import::host_of(&str_of(&t["u"])))
+                                };
                                 n[&k] = json!(txt);
                             }
                         }
@@ -699,7 +719,8 @@ impl App {
             "sess-export" => {
                 let owner = HWND(self.window.hwnd() as _);
                 if let Some(p) = pick_json(owner, true, "plume-sessions.json") {
-                    let _ = std::fs::write(p, serde_json::to_string_pretty(&json!({"plume": "sessions", "v": 1, "sessions": self.sessions})).unwrap_or_default());
+                    let _ =
+                        std::fs::write(p, serde_json::to_string_pretty(&json!({"plume": "sessions", "v": 1, "sessions": self.sessions})).unwrap_or_default());
                     self.toast("sess-exported");
                 }
             }
@@ -764,7 +785,13 @@ impl App {
                 // défilement synchronisé de l'écran partagé
                 if let Some(sp) = self.x.split {
                     let me = self.tabs[i].id;
-                    let other = if me == sp.a { sp.b } else if me == sp.b { sp.a } else { return };
+                    let other = if me == sp.a {
+                        sp.b
+                    } else if me == sp.b {
+                        sp.a
+                    } else {
+                        return;
+                    };
                     if let Some(j) = self.idx(other) {
                         self.eval_tab(j, &format!("window.__plume&&__plume.scrollTo({})", v["f"].as_f64().unwrap_or(0.0)));
                     }

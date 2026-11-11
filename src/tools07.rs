@@ -2,7 +2,9 @@
 // export PDF / Markdown, lire plus tard hors ligne. (Le QR code #36 est généré dans l'interface.)
 use super::*;
 use std::sync::RwLock;
-use webview2_com::{CallDevToolsProtocolMethodCompletedHandler, CapturePreviewCompletedHandler, IsDocumentPlayingAudioChangedEventHandler, PrintToPdfCompletedHandler};
+use webview2_com::{
+    CallDevToolsProtocolMethodCompletedHandler, CapturePreviewCompletedHandler, IsDocumentPlayingAudioChangedEventHandler, PrintToPdfCompletedHandler,
+};
 use windows::Win32::{
     System::Com::{IStream, STREAM_SEEK_SET},
     UI::Shell::SHCreateMemStream,
@@ -156,22 +158,24 @@ fn rl_write(dir: std::path::PathBuf, id: u64, v: Value, imgs_on: bool, date: Str
     let imgs: Vec<String> = v["imgs"].as_array().map(|l| l.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default();
     for (n, u) in imgs.iter().enumerate().take(60) {
         let mut src = html_esc(u);
-        if imgs_on && n < 40 && u.starts_with("http") {
-            if let Ok(b) = update::http_get(u) {
-                if !b.is_empty() && b.len() < 8 << 20 {
-                    let ext = match b.get(..4) {
-                        Some([0x89, b'P', b'N', b'G']) => "png",
-                        Some([b'G', b'I', b'F', _]) => "gif",
-                        Some([b'R', b'I', b'F', b'F']) => "webp",
-                        Some([b'<', ..]) => "svg",
-                        _ => "jpg",
-                    };
-                    let sub = dir.join(id.to_string());
-                    let _ = std::fs::create_dir_all(&sub);
-                    if std::fs::write(sub.join(format!("{n}.{ext}")), &b).is_ok() {
-                        src = format!("{id}/{n}.{ext}");
-                    }
-                }
+        if imgs_on
+            && n < 40
+            && u.starts_with("http")
+            && let Ok(b) = update::http_get(u)
+            && !b.is_empty()
+            && b.len() < 8 << 20
+        {
+            let ext = match b.get(..4) {
+                Some([0x89, b'P', b'N', b'G']) => "png",
+                Some([b'G', b'I', b'F', _]) => "gif",
+                Some([b'R', b'I', b'F', b'F']) => "webp",
+                Some([b'<', ..]) => "svg",
+                _ => "jpg",
+            };
+            let sub = dir.join(id.to_string());
+            let _ = std::fs::create_dir_all(&sub);
+            if std::fs::write(sub.join(format!("{n}.{ext}")), &b).is_ok() {
+                src = format!("{id}/{n}.{ext}");
             }
         }
         html = html.replace(&format!("__PLUME_IMG_{n}__"), &src);
@@ -194,7 +198,10 @@ impl App {
     pub fn auto_pip(&mut self, i: usize) {
         let c = &self.cfg;
         let Some(t) = self.tabs.get(i) else { return };
-        if c["autoPip"] != true || !t.url.starts_with("http") || strs(&c["pipExclude"]).iter().any(|h| priv07::kept(&[h.clone()], &import::host_of(&t.url))) {
+        if c["autoPip"] != true
+            || !t.url.starts_with("http")
+            || strs(&c["pipExclude"]).iter().any(|h| priv07::kept(std::slice::from_ref(h), &import::host_of(&t.url)))
+        {
             return;
         }
         let sound = c["pipSound"] != false;
@@ -249,7 +256,13 @@ impl App {
     pub fn on_audio(&mut self, id: u32, on: bool) {
         let Some(i) = self.idx(id) else { return };
         let t = &mut self.tabs[i];
-        let a = if on { 1 } else if t.audio != 0 { 2 } else { 0 };
+        let a = if on {
+            1
+        } else if t.audio != 0 {
+            2
+        } else {
+            0
+        };
         if a != t.audio {
             t.audio = a;
             if self.cfg["mediaCtl"] == true {
@@ -261,11 +274,11 @@ impl App {
     pub fn set_mute(&mut self, i: usize, m: bool) {
         let Some(v) = &self.tabs[i].view else { return };
         unsafe {
-            if let Ok(c8) = v.webview().cast::<ICoreWebView2_8>() {
-                if c8.SetIsMuted(m).is_ok() {
-                    self.tabs[i].muted = m;
-                    self.tabs[i].auto_muted = false;
-                }
+            if let Ok(c8) = v.webview().cast::<ICoreWebView2_8>()
+                && c8.SetIsMuted(m).is_ok()
+            {
+                self.tabs[i].muted = m;
+                self.tabs[i].auto_muted = false;
             }
         }
     }
@@ -294,7 +307,8 @@ impl App {
         });
         if phase == "focus" {
             // onglets déjà ouverts sur un site bloqué : page de blocage
-            let ids: Vec<u32> = self.tabs.iter().filter(|t| t.view.is_some() && t.url.starts_with("http") && focus_blocked(&import::host_of(&t.url))).map(|t| t.id).collect();
+            let ids: Vec<u32> =
+                self.tabs.iter().filter(|t| t.view.is_some() && t.url.starts_with("http") && focus_blocked(&import::host_of(&t.url))).map(|t| t.id).collect();
             for id in ids {
                 let u = self.idx(id).map(|i| self.tabs[i].url.clone()).unwrap_or_default();
                 self.focus_block(id, &u);
@@ -337,16 +351,16 @@ impl App {
             return;
         }
         let h = import::host_of(u);
-        if let Ok(mut f) = FOCUS.write() {
-            if let Some(f) = f.as_mut() {
-                f.snooze.retain(|(_, t)| Instant::now() < *t);
-                f.snooze.push((h, Instant::now() + Duration::from_secs(5 * 60)));
-            }
+        if let Ok(mut f) = FOCUS.write()
+            && let Some(f) = f.as_mut()
+        {
+            f.snooze.retain(|(_, t)| Instant::now() < *t);
+            f.snooze.push((h, Instant::now() + Duration::from_secs(5 * 60)));
         }
-        if u.starts_with("http") {
-            if let Some(v) = &self.tabs[i].view {
-                let _ = v.load_url(u);
-            }
+        if u.starts_with("http")
+            && let Some(v) = &self.tabs[i].view
+        {
+            let _ = v.load_url(u);
         }
     }
 
@@ -389,7 +403,11 @@ impl App {
         if self.cfg["expAsk"] != false {
             return save_dialog(HWND(self.window.hwnd() as _), &name, filter, ext);
         }
-        let d = self.cfg["expDir"].as_str().map(str::trim).filter(|d| !d.is_empty()).map(std::path::PathBuf::from)
+        let d = self.cfg["expDir"]
+            .as_str()
+            .map(str::trim)
+            .filter(|d| !d.is_empty())
+            .map(std::path::PathBuf::from)
             .unwrap_or_else(|| std::env::var_os("USERPROFILE").map(|u| std::path::PathBuf::from(u).join("Downloads")).unwrap_or_else(std::env::temp_dir));
         let _ = std::fs::create_dir_all(&d);
         Some(free_path(&d, &name))
@@ -478,8 +496,11 @@ impl App {
             return self.toast("rl-already");
         }
         let id = now_ms();
-        l.insert(0, json!({"id": id, "u": u, "t": str_of(&v["t"]).chars().take(300).collect::<String>(), "ex": str_of(&v["ex"]).chars().take(300).collect::<String>(),
-                           "site": import::host_of(&u), "saved": id, "read": Value::Null, "n": v["n"], "f": self.tabs[i].fav}));
+        l.insert(
+            0,
+            json!({"id": id, "u": u, "t": str_of(&v["t"]).chars().take(300).collect::<String>(), "ex": str_of(&v["ex"]).chars().take(300).collect::<String>(),
+                           "site": import::host_of(&u), "saved": id, "read": Value::Null, "n": v["n"], "f": self.tabs[i].fav}),
+        );
         tabs07::save_json("reading.json", &json!(l));
         let (imgs, p, v, date) = (self.cfg["rlImages"] != false, self.proxy.clone(), v.clone(), today());
         self.toast("rl-saving");

@@ -1,7 +1,10 @@
 //! Import des profils d'autres navigateurs : historique + favoris (Chromium & Firefox),
 //! et mots de passe depuis un export CSV (Chrome/Edge/Brave/Opera/Firefox/Bitwarden…).
 use serde_json::{Value, json};
-use std::{env, fs, path::{Path, PathBuf}};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 use crate::sqlite;
 
@@ -146,35 +149,33 @@ fn chromium(p: &Path, hist: bool, bm: bool, n: usize, h: &mut Vec<Value>, b: &mu
             }
         }
         // Favicons des favoris : lus dans la base « Favicons » du navigateur (image ≤ 64 px la plus grande)
-        if b.len() > b0 && p.join("Favicons").exists() {
-            if let Some(tmp) = temp_copy(&p.join("Favicons"), &format!("i{n}")) {
-                let list: Vec<String> = b[b0..].iter().filter_map(|x| x["u"].as_str()).map(|u| format!("'{}'", u.replace('\x27', "''"))).collect();
-                let sql = format!(
-                    "SELECT m.page_url, hex(f.image_data) FROM icon_mapping m JOIN favicon_bitmaps f ON f.icon_id = m.icon_id                      WHERE m.page_url IN ({}) AND f.width <= 64 AND length(f.image_data) < 20000 ORDER BY f.width ASC",
-                    list.join(",")
-                );
-                if let Ok(rows) = sqlite::query(&tmp, &sql) {
-                    let mut icons = std::collections::HashMap::new();
-                    for r in rows {
-                        icons.insert(r[0].clone(), r[1].clone()); // la plus grande gagne (tri croissant)
-                    }
-                    for x in &mut b[b0..] {
-                        if let Some(hex) = x["u"].as_str().and_then(|u| icons.get(u)) {
-                            let bytes: Vec<u8> = (0..hex.len() / 2).filter_map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()).collect();
-                            x["f"] = json!(format!("data:image/png;base64,{}", crate::ext::b64(&bytes)));
-                        }
+        if b.len() > b0
+            && p.join("Favicons").exists()
+            && let Some(tmp) = temp_copy(&p.join("Favicons"), &format!("i{n}"))
+        {
+            let list: Vec<String> = b[b0..].iter().filter_map(|x| x["u"].as_str()).map(|u| format!("'{}'", u.replace('\x27', "''"))).collect();
+            let sql = format!(
+                "SELECT m.page_url, hex(f.image_data) FROM icon_mapping m JOIN favicon_bitmaps f ON f.icon_id = m.icon_id                      WHERE m.page_url IN ({}) AND f.width <= 64 AND length(f.image_data) < 20000 ORDER BY f.width ASC",
+                list.join(",")
+            );
+            if let Ok(rows) = sqlite::query(&tmp, &sql) {
+                let mut icons = std::collections::HashMap::new();
+                for r in rows {
+                    icons.insert(r[0].clone(), r[1].clone()); // la plus grande gagne (tri croissant)
+                }
+                for x in &mut b[b0..] {
+                    if let Some(hex) = x["u"].as_str().and_then(|u| icons.get(u)) {
+                        let bytes: Vec<u8> = (0..hex.len() / 2).filter_map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()).collect();
+                        x["f"] = json!(format!("data:image/png;base64,{}", crate::ext::b64(&bytes)));
                     }
                 }
-                cleanup(&tmp);
             }
+            cleanup(&tmp);
         }
     }
     if hist && p.join("History").exists() {
         let tmp = temp_copy(&p.join("History"), &format!("c{n}")).ok_or("historique verrouillé (fermez le navigateur)")?;
-        let rows = sqlite::query(
-            &tmp,
-            "SELECT url, title, visit_count, last_visit_time FROM urls WHERE hidden = 0 ORDER BY last_visit_time DESC LIMIT 2000",
-        );
+        let rows = sqlite::query(&tmp, "SELECT url, title, visit_count, last_visit_time FROM urls WHERE hidden = 0 ORDER BY last_visit_time DESC LIMIT 2000");
         cleanup(&tmp);
         for r in rows? {
             if !http(&r[0]) {
@@ -225,11 +226,9 @@ pub fn parse_csv(text: &str) -> Vec<Value> {
     let rows = csv_rows(text.trim_start_matches('\u{feff}'));
     let Some(head) = rows.first() else { return vec![] };
     let col = |names: &[&str]| head.iter().position(|h| names.contains(&h.trim().to_ascii_lowercase().as_str()));
-    let (Some(cu), Some(cn), Some(cp)) = (
-        col(&["url", "login_uri", "website", "origin"]),
-        col(&["username", "login_username", "user", "login", "email"]),
-        col(&["password", "login_password"]),
-    ) else {
+    let (Some(cu), Some(cn), Some(cp)) =
+        (col(&["url", "login_uri", "website", "origin"]), col(&["username", "login_username", "user", "login", "email"]), col(&["password", "login_password"]))
+    else {
         return vec![];
     };
     rows[1..]

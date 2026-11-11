@@ -74,7 +74,8 @@ pub fn unlock(path: &Path) -> Result<[u8; 32], String> {
 pub fn verify(owner: HWND, message: &str) -> bool {
     unsafe {
         let Ok(interop) = factory::<windows::Security::Credentials::UI::UserConsentVerifier, IUserConsentVerifierInterop>() else { return false };
-        let op: windows::core::Result<IAsyncOperation<UserConsentVerificationResult>> = interop.RequestVerificationForWindowAsync(owner, &HSTRING::from(message));
+        let op: windows::core::Result<IAsyncOperation<UserConsentVerificationResult>> =
+            interop.RequestVerificationForWindowAsync(owner, &HSTRING::from(message));
         op.and_then(|a| a.get()).is_ok_and(|r| r == UserConsentVerificationResult::Verified)
     }
 }

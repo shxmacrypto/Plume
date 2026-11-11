@@ -24,6 +24,10 @@
 
 ---
 
+> **The Plume suite (work in progress, on the `suite` branch).** Plume is growing into three small native apps
+> with one look: Plume Web (this browser), [Plume FEx](apps/fex) (a file explorer with instant search) and
+> [Plume Mail](apps/mail). The plan and the state of the work are in [docs/suite/PLAN.md](docs/suite/PLAN.md).
+
 ## Features
 
 - **Tiny** — a ~2.6 MB installer, no admin rights needed. It renders pages with the WebView2 (Microsoft Edge) engine already on Windows, so it ships no browser engine of its own.
@@ -104,6 +108,15 @@ Plume builds with the **GNU** Rust toolchain, so Visual Studio is not needed.
    The result is the installer `dist\PlumeSetup.exe` plus `dist\PlumeSetup.exe.sha256`.
 
 Run the tests with `cargo test --release` (Rust) and `node --test tests/ui07.test.js` (interface functions: calculator, fuzzy search, QR codes). Tests that need the network are marked `#[ignore]`.
+
+Before a commit, these two commands must have nothing left to say (`rustup component add clippy rustfmt` installs them):
+
+```powershell
+cargo fmt --all
+cargo clippy --workspace --all-targets
+```
+
+The code style is set in `rustfmt.toml` (lines up to 160 columns). `vendor/wry` is left out of both.
 
 `vendor/wry` is a copy of wry 0.53.5 with two small changes: the WebView2 profile name used by containers, and page messages from addresses that `http::Uri` can't parse (such as local `file:///` pages) no longer crash Plume (see `vendor/wry/PLUME.md`). `Cargo.toml` points to it with `[patch.crates-io]`.
 

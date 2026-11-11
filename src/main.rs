@@ -8,10 +8,11 @@ mod bicon;
 mod defbrowser;
 mod devtools;
 mod ext;
+mod feats07;
+mod hello;
 mod import;
 mod look07;
 mod media;
-mod hello;
 mod perf;
 mod priv07;
 mod pwgen;
@@ -20,13 +21,11 @@ mod setup;
 mod sqlite;
 mod tabs07;
 mod tools07;
-mod feats07;
 mod update;
 mod vault;
 
 use serde_json::{Value, json};
 use std::sync::RwLock;
-use tabs07::WinX;
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
@@ -34,6 +33,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+use tabs07::WinX;
 use tao::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy, EventLoopWindowTarget},
@@ -41,12 +41,12 @@ use tao::{
     window::{Icon, ResizeDirection, Window, WindowBuilder},
 };
 use webview2_com::{
-    AcceleratorKeyPressedEventHandler, AddScriptToExecuteOnDocumentCreatedCompletedHandler,
-    BrowserExtensionEnableCompletedHandler, BrowserExtensionRemoveCompletedHandler, BytesReceivedChangedEventHandler,
-    DownloadStartingEventHandler, FaviconChangedEventHandler, GetProcessExtendedInfosCompletedHandler, NavigationStartingEventHandler, FocusChangedEventHandler, WindowCloseRequestedEventHandler, HistoryChangedEventHandler,
-    ContainsFullScreenElementChangedEventHandler, Microsoft::Web::WebView2::Win32::*, NavigationCompletedEventHandler, ProfileAddBrowserExtensionCompletedHandler,
-    ProfileGetBrowserExtensionsCompletedHandler, SourceChangedEventHandler, StateChangedEventHandler,
-    TrySuspendCompletedHandler, WebResourceRequestedEventHandler,
+    AcceleratorKeyPressedEventHandler, AddScriptToExecuteOnDocumentCreatedCompletedHandler, BrowserExtensionEnableCompletedHandler,
+    BrowserExtensionRemoveCompletedHandler, BytesReceivedChangedEventHandler, ContainsFullScreenElementChangedEventHandler, DownloadStartingEventHandler,
+    FaviconChangedEventHandler, FocusChangedEventHandler, GetProcessExtendedInfosCompletedHandler, HistoryChangedEventHandler,
+    Microsoft::Web::WebView2::Win32::*, NavigationCompletedEventHandler, NavigationStartingEventHandler, ProfileAddBrowserExtensionCompletedHandler,
+    ProfileGetBrowserExtensionsCompletedHandler, SourceChangedEventHandler, StateChangedEventHandler, TrySuspendCompletedHandler,
+    WebResourceRequestedEventHandler, WindowCloseRequestedEventHandler,
 };
 use windows::{
     Win32::{
@@ -57,8 +57,7 @@ use windows::{
     core::*,
 };
 use wry::{
-    MemoryUsageLevel, NewWindowResponse, PageLoadEvent, Rect, WebContext, WebView, WebViewBuilder,
-    WebViewBuilderExtWindows, WebViewExtWindows,
+    MemoryUsageLevel, NewWindowResponse, PageLoadEvent, Rect, WebContext, WebView, WebViewBuilder, WebViewBuilderExtWindows, WebViewExtWindows,
     dpi::{PhysicalPosition, PhysicalSize},
 };
 
@@ -265,9 +264,32 @@ struct Tab {
 impl Tab {
     fn new(id: u32, url: String, title: String, fav: String) -> Self {
         Tab {
-            id, view: None, url, title, fav, loading: false, back: false, fwd: false, last: Instant::now(),
-            private: false, group: 0, blocked: 0, info: None, speaking: false, pinned: false,
-            dirty: false, call: false, ram: 0, lv: now_ms(), cont: 0, bl: vec![], tint: None, audio: 0, muted: false, auto_muted: false, pip: false,
+            id,
+            view: None,
+            url,
+            title,
+            fav,
+            loading: false,
+            back: false,
+            fwd: false,
+            last: Instant::now(),
+            private: false,
+            group: 0,
+            blocked: 0,
+            info: None,
+            speaking: false,
+            pinned: false,
+            dirty: false,
+            call: false,
+            ram: 0,
+            lv: now_ms(),
+            cont: 0,
+            bl: vec![],
+            tint: None,
+            audio: 0,
+            muted: false,
+            auto_muted: false,
+            pip: false,
             opener: 0,
         }
     }
@@ -440,10 +462,7 @@ fn main() {
     let dir = std::env::var("LOCALAPPDATA").map(|p| PathBuf::from(p).join("Plume")).unwrap_or_else(|_| std::env::temp_dir().join("Plume"));
     let _ = std::fs::create_dir_all(&dir);
     let file = dir.join("plume.json");
-    let saved: Value = std::fs::read_to_string(&file)
-        .ok()
-        .and_then(|s| serde_json::from_str(s.trim_start_matches('\u{feff}')).ok())
-        .unwrap_or(json!({}));
+    let saved: Value = std::fs::read_to_string(&file).ok().and_then(|s| serde_json::from_str(s.trim_start_matches('\u{feff}')).ok()).unwrap_or(json!({}));
     let mut cfg = defaults();
     if let (Some(c), Some(s)) = (cfg.as_object_mut(), saved["cfg"].as_object()) {
         for (k, v) in s {
@@ -623,7 +642,14 @@ AutofillServerCommunication,InterestFeedContentSuggestions \
         for w in list("windows") {
             let s = w["session"].as_array().cloned().unwrap_or_default();
             if !s.is_empty() {
-                app.want_window.push(WinReq { url: None, private: false, tab: None, restore: s, active: w["active"].as_u64().unwrap_or(0) as usize, pos: None });
+                app.want_window.push(WinReq {
+                    url: None,
+                    private: false,
+                    tab: None,
+                    restore: s,
+                    active: w["active"].as_u64().unwrap_or(0) as usize,
+                    pos: None,
+                });
             }
         }
     }
@@ -752,16 +778,30 @@ impl App {
         let base = WebViewBuilder::new().with_environment(self.env.clone());
         let ui = build_ui(&window, base, &self.proxy, wid);
         let mut w = Win {
-            ui, tabs: vec![], window, wid, active: 0, ui_h: 84.0, side_w: 0.0, overlay: false,
-            ui_ready: false, was_max: false, dev: devtools::DevTools::default(), private_win: req.private,
-            popup: None, sidep: None, sidep_ext: Value::Null, side_r: 0.0, x: WinX::default(),
+            ui,
+            tabs: vec![],
+            window,
+            wid,
+            active: 0,
+            ui_h: 84.0,
+            side_w: 0.0,
+            overlay: false,
+            ui_ready: false,
+            was_max: false,
+            dev: devtools::DevTools::default(),
+            private_win: req.private,
+            popup: None,
+            sidep: None,
+            sidep_ext: Value::Null,
+            side_r: 0.0,
+            x: WinX::default(),
         };
         self.swap_fields(&mut w);
         self.others.push(w);
         let _ = self.ui.zoom(self.ui_scale());
         if let Some(t) = req.tab {
             if let Some(v) = &t.view {
-                let _ = v.reparent(self.window.hwnd() as isize);
+                let _ = v.reparent(self.window.hwnd());
             }
             self.tabs.push(t);
             self.active = usize::MAX;
@@ -811,7 +851,7 @@ impl App {
         let gone = self.wid;
         let mut o = self.others.pop().unwrap();
         self.swap_fields(&mut o);
-        let (to, hwnd) = (self.wid, self.window.hwnd() as isize);
+        let (to, hwnd) = (self.wid, self.window.hwnd());
         for k in self.dl_keep.iter_mut().filter(|k| k.0 == gone) {
             let _ = k.2.reparent(hwnd);
             k.0 = to;
@@ -878,9 +918,9 @@ impl App {
 
     fn win_hwnd(&self, wid: u32) -> Option<isize> {
         if wid == self.wid {
-            return Some(self.window.hwnd() as isize);
+            return Some(self.window.hwnd());
         }
-        self.others.iter().find(|w| w.wid == wid).map(|w| w.window.hwnd() as isize)
+        self.others.iter().find(|w| w.wid == wid).map(|w| w.window.hwnd())
     }
 
     /// JS dans l'interface d'une fenêtre précise (courante ou non).
@@ -901,7 +941,7 @@ impl App {
         let top = top_window_at(p, skip)?;
         let (wid, win, ui_h, side_w, priv_w) = std::iter::once((self.wid, &self.window, self.ui_h, self.side_w, self.private_win))
             .chain(self.others.iter().map(|w| (w.wid, &w.window, w.ui_h, w.side_w, w.private_win)))
-            .find(|w| w.1.hwnd() as isize == top)?;
+            .find(|w| w.1.hwnd() == top)?;
         if wid == src || priv_w != private {
             return None;
         }
@@ -947,7 +987,7 @@ impl App {
             return false; // impossible : la fenêtre visée vient d'être vérifiée
         }
         if let Some(v) = &t.view {
-            let _ = v.reparent(self.window.hwnd() as isize);
+            let _ = v.reparent(self.window.hwnd());
         }
         self.tabs.push(t);
         self.active = usize::MAX;
@@ -999,7 +1039,8 @@ impl App {
             self.push();
         }
         let hide = self.blank();
-        let full = !self.x.page_fs && (self.overlay || self.blank() || self.side_w > 0.0 || self.dev.height() > 0.0 || self.side_r > 0.0 || self.x.split.is_some());
+        let full =
+            !self.x.page_fs && (self.overlay || self.blank() || self.side_w > 0.0 || self.dev.height() > 0.0 || self.side_r > 0.0 || self.x.split.is_some());
         let s = self.window.inner_size();
         let h = if full { s.height } else { (self.top_h() * self.ui_scale() * self.scale()) as u32 };
         let _ = self.ui.set_bounds(Rect { position: PhysicalPosition::new(0, 0).into(), size: PhysicalSize::new(s.width, h).into() });
@@ -1496,8 +1537,15 @@ impl App {
             for i in 0..self.tabs.len() {
                 let skip = {
                     let t = &self.tabs[i];
-                    i == self.active || t.view.is_none() || t.last.elapsed() < limit || t.private || t.id == dev || self.protected(t) || t.pip
-                        || self.x.split.is_some_and(|sp| sp.a == t.id || sp.b == t.id) || self.dl_running(t.id)
+                    i == self.active
+                        || t.view.is_none()
+                        || t.last.elapsed() < limit
+                        || t.private
+                        || t.id == dev
+                        || self.protected(t)
+                        || t.pip
+                        || self.x.split.is_some_and(|sp| sp.a == t.id || sp.b == t.id)
+                        || self.dl_running(t.id)
                 };
                 if skip {
                     continue;
@@ -1541,7 +1589,13 @@ impl App {
 
     /// Relevé mémoire / CPU : seulement quand le badge des onglets ou le gestionnaire de tâches en a besoin.
     fn poller(&self) {
-        let every = if self.tasks_open { 2 } else if self.cfg["ram"] == true { self.cfg["ramEvery"].as_u64().unwrap_or(5).clamp(1, 60) as u32 } else { 0 };
+        let every = if self.tasks_open {
+            2
+        } else if self.cfg["ram"] == true {
+            self.cfg["ramEvery"].as_u64().unwrap_or(5).clamp(1, 60) as u32
+        } else {
+            0
+        };
         RAM_EVERY.store(every, Ordering::Relaxed);
         if every > 0 && !POLLER.swap(true, Ordering::Relaxed) {
             let p = self.proxy.clone();
@@ -1581,7 +1635,9 @@ impl App {
                     info.Kind(&mut kind)?;
                     let (mut frames, mut srcs) = (vec![], vec![]);
                     // seuls les processus de rendu ont des cadres (les autres font planter WebView2)
-                    if kind == COREWEBVIEW2_PROCESS_KIND_RENDERER && let Ok(coll) = x.AssociatedFrameInfos() {
+                    if kind == COREWEBVIEW2_PROCESS_KIND_RENDERER
+                        && let Ok(coll) = x.AssociatedFrameInfos()
+                    {
                         let it = coll.GetIterator()?;
                         let mut has = BOOL(0);
                         it.HasCurrent(&mut has)?;
@@ -1657,7 +1713,8 @@ impl App {
                 COREWEBVIEW2_PROCESS_KIND_UTILITY => "utility",
                 _ => "other",
             };
-            procs.push(json!({"pid": pid, "kind": kind, "mem": mem, "cpu": (pct * 10.0).round() / 10.0, "tabs": tabs, "titles": titles, "ext": exts, "ui": ui}));
+            procs
+                .push(json!({"pid": pid, "kind": kind, "mem": mem, "cpu": (pct * 10.0).round() / 10.0, "tabs": tabs, "titles": titles, "ext": exts, "ui": ui}));
         }
         self.cpu_prev.retain(|p, _| seen.contains(p));
         for t in self.tabs.iter_mut() {
@@ -1682,9 +1739,7 @@ impl App {
     fn update_power(&mut self) {
         let c = &self.cfg;
         let pw = perf::power();
-        let on = c["batt"] == true
-            && pw.on_battery
-            && (c["battWhen"] != "below" || (pw.percent as u64) <= c["battPct"].as_u64().unwrap_or(20));
+        let on = c["batt"] == true && pw.on_battery && (c["battWhen"] != "below" || (pw.percent as u64) <= c["battPct"].as_u64().unwrap_or(20));
         let metered = c["prefetch"] == true && c["prefetchSave"] == true && perf::metered();
         if on != self.batt || metered != self.metered {
             self.batt = on;
@@ -1703,7 +1758,8 @@ impl App {
             return;
         }
         let bit = |k: &str, b: u8| if c[k] == true { b } else { 0 };
-        let def = bit("liteJs", adblock::LITE_JS) | bit("liteImg", adblock::LITE_IMG) | bit("liteFont", adblock::LITE_FONT) | bit("liteAutoplay", adblock::LITE_AUTO);
+        let def =
+            bit("liteJs", adblock::LITE_JS) | bit("liteImg", adblock::LITE_IMG) | bit("liteFont", adblock::LITE_FONT) | bit("liteAutoplay", adblock::LITE_AUTO);
         let sites = c["liteSites"].as_object().map(|m| m.iter().map(|(h, f)| (h.clone(), f.as_u64().unwrap_or(0) as u8)).collect()).unwrap_or_default();
         *l = Some((def, sites));
     }
@@ -1792,6 +1848,12 @@ impl App {
     }
 
     fn push(&self) {
+        // Avant le premier onglet, il n'y a rien à montrer. Au démarrage, `update_power` passe ici avant que la
+        // session soit restaurée dès que le PC est sur batterie ou sur une connexion limitée : sans cette garde,
+        // Plume plantait à l'ouverture (« index out of bounds » sur l'onglet actif).
+        if self.tabs.is_empty() {
+            return;
+        }
         let tabs: Vec<Value> = self
             .tabs
             .iter()
@@ -1804,7 +1866,13 @@ impl App {
             .collect();
         let t = &self.tabs[self.active];
         // titre de la fenêtre (barre des tâches, Alt+Tab) = onglet actif, toujours à jour
-        self.window.set_title(if !t.title.is_empty() { &t.title } else if t.private { "Plume (InPrivate)" } else { "Plume" });
+        self.window.set_title(if !t.title.is_empty() {
+            &t.title
+        } else if t.private {
+            "Plume (InPrivate)"
+        } else {
+            "Plume"
+        });
         let host = import::host_of(&t.url);
         let exts: Vec<&Value> = self.exts.iter().filter(|e| e["on"] == true).collect();
         let state = json!({
@@ -1934,7 +2002,10 @@ impl App {
     fn remote_open(&mut self, u: &str) {
         let url = self.open_arg(u.trim());
         // jamais dans une fenêtre InPrivate : une fenêtre normale déjà ouverte le reçoit (sinon une nouvelle, plus bas)
-        if !url.is_empty() && self.private_win && let Some(i) = self.others.iter().position(|w| !w.private_win) {
+        if !url.is_empty()
+            && self.private_win
+            && let Some(i) = self.others.iter().position(|w| !w.private_win)
+        {
             self.bring(i);
         }
         self.window.set_minimized(false);
@@ -1987,11 +2058,7 @@ impl App {
     }
 
     fn dark_on(&self, host: &str) -> bool {
-        if self.cfg["darkAll"] == true {
-            !strs(&self.cfg["light"]).iter().any(|h| h == host)
-        } else {
-            strs(&self.cfg["dark"]).iter().any(|h| h == host)
-        }
+        if self.cfg["darkAll"] == true { !strs(&self.cfg["light"]).iter().any(|h| h == host) } else { strs(&self.cfg["dark"]).iter().any(|h| h == host) }
     }
 
     fn save(&self) {
@@ -2072,10 +2139,11 @@ impl App {
             }
             self.relayout();
         }
-        if !on && focus_page {
-            if let Some(v) = self.active_view() {
-                let _ = v.focus();
-            }
+        if !on
+            && focus_page
+            && let Some(v) = self.active_view()
+        {
+            let _ = v.focus();
         }
     }
 
@@ -2191,7 +2259,12 @@ impl App {
             self.sync_lite();
             self.push_page_cfg();
         }
-        if k.starts_with("prefetch") || k.starts_with("sleep") || k.starts_with("peek") || k.starts_with("gest") || k.starts_with("nav") || k.starts_with("pw")
+        if k.starts_with("prefetch")
+            || k.starts_with("sleep")
+            || k.starts_with("peek")
+            || k.starts_with("gest")
+            || k.starts_with("nav")
+            || k.starts_with("pw")
             || matches!(k, "adaptive" | "customCss" | "ccMode")
         {
             self.push_page_cfg();
@@ -2207,10 +2280,10 @@ impl App {
             "ntpBg" => self.daily_check(),
             "focus" if self.cfg["focus"] != true => self.focus_stop(),
             "focusSites" => {
-                if let Ok(mut f) = tools07::FOCUS.write() {
-                    if let Some(f) = f.as_mut() {
-                        f.sites = strs(&self.cfg["focusSites"]);
-                    }
+                if let Ok(mut f) = tools07::FOCUS.write()
+                    && let Some(f) = f.as_mut()
+                {
+                    f.sites = strs(&self.cfg["focusSites"]);
                 }
             }
             "hello" => self.hello_toggle(),
@@ -2258,10 +2331,9 @@ impl App {
         for t in &self.tabs {
             if let Some(v) = &t.view {
                 unsafe {
-                    let _ = v.webview().AddScriptToExecuteOnDocumentCreated(
-                        &h,
-                        &AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(|_, _| Ok(()))),
-                    );
+                    let _ = v
+                        .webview()
+                        .AddScriptToExecuteOnDocumentCreated(&h, &AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(|_, _| Ok(()))));
                 }
                 let _ = v.evaluate_script(&js);
             }
@@ -2308,8 +2380,7 @@ impl App {
         // version installée : toujours le plume.exe du dossier (une mise à jour a pu le remplacer)
         if let Ok(exe) = if setup::installed() { Ok(setup::exe()) } else { std::env::current_exe() } {
             // sans le lien d'un lancement « --single-argument » (la session rouvre les onglets)
-            let mut a: Vec<String> =
-                std::env::args().skip(1).take_while(|a| a != "--single-argument").filter(|a| a != "--restarted" && a != "--eco").collect();
+            let mut a: Vec<String> = std::env::args().skip(1).take_while(|a| a != "--single-argument").filter(|a| a != "--restarted" && a != "--eco").collect();
             a.push("--restarted".into());
             if std::process::Command::new(exe).args(a).spawn().is_ok() {
                 self.quit = true;
@@ -2623,8 +2694,18 @@ impl App {
         // chaque événement est traité dans la fenêtre qu'il concerne
         let ok = match &ev {
             Ev::Ui(w, _) | Ev::Active(w, _) | Ev::Cmd(Who::Win(w), _) | Ev::PopupSize(w, ..) | Ev::Remote(w, _) => self.focus_win(*w),
-            Ev::Page(id, ..) | Ev::Title(id, _) | Ev::Url(id, _) | Ev::Loading(id, _) | Ev::Fav(id, _) | Ev::Nav(id, ..)
-            | Ev::Blocked(id, _) | Ev::PageFs(id, _) | Ev::Audio(id, _) | Ev::FocusBlock(id, _) | Ev::Open(id, ..) | Ev::Cmd(Who::Tab(id), _) => self.focus_tab(*id),
+            Ev::Page(id, ..)
+            | Ev::Title(id, _)
+            | Ev::Url(id, _)
+            | Ev::Loading(id, _)
+            | Ev::Fav(id, _)
+            | Ev::Nav(id, ..)
+            | Ev::Blocked(id, _)
+            | Ev::PageFs(id, _)
+            | Ev::Audio(id, _)
+            | Ev::FocusBlock(id, _)
+            | Ev::Open(id, ..)
+            | Ev::Cmd(Who::Tab(id), _) => self.focus_tab(*id),
             Ev::Dev(m) => self.focus_tab(m.tab()),
             // téléchargement : traité dans la fenêtre de son onglet (boîte « Enregistrer sous », onglet vide), toujours traité
             Ev::Dl(v) => {
@@ -2651,16 +2732,17 @@ impl App {
                 let me = std::iter::once((self.wid, &self.window, &self.tabs))
                     .chain(self.others.iter().map(|w| (w.wid, &w.window, &w.tabs)))
                     .find(|w| w.0 == wid)
-                    .map(|w| (w.1.hwnd() as isize, w.2.first().is_some_and(|t| t.private), w.2.len()));
+                    .map(|w| (w.1.hwnd(), w.2.first().is_some_and(|t| t.private), w.2.len()));
                 let target = me.filter(|m| m.2 == 1).and_then(|(h, private, _)| self.tabs_under_cursor(wid, h, private));
                 if end {
                     self.drag_tab = None;
                     self.tab_over(None);
-                    if let Some((to, x, y)) = target {
-                        if self.focus_win(wid) && self.tabs.len() == 1 {
-                            let id = self.tabs[0].id;
-                            self.tab_join(id, to, x, y);
-                        }
+                    if let Some((to, x, y)) = target
+                        && self.focus_win(wid)
+                        && self.tabs.len() == 1
+                    {
+                        let id = self.tabs[0].id;
+                        self.tab_join(id, to, x, y);
                     }
                 } else {
                     // la fenêtre visée passe devant celle qu'on déplace (on voit où l'onglet arrivera), puis
@@ -2705,14 +2787,15 @@ impl App {
             }
             Ev::Page(id, uri, body) => self.on_page(id, &uri, &body),
             Ev::Cmd(Who::Tab(id), Cmd::PageFocus) => {
-                if self.x.split.is_some_and(|sp| sp.a == id || sp.b == id) && self.tabs.get(self.active).is_some_and(|t| t.id != id) {
-                    if let Some(i) = self.idx(id) {
-                        self.active = i;
-                        self.tabs[i].last = Instant::now();
-                        self.tabs[i].lv = now_ms();
-                        self.dev_retarget();
-                        self.push();
-                    }
+                if self.x.split.is_some_and(|sp| sp.a == id || sp.b == id)
+                    && self.tabs.get(self.active).is_some_and(|t| t.id != id)
+                    && let Some(i) = self.idx(id)
+                {
+                    self.active = i;
+                    self.tabs[i].last = Instant::now();
+                    self.tabs[i].lv = now_ms();
+                    self.dev_retarget();
+                    self.push();
                 }
                 self.cmd(Cmd::PageFocus)
             }
@@ -2762,10 +2845,10 @@ impl App {
             }
             Ev::Title(id, t) => {
                 if let Some(i) = self.idx(id) {
-                    if let Some(h) = self.history.first_mut() {
-                        if h["u"] == self.tabs[i].url {
-                            h["t"] = json!(t);
-                        }
+                    if let Some(h) = self.history.first_mut()
+                        && h["u"] == self.tabs[i].url
+                    {
+                        h["t"] = json!(t);
                     }
                     self.tabs[i].title = t;
                     if i == self.active {
@@ -3051,7 +3134,12 @@ impl App {
             "proc-end" => {
                 let pid = v["pid"].as_u64().unwrap_or(0) as u32;
                 // jamais le processus principal de WebView2, le GPU ni Plume lui-même
-                let ok = self.procs.as_array().into_iter().flatten().any(|p| p["pid"] == pid && (p["kind"] == "renderer" || p["kind"] == "utility") && p["ui"] != true);
+                let ok = self
+                    .procs
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|p| p["pid"] == pid && (p["kind"] == "renderer" || p["kind"] == "utility") && p["ui"] != true);
                 if ok && perf::kill(pid) {
                     self.poll_procs();
                 }
@@ -3172,10 +3260,10 @@ impl App {
                 }
             }
             "act" => {
-                if let Some(i) = self.idx(id) {
-                    if i != self.active {
-                        self.activate(i)
-                    }
+                if let Some(i) = self.idx(id)
+                    && i != self.active
+                {
+                    self.activate(i)
                 }
             }
             "move" => {
@@ -3189,7 +3277,13 @@ impl App {
                     let pos = self.idx(id).unwrap_or(0);
                     let nb = |o: Option<&Tab>| o.map_or(0, |t| t.group);
                     let (a, b) = (nb(pos.checked_sub(1).and_then(|p| self.tabs.get(p))), nb(self.tabs.get(pos + 1)));
-                    self.tabs[pos].group = if a == b { a } else if self.tabs[pos].group == a || self.tabs[pos].group == b { self.tabs[pos].group } else { 0 };
+                    self.tabs[pos].group = if a == b {
+                        a
+                    } else if self.tabs[pos].group == a || self.tabs[pos].group == b {
+                        self.tabs[pos].group
+                    } else {
+                        0
+                    };
                     self.order_pins();
                     self.gc_groups();
                     self.push();
@@ -3402,7 +3496,10 @@ impl App {
                 let u = self.tabs[self.active].url.clone();
                 if u.starts_with("http") && !u.contains("translate.goog") {
                     let tl = self.lang().to_string();
-                    let enc: String = u.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect();
+                    let enc: String = u
+                        .bytes()
+                        .map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+                        .collect();
                     self.go(&format!("https://translate.google.com/translate?sl=auto&tl={tl}&u={enc}"));
                 }
             }
@@ -3629,7 +3726,10 @@ impl App {
             "side-close" => self.close_side_panel(),
             "ovr" => {
                 self.ovr_full = v["full"] == true;
-                self.ovr_rects = v["rects"].as_array().into_iter().flatten()
+                self.ovr_rects = v["rects"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
                     .filter_map(|r| Some([r[0].as_f64()?, r[1].as_f64()?, r[2].as_f64()?, r[3].as_f64()?]))
                     .collect();
                 self.relayout();
@@ -3732,10 +3832,10 @@ impl App {
             "restart" => self.restart(),
             // --- DevTools intégrés ---
             "dt" => {
-                if let Some(core) = self.dev_core() {
-                    if let Some(js) = self.dev.on_ui(&v, &core, &self.proxy) {
-                        self.js(&js);
-                    }
+                if let Some(core) = self.dev_core()
+                    && let Some(js) = self.dev.on_ui(&v, &core, &self.proxy)
+                {
+                    self.js(&js);
                 }
             }
             "dt-close" => self.dev_close(),
@@ -3892,25 +3992,25 @@ fn accel(vk: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Cmd> {
     }
     Some(match (ctrl, shift, alt, vk) {
         (true, false, true, 0x31..=0x39) => Cmd::Space((vk - 0x31) as usize), // Ctrl+Alt+1…9 : espaces
-        (true, false, false, 0x54) => Cmd::NewTab,                     // Ctrl+T
-        (true, false, false, 0x4E) => Cmd::NewWindow,                  // Ctrl+N
-        (true, true, false, 0x4E) => Cmd::Private,                     // Ctrl+Maj+N
-        (true, false, false, 0x57 | 0x73) => Cmd::Close,               // Ctrl+W / Ctrl+F4
-        (true, true, false, 0x54) => Cmd::Reopen,                      // Ctrl+Maj+T
-        (true, false, false, 0x09 | 0x22) => Cmd::Next,                // Ctrl+Tab / Ctrl+PgDn
+        (true, false, false, 0x54) => Cmd::NewTab,                            // Ctrl+T
+        (true, false, false, 0x4E) => Cmd::NewWindow,                         // Ctrl+N
+        (true, true, false, 0x4E) => Cmd::Private,                            // Ctrl+Maj+N
+        (true, false, false, 0x57 | 0x73) => Cmd::Close,                      // Ctrl+W / Ctrl+F4
+        (true, true, false, 0x54) => Cmd::Reopen,                             // Ctrl+Maj+T
+        (true, false, false, 0x09 | 0x22) => Cmd::Next,                       // Ctrl+Tab / Ctrl+PgDn
         (true, true, false, 0x09) | (true, false, false, 0x21) => Cmd::Prev,
         (true, false, false, 0x31..=0x38) => Cmd::Nth((vk - 0x31) as usize),
         (true, false, false, 0x39) => Cmd::Last,
         (true, false, false, 0x4C | 0x4B | 0x45) | (false, false, false, 0x75) | (false, false, true, 0x44) => {
             Cmd::Focus // Ctrl+L / Ctrl+K / Ctrl+E / F6 / Alt+D
         }
-        (true, false, false, 0x44) => Cmd::Star,                       // Ctrl+D
-        (true, true, false, 0x42) => Cmd::BmBar,                       // Ctrl+Maj+B
-        (true, false, false, 0x48) => Cmd::History,                    // Ctrl+H
-        (true, false, false, 0x4A) => Cmd::Downloads,                  // Ctrl+J
-        (false, false, false, 0x78) => Cmd::Reader,                    // F9 (comme Edge)
-        (false, false, false, 0x7A) => Cmd::Fullscreen,                // F11
-        (false, true, false, 0x1B) => Cmd::Tasks,                      // Maj+Échap (gestionnaire de tâches)
+        (true, false, false, 0x44) => Cmd::Star,        // Ctrl+D
+        (true, true, false, 0x42) => Cmd::BmBar,        // Ctrl+Maj+B
+        (true, false, false, 0x48) => Cmd::History,     // Ctrl+H
+        (true, false, false, 0x4A) => Cmd::Downloads,   // Ctrl+J
+        (false, false, false, 0x78) => Cmd::Reader,     // F9 (comme Edge)
+        (false, false, false, 0x7A) => Cmd::Fullscreen, // F11
+        (false, true, false, 0x1B) => Cmd::Tasks,       // Maj+Échap (gestionnaire de tâches)
         (true, true, false, 0x4A) if cfg!(debug_assertions) => Cmd::UiDev,
         (false, false, false, 0x7B) | (true, true, false, 0x49) => Cmd::Dev, // F12 / Ctrl+Maj+I
         _ => return None,
@@ -4285,7 +4385,11 @@ fn to_url(s: &str, search: &str) -> String {
     }
     if !s.contains(' ') {
         // Serveurs locaux / réseau privé : en HTTP comme Chrome (localhost:3000, 192.168.1.10, monpc:8080)
-        let port = s.split(['/', '?', '#']).next().unwrap_or("").rsplit_once(':')
+        let port = s
+            .split(['/', '?', '#'])
+            .next()
+            .unwrap_or("")
+            .rsplit_once(':')
             .is_some_and(|(h, p)| !h.is_empty() && !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()));
         if is_local(s) || (port && !s.contains('.')) {
             return format!("http://{s}");
@@ -4308,12 +4412,7 @@ fn to_url(s: &str, search: &str) -> String {
 /// Hôte local ou réseau privé (accepte « hôte[:port][/chemin] » sans schéma).
 fn is_local(s: &str) -> bool {
     let a = s.split(['/', '?', '#']).next().unwrap_or("");
-    let h = if let Some(r) = a.strip_prefix('[') {
-        r.split(']').next().unwrap_or("")
-    } else {
-        a.split(':').next().unwrap_or("")
-    }
-    .to_ascii_lowercase();
+    let h = if let Some(r) = a.strip_prefix('[') { r.split(']').next().unwrap_or("") } else { a.split(':').next().unwrap_or("") }.to_ascii_lowercase();
     let second = h.split('.').nth(1).and_then(|x| x.parse::<u8>().ok()).unwrap_or(0);
     h == "localhost"
         || h.ends_with(".localhost")

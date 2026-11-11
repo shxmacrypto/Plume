@@ -13,3 +13,6 @@
 .idea/
 Thumbs.db
 desktop.ini
+
+# Python caches of the UI tests
+__pycache__/

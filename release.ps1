@@ -35,9 +35,10 @@ if ($isGit) {
 Write-Host "Plume $tag  ->  github.com/$repo$(if ($DryRun) { '   (dry run: nothing is changed)' })" -ForegroundColor Green
 
 Step "1/5 Version $Version in Cargo.toml + launcher/Cargo.toml (+ REPO in src/main.rs)"
+# Cargo.toml has two: the browser's [package] and [workspace.package] (Plume Suite, Plume FEx, Plume Mail)
 foreach ($f in "Cargo.toml", "launcher\Cargo.toml") {
     $re = [regex]'(?m)^version = "[^"]+"'
-    Write-Text $f ($re.Replace((Read-Text $f), "version = `"$Version`"", 1))
+    Write-Text $f ($re.Replace((Read-Text $f), "version = `"$Version`""))
 }
 Write-Text "src\main.rs" ([regex]::Replace((Read-Text "src\main.rs"), 'const REPO: &str = "[^"]+"', "const REPO: &str = `"$repo`""))
 

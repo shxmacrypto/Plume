@@ -22,9 +22,7 @@ fn derive(pw: &str, salt: &[u8; 16]) -> Result<[u8; 32], String> {
     // Paramètres OWASP (19 Mio, 2 passes) : sûr, et léger en RAM
     let params = Params::new(19 * 1024, 2, 1, Some(32)).map_err(|e| e.to_string())?;
     let mut key = [0u8; 32];
-    Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
-        .hash_password_into(pw.as_bytes(), salt, &mut key)
-        .map_err(|e| e.to_string())?;
+    Argon2::new(Algorithm::Argon2id, Version::V0x13, params).hash_password_into(pw.as_bytes(), salt, &mut key).map_err(|e| e.to_string())?;
     Ok(key)
 }
 
@@ -59,9 +57,7 @@ impl Vault {
         let mut salt = [0u8; 16];
         salt.copy_from_slice(&data[4..20]);
         let key = derive(pw, &salt)?;
-        let plain = Aes256Gcm::new(&key.into())
-            .decrypt(data[20..32].into(), &data[32..])
-            .map_err(|_| "wrong".to_string())?;
+        let plain = Aes256Gcm::new(&key.into()).decrypt(data[20..32].into(), &data[32..]).map_err(|_| "wrong".to_string())?;
         self.items = serde_json::from_slice(&plain).unwrap_or_default();
         self.salt = salt;
         self.key = Some(key);

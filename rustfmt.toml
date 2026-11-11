@@ -1,0 +1,5 @@
+# The style of the whole project: wide lines, and whatever fits on one line stays on one line.
+# Run `cargo fmt --all` before committing; `cargo fmt --all -- --check` must print nothing.
+edition = "2024"
+max_width = 160
+use_small_heuristics = "Max"

@@ -4,24 +4,26 @@ use serde_json::{Value, json};
 use sha1::{Digest, Sha1};
 
 const WORDS: &[&str] = &[
-    "acid", "acorn", "actor", "agent", "album", "alley", "amber", "angle", "apple", "april", "arena", "arrow", "atlas", "audio", "autumn", "badge", "bagel", "baker",
-    "bamboo", "banjo", "basil", "beach", "beard", "berry", "bison", "blade", "blink", "bloom", "board", "bonus", "boost", "brave", "bread", "brick", "brook", "brush",
-    "bubble", "bucket", "cabin", "cable", "cactus", "camel", "candy", "canoe", "canvas", "cargo", "carrot", "castle", "cedar", "chalk", "charm", "cheese", "cherry", "chess",
-    "chief", "cider", "cinema", "circle", "citrus", "clay", "cliff", "cloud", "clover", "coast", "cobalt", "cocoa", "comet", "coral", "cotton", "couch", "crane", "crayon",
-    "cream", "crisp", "crown", "crystal", "cube", "daisy", "dance", "delta", "denim", "desert", "diary", "dinner", "disco", "dolphin", "donut", "dragon", "dream", "drift",
-    "drum", "eagle", "earth", "echo", "elbow", "ember", "engine", "epic", "fabric", "falcon", "fancy", "feather", "fence", "fern", "fiber", "field", "flame", "flash",
-    "fleet", "flute", "focus", "forest", "fossil", "frame", "frost", "fruit", "galaxy", "garden", "garlic", "gecko", "giant", "ginger", "glade", "globe", "glove", "goose",
-    "grain", "grape", "gravel", "guitar", "habit", "hammer", "harbor", "harvest", "hazel", "honey", "hotel", "humble", "igloo", "island", "ivory", "jacket", "jaguar", "jelly",
-    "jewel", "joke", "jungle", "kayak", "kettle", "kiwi", "koala", "label", "ladder", "lagoon", "lamp", "laser", "lemon", "level", "light", "lilac", "linen", "lion",
-    "llama", "lobster", "lotus", "lucky", "lunar", "magnet", "mango", "maple", "marble", "meadow", "melon", "mint", "mirror", "mocha", "model", "monkey", "moose", "mosaic",
-    "motor", "muffin", "music", "nectar", "needle", "night", "noble", "noodle", "north", "nutmeg", "oasis", "ocean", "olive", "onion", "opal", "orbit", "orchid", "otter",
-    "owl", "oyster", "paddle", "palace", "panda", "paper", "parade", "parrot", "pasta", "peach", "pearl", "pebble", "pencil", "pepper", "piano", "pickle", "pilot", "pine",
-    "pixel", "pizza", "planet", "plaza", "plum", "polar", "poppy", "prism", "pulse", "puzzle", "quartz", "quest", "quiet", "quilt", "rabbit", "radar", "radio", "rain",
-    "raven", "ribbon", "river", "robin", "rocket", "rose", "ruby", "saddle", "safari", "salmon", "sand", "satin", "scarf", "shadow", "shell", "silver", "sketch", "sky",
-    "sloth", "smile", "snow", "solar", "sonic", "spark", "spice", "spider", "spring", "square", "squid", "stamp", "star", "stone", "storm", "sugar", "summer", "sunny",
-    "swan", "syrup", "table", "taco", "tango", "tea", "tempo", "tiger", "timber", "toast", "token", "topaz", "torch", "tower", "trail", "tulip", "tundra", "turtle",
-    "twist", "umbra", "union", "unity", "urban", "valley", "vapor", "velvet", "venus", "violet", "vivid", "voyage", "waffle", "walnut", "water", "wave", "whale", "wheat",
-    "willow", "window", "winter", "wizard", "wolf", "wonder", "yacht", "yarn", "yellow", "yogurt", "zebra", "zenith", "zephyr", "zinc",
+    "acid", "acorn", "actor", "agent", "album", "alley", "amber", "angle", "apple", "april", "arena", "arrow", "atlas", "audio", "autumn", "badge", "bagel",
+    "baker", "bamboo", "banjo", "basil", "beach", "beard", "berry", "bison", "blade", "blink", "bloom", "board", "bonus", "boost", "brave", "bread", "brick",
+    "brook", "brush", "bubble", "bucket", "cabin", "cable", "cactus", "camel", "candy", "canoe", "canvas", "cargo", "carrot", "castle", "cedar", "chalk",
+    "charm", "cheese", "cherry", "chess", "chief", "cider", "cinema", "circle", "citrus", "clay", "cliff", "cloud", "clover", "coast", "cobalt", "cocoa",
+    "comet", "coral", "cotton", "couch", "crane", "crayon", "cream", "crisp", "crown", "crystal", "cube", "daisy", "dance", "delta", "denim", "desert",
+    "diary", "dinner", "disco", "dolphin", "donut", "dragon", "dream", "drift", "drum", "eagle", "earth", "echo", "elbow", "ember", "engine", "epic", "fabric",
+    "falcon", "fancy", "feather", "fence", "fern", "fiber", "field", "flame", "flash", "fleet", "flute", "focus", "forest", "fossil", "frame", "frost",
+    "fruit", "galaxy", "garden", "garlic", "gecko", "giant", "ginger", "glade", "globe", "glove", "goose", "grain", "grape", "gravel", "guitar", "habit",
+    "hammer", "harbor", "harvest", "hazel", "honey", "hotel", "humble", "igloo", "island", "ivory", "jacket", "jaguar", "jelly", "jewel", "joke", "jungle",
+    "kayak", "kettle", "kiwi", "koala", "label", "ladder", "lagoon", "lamp", "laser", "lemon", "level", "light", "lilac", "linen", "lion", "llama", "lobster",
+    "lotus", "lucky", "lunar", "magnet", "mango", "maple", "marble", "meadow", "melon", "mint", "mirror", "mocha", "model", "monkey", "moose", "mosaic",
+    "motor", "muffin", "music", "nectar", "needle", "night", "noble", "noodle", "north", "nutmeg", "oasis", "ocean", "olive", "onion", "opal", "orbit",
+    "orchid", "otter", "owl", "oyster", "paddle", "palace", "panda", "paper", "parade", "parrot", "pasta", "peach", "pearl", "pebble", "pencil", "pepper",
+    "piano", "pickle", "pilot", "pine", "pixel", "pizza", "planet", "plaza", "plum", "polar", "poppy", "prism", "pulse", "puzzle", "quartz", "quest", "quiet",
+    "quilt", "rabbit", "radar", "radio", "rain", "raven", "ribbon", "river", "robin", "rocket", "rose", "ruby", "saddle", "safari", "salmon", "sand", "satin",
+    "scarf", "shadow", "shell", "silver", "sketch", "sky", "sloth", "smile", "snow", "solar", "sonic", "spark", "spice", "spider", "spring", "square", "squid",
+    "stamp", "star", "stone", "storm", "sugar", "summer", "sunny", "swan", "syrup", "table", "taco", "tango", "tea", "tempo", "tiger", "timber", "toast",
+    "token", "topaz", "torch", "tower", "trail", "tulip", "tundra", "turtle", "twist", "umbra", "union", "unity", "urban", "valley", "vapor", "velvet",
+    "venus", "violet", "vivid", "voyage", "waffle", "walnut", "water", "wave", "whale", "wheat", "willow", "window", "winter", "wizard", "wolf", "wonder",
+    "yacht", "yarn", "yellow", "yogurt", "zebra", "zenith", "zephyr", "zinc",
 ];
 
 /// Nombre aléatoire uniforme dans 0..n (tirage avec rejet, aucun biais).
@@ -125,11 +127,7 @@ pub fn hibp_split(pw: &str) -> (String, String) {
 
 /// Combien de fois ce suffixe apparaît dans la réponse de l'API (« SUFFIXE:COMPTE » par ligne).
 pub fn hibp_count(body: &str, suffix: &str) -> u64 {
-    body.lines()
-        .filter_map(|l| l.trim().split_once(':'))
-        .find(|(s, _)| s.eq_ignore_ascii_case(suffix))
-        .and_then(|(_, n)| n.trim().parse().ok())
-        .unwrap_or(0)
+    body.lines().filter_map(|l| l.trim().split_once(':')).find(|(s, _)| s.eq_ignore_ascii_case(suffix)).and_then(|(_, n)| n.trim().parse().ok()).unwrap_or(0)
 }
 
 /// Appel réseau (à faire hors du fil de l'interface) : seul le préfixe de 5 caractères est envoyé.

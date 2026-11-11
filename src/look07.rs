@@ -60,7 +60,8 @@ fn weather(city: &str, lang: &str, unit: &str) -> std::result::Result<Value, Str
 /// Image du jour de Bing : téléchargée une fois par jour, seulement si ce fond est choisi.
 fn daily_image(lang: &str) -> std::result::Result<Value, String> {
     let mkt = if lang == "fr" { "fr-FR" } else { "en-US" };
-    let v: Value = serde_json::from_slice(&update::http_get(&format!("https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt={mkt}"))?).map_err(|e| e.to_string())?;
+    let v: Value = serde_json::from_slice(&update::http_get(&format!("https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt={mkt}"))?)
+        .map_err(|e| e.to_string())?;
     let im = &v["images"][0];
     let u = im["url"].as_str().ok_or("no image")?;
     let img = update::http_get(&if u.starts_with("http") { u.to_string() } else { format!("https://www.bing.com{u}") })?;
@@ -155,7 +156,8 @@ impl App {
     /// Image personnelle : copiée dans le dossier de Plume (ntp-bg.<ext>), l'original peut être déplacé.
     pub fn ntp_pick(&mut self) {
         let Some(src) = pick_image(HWND(self.window.hwnd() as _)) else { return };
-        let ext = src.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).filter(|e| IMG_EXT.contains(&e.as_str())).unwrap_or_else(|| "jpg".into());
+        let ext =
+            src.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).filter(|e| IMG_EXT.contains(&e.as_str())).unwrap_or_else(|| "jpg".into());
         let size = std::fs::metadata(&src).map(|m| m.len()).unwrap_or(0);
         if size == 0 || size > 25 * 1024 * 1024 {
             return self.toast("ntp-big");
@@ -205,10 +207,11 @@ impl App {
         }
         let unit = if unit == "f" { "f" } else { "c" };
         let key = format!("{city}|{unit}|{}", self.lang());
-        if let Some((k, t, v)) = &self.wx {
-            if *k == key && t.elapsed() < Duration::from_secs(30 * 60) {
-                return self.js(&format!("wxRes({v})"));
-            }
+        if let Some((k, t, v)) = &self.wx
+            && *k == key
+            && t.elapsed() < Duration::from_secs(30 * 60)
+        {
+            return self.js(&format!("wxRes({v})"));
         }
         if self.wx_busy {
             return;
@@ -374,10 +377,10 @@ impl App {
                 }
             }
             "cc-export" => {
-                if let Some(p) = tabs07::pick_json(HWND(self.window.hwnd() as _), true, "plume-custom-sites.json") {
-                    if std::fs::write(&p, serde_json::to_string_pretty(&self.custom).unwrap_or_default()).is_ok() {
-                        self.toast("cc-exported");
-                    }
+                if let Some(p) = tabs07::pick_json(HWND(self.window.hwnd() as _), true, "plume-custom-sites.json")
+                    && std::fs::write(&p, serde_json::to_string_pretty(&self.custom).unwrap_or_default()).is_ok()
+                {
+                    self.toast("cc-exported");
                 }
             }
             "cc-import" => {

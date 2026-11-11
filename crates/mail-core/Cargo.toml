@@ -1,0 +1,23 @@
+[package]
+name = "mail-core"
+version.workspace = true
+edition = "2024"
+description = "Plume Mail core: IMAP, SMTP, message parsing and the local mailbox. No interface."
+license = "MIT"
+
+[features]
+# Essais automatiques : accepter le certificat que personne n'a signé du serveur d'essai de ce PC. Jamais publié.
+test-hook = []
+
+[dependencies]
+# TLS par Windows lui-même (SChannel) : pas de bibliothèque de chiffrement à embarquer ni à tenir à jour
+schannel = "0.1"
+# lecture des messages (MIME, encodages, en-têtes) ; sans les tables des jeux de caractères d'Asie
+mail-parser = { version = "1", default-features = false }
+serde_json = "1"
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security_Credentials",
+    "Win32_System_SystemInformation",
+    "Win32_System_Time",
+] }

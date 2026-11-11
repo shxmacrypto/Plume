@@ -1,6 +1,6 @@
 [package]
 name = "plume-launcher"
-version = "0.7.1"
+version = "1.0.0"
 edition = "2024"
 build = "build.rs"
 
@@ -16,3 +16,6 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# Construit à part (il porte les programmes déjà compilés) : pas dans l'espace de travail de la suite.
+[workspace]

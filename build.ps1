@@ -1,4 +1,5 @@
-# Builds Plume and produces its installer: dist\PlumeSetup.exe (+ its SHA-256 checksum).
+# Builds the Plume Suite (browser, Plume Suite, Plume FEx, Plume Mail) and its one installer:
+# dist\PlumeSetup.exe (+ its SHA-256 checksum).
 #
 # Requirements (Windows, no Visual Studio needed):
 #   - Rust with the x86_64-pc-windows-gnu toolchain  (rustup default stable-x86_64-pc-windows-gnu)
@@ -18,12 +19,15 @@ foreach ($tool in "dlltool.exe", "windres.exe") {
 }
 $env:Path = "$binutils;$env:USERPROFILE\.cargo\bin;$env:Path"
 
-# 1. The browser itself
-cmd /c "cargo build --release 2>&1"
-if ($LASTEXITCODE -ne 0) { Write-Host "Browser build failed" -ForegroundColor Red; exit 1 }
+# 1. The four programs: the browser (root package), Plume Suite, Plume FEx, Plume Mail
+cmd /c "cargo build --release -p plume -p plume-suite -p plume-fex -p plume-mail 2>&1"
+if ($LASTEXITCODE -ne 0) { Write-Host "Build of the apps failed" -ForegroundColor Red; exit 1 }
 
-# 2. The installer, which embeds the browser + WebView2Loader.dll
+# 2. The installer, which carries the four programs + WebView2Loader.dll
 $env:PLUME_CORE_EXE = (Resolve-Path target\release\plume.exe).Path
+$env:PLUME_SUITE_EXE = (Resolve-Path target\release\plume-suite.exe).Path
+$env:PLUME_FEX_EXE = (Resolve-Path target\release\plume-fex.exe).Path
+$env:PLUME_MAIL_EXE = (Resolve-Path target\release\plume-mail.exe).Path
 $env:PLUME_LOADER_DLL = (Get-ChildItem "$env:USERPROFILE\.cargo\registry\src\*\webview2-com-sys-*\x64\WebView2Loader.dll" | Select-Object -Last 1).FullName
 if (-not $env:PLUME_LOADER_DLL) { Write-Host "WebView2Loader.dll not found in the cargo registry" -ForegroundColor Red; exit 1 }
 cmd /c "cargo build --release --manifest-path launcher\Cargo.toml 2>&1"
