@@ -1,7 +1,8 @@
 # Plume Mail
 
-A fast, native mail app for Windows 10 and 11, with the look of Plume. Part of Plume Suite: install it from
-the Plume Suite app.
+A fast, native mail app for Windows 10 and 11, with the look of Plume. Part of Plume Suite, **coming soon**:
+it is not in the 1.0.0 installer yet (Plume Suite shows it as *Coming soon*). It joins once *Sign in with
+Microsoft* has its application ID; `PLUME_WITH_MAIL=1` adds it to a build of the installer.
 
 - Hand-built interface in Rust: Win32, Direct2D and DirectWrite. No web view. One small program, about
   45 MB of memory.

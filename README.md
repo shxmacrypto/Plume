@@ -6,8 +6,8 @@
 
 <p align="center">
   <b>Light, native apps for Windows, with one look.</b><br>
-  A web browser, a file explorer and a mail app, written in Rust, installed and updated together.<br>
-  <i>Des applications légères et natives pour Windows : un navigateur, un explorateur de fichiers et une messagerie.</i>
+  A web browser and a file explorer (a mail app is coming), written in Rust, installed and updated together.<br>
+  <i>Des applications légères et natives pour Windows : un navigateur, un explorateur de fichiers, et bientôt une messagerie.</i>
 </p>
 
 <p align="center">
@@ -29,7 +29,7 @@
 | **Plume Suite** | The app that installs, opens, updates and removes the others. Nothing to download: the installer holds them all. |
 | **Plume Web** | An ultra-light web browser on the WebView2 engine already in Windows. |
 | **[Plume FEx](apps/fex)** | A file explorer that opens folders in milliseconds and searches the whole PC as you type, without administrator rights. |
-| **[Plume Mail](apps/mail)** | A mail app for IMAP accounts, Outlook.com and Microsoft 365, that never loads a remote image. |
+| **[Plume Mail](apps/mail)** *(coming soon)* | A mail app for IMAP accounts, Outlook.com and Microsoft 365, that never loads a remote image. It is built and tested, and joins the installer once its *Sign in with Microsoft* is registered. |
 
 Each app is a single program drawn by Windows itself (FEx and Mail use Direct2D, no web view). When a new version
 is out, every app shows it in its title bar and Plume Suite updates them all in one click.
@@ -75,7 +75,7 @@ And much more, each feature optional and free when switched off:
 
 - **[Plume FEx](apps/fex)**: instant search with Everything's syntax, search inside files, a preview pane, thumbnails,
   undo, the real Explorer context menu, archives (ZIP and 7z with a password), folder sizes, SFTP servers, tabs.
-- **[Plume Mail](apps/mail)**: several accounts, *Sign in with Microsoft*, new mail pushed by the server,
+- **[Plume Mail](apps/mail)** (coming soon, not in the 1.0.0 installer): several accounts, *Sign in with Microsoft*, new mail pushed by the server,
   conversations, drafts kept on the server, signatures, address suggestions, search in the text of messages,
   HTML shown as text with nothing loaded or run, the mailbox kept offline.
 
@@ -97,7 +97,7 @@ Requires Windows 10 or 11 (64-bit). Plume Web also needs the **WebView2 Runtime*
 
 ## Privacy
 
-No Plume app has an account or telemetry. Everything stays in `%LOCALAPPDATA%\Plume`. Plume FEx goes online only for the SFTP servers you connect to; Plume Mail only talks to your mail servers (and to Microsoft's sign-in page for a Microsoft account). Plume Suite and each app check this repository's latest release at start (the same request as below). Plume Web only goes online when you ask it to, plus:
+No Plume app has an account or telemetry. Everything stays in `%LOCALAPPDATA%\Plume`. Plume FEx goes online only for the SFTP servers you connect to; Plume Mail (coming soon) only talks to your mail servers (and to Microsoft's sign-in page for a Microsoft account). Plume Suite and each app check this repository's latest release at start (the same request as below). Plume Web only goes online when you ask it to, plus:
 
 | Request | When | Can be turned off |
 |---|---|---|
@@ -127,7 +127,7 @@ Plume builds with the **GNU** Rust toolchain, so Visual Studio is not needed.
    ```powershell
    .\build.ps1
    ```
-   The result is the installer `dist\PlumeSetup.exe` plus `dist\PlumeSetup.exe.sha256`. It holds Plume Suite, Plume Web, Plume FEx and Plume Mail.
+   The result is the installer `dist\PlumeSetup.exe` plus `dist\PlumeSetup.exe.sha256`. It holds Plume Suite, Plume Web and Plume FEx; set `PLUME_WITH_MAIL=1` to add Plume Mail (Plume Suite then offers it too).
 
 Run the tests with `cargo test --workspace` (Rust) and `node --test tests/ui07.test.js` (Plume Web's interface functions: calculator, fuzzy search, QR codes). Tests that need the network are marked `#[ignore]`. FEx, Mail and the installer also have end-to-end scenarios that drive the real windows (`apps/*/tests`).
 

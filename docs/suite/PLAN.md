@@ -275,8 +275,9 @@ Plume Mail:
       address suggestions, push, search in the text. *Still open: calendar, an HTML view that stays safe, Google
       sign-in (blocked by Google's audit).*
 - [x] **8. Suite**: Plume Suite (install, open, update, remove the apps), one installer holding every app, one
-      update for all, website with a page per app, release notes. Released as **1.0.0**. *Still open: the
-      browser moved to `apps/browser`.*
+      update for all, website with a page per app, release notes. Released as **1.0.0** with Plume Web and
+      Plume FEx; **Plume Mail is held back** (`PLUME_WITH_MAIL=1` adds it to the installer and to Plume Suite)
+      until its Microsoft application ID exists. *Still open: the browser moved to `apps/browser`.*
 
 ## Third-party code
 
