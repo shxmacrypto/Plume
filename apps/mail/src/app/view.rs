@@ -306,10 +306,12 @@ impl App {
             self.boxes.get(*b).is_some_and(|mb| mb.folders.iter().any(|f| f.raw == *raw && matches!(f.role, Role::Sent | Role::Drafts)))
         });
         c.clip(list);
+        let mut toggles: Vec<(Rect, usize)> = vec![];
         let first = (scroll / ROW_H).floor() as usize;
         let last = (((scroll + list.h) / ROW_H).ceil() as usize).min(self.shown.len());
         for row in first..last {
             let msg = &self.messages[self.shown[row]];
+            let info = self.rows.get(row).cloned().unwrap_or_default();
             let r = rect(list.x, list.y + row as f32 * ROW_H - scroll, list.w - 1.0, ROW_H);
             let selected = self.sel == Some(msg.uid);
             if selected {
@@ -317,9 +319,16 @@ impl App {
             } else if self.hover == Some(Id::Row(row)) {
                 c.fill(r, t.hover);
             }
-            let unread = !msg.flags.seen;
+            // une conversation fermée montre le non-lu de tous ses messages
+            let closed = info.count > 1 && !self.open_threads.contains(&info.key);
+            let unread = if closed { info.unread } else { !msg.flags.seen };
+            // les messages plus anciens d'une conversation ouverte, en retrait sous elle
+            let indent = if info.child { 18.0 } else { 0.0 };
+            if info.child {
+                c.vline(r.x + 16.0, r.y, r.h, t.sep);
+            }
             if unread {
-                c.fill_round(rect(r.x + 10.0, r.y + 15.0, 8.0, 8.0), 4.0, t.accent);
+                c.fill_round(rect(r.x + 10.0 + indent, r.y + 15.0, 8.0, 8.0), 4.0, t.accent);
             }
             let who = if outgoing {
                 format!("{} {}", s.to, msg.to)
@@ -330,8 +339,26 @@ impl App {
             };
             let date = self.date_text(msg.date, false);
             let dw = c.text_width(&date, Font::Small) + 4.0;
-            let x = r.x + 26.0;
-            c.text(&who, rect(x, r.y + 8.0, (r.w - 26.0 - dw - 22.0).max(10.0), 20.0), if unread { Font::BodyBold } else { Font::Body }, t.t1, Align::Left);
+            let x = r.x + 26.0 + indent;
+            // le nombre de messages de la conversation : un clic l'ouvre ou la ferme
+            let mut pill_w = 0.0;
+            if info.count > 1 && !info.child {
+                let label = info.count.to_string();
+                pill_w = c.text_width(&label, Font::SmallBold) + 16.0;
+                let pill = rect(r.right() - dw - 12.0 - pill_w - 8.0, r.y + 9.0, pill_w, 19.0);
+                let hot = self.hover == Some(Id::ThreadToggle(row));
+                c.fill_round(pill, 9.5, if hot { t.fill2 } else { t.fill });
+                c.text(&label, pill, Font::SmallBold, if closed { t.t2 } else { t.accent }, Align::Center);
+                toggles.push((pill, row));
+                pill_w += 8.0;
+            }
+            c.text(
+                &who,
+                rect(x, r.y + 8.0, (r.w - 26.0 - indent - dw - 22.0 - pill_w).max(10.0), 20.0),
+                if unread { Font::BodyBold } else { Font::Body },
+                t.t1,
+                Align::Left,
+            );
             c.text(&date, rect(r.right() - dw - 12.0, r.y + 8.0, dw, 20.0), Font::Small, if unread { t.accent } else { t.t3 }, Align::Right);
             // l'objet, et à sa droite l'étoile et le trombone
             let mut marks = 0.0;
@@ -344,9 +371,13 @@ impl App {
                 marks += 18.0;
             }
             let subject = if msg.subject.is_empty() { s.no_subject } else { msg.subject.as_str() };
-            c.text(subject, rect(x, r.y + 28.0, (r.w - 26.0 - 14.0 - marks).max(10.0), 20.0), Font::Body, if unread { t.t1 } else { t.t2 }, Align::Left);
-            c.hline(x, r.bottom() - 1.0, r.w - 26.0, t.sep.fade(0.6));
+            c.text(subject, rect(x, r.y + 28.0, (r.w - 26.0 - indent - 14.0 - marks).max(10.0), 20.0), Font::Body, if unread { t.t1 } else { t.t2 }, Align::Left);
+            c.hline(x, r.bottom() - 1.0, r.w - 26.0 - indent, t.sep.fade(0.6));
             self.hits.add(r.intersect(&list), Id::Row(row));
+        }
+        // au-dessus des lignes : le clic sur le nombre ouvre la conversation sans changer de message
+        for (pill, row) in toggles {
+            self.hits.add(pill.intersect(&list), Id::ThreadToggle(row));
         }
         c.unclip();
         // la barre de défilement : une simple marque de l'endroit où l'on est
@@ -367,6 +398,10 @@ impl App {
         self.hits.add(area, Id::Reading);
         let links = self.links().len();
         let hover = self.hover;
+        // un brouillon se reprend pour être fini et envoyé
+        let in_drafts = self.reading.as_ref().is_some_and(|r| {
+            self.boxes.get(r.account).is_some_and(|mb| mb.folders.iter().any(|f| f.raw == r.folder && f.role == Role::Drafts))
+        });
         let Some(r) = self.reading.as_mut() else {
             if !self.boxes.is_empty() {
                 c.text(s.pick_message, rect(area.x, area.y + area.h * 0.34, area.w, 22.0), Font::Body, t.t3, Align::Center);
@@ -434,7 +469,11 @@ impl App {
         // copier le texte, ouvrir un lien
         let mut bx = x;
         let link_label = format!("{} ({links})", s.links);
-        for (id, label, enabled) in [(Id::CopyText, s.copy_text, true), (Id::Links, link_label.as_str(), links > 0)] {
+        let mut buttons = vec![(Id::CopyText, s.copy_text, true), (Id::Links, link_label.as_str(), links > 0)];
+        if in_drafts {
+            buttons.insert(0, (Id::EditDraft, s.edit_draft, true));
+        }
+        for (id, label, enabled) in buttons {
             let w = c.text_width(label, Font::Small) + 24.0;
             let b = rect(bx, y, w, 26.0);
             if enabled && hover == Some(id) {
@@ -496,6 +535,7 @@ impl App {
                 (Work::Syncing, _) => (s.syncing.to_string(), t.t3),
                 (Work::Reading, _) => (s.reading.to_string(), t.t3),
                 (Work::Sending, _) => (s.sending.to_string(), t.t3),
+                (Work::Searching, _) => (s.searching.to_string(), t.t3),
                 (Work::Idle, Some(error)) => (error.clone(), t.red),
                 (Work::Idle, None) => (String::new(), t.t3),
             };

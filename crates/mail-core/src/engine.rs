@@ -11,9 +11,16 @@ use crate::{
 use std::{
     collections::HashMap,
     hash::{BuildHasher, Hasher},
-    sync::mpsc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
+
+/// Ce qui porte les nouvelles d'un compte à la fenêtre (depuis son fil et depuis son guet).
+type Notify = Arc<dyn Fn(News) + Send + Sync>;
 
 /// Nombre de messages gardés par dossier : les plus récents.
 pub const LIMIT: usize = 500;
@@ -48,8 +55,21 @@ pub enum Command {
         folder: String,
         uids: Vec<u32>,
     },
+    /// Envoyer un message. `drop_draft` : le brouillon (dossier, numéro) qu'il remplace, retiré une fois parti.
     Send {
         draft: Box<Draft>,
+        drop_draft: Option<(String, u32)>,
+    },
+    /// Garder un message pas fini dans le dossier « Brouillons » du serveur. `replace` : la version précédente,
+    /// retirée une fois la nouvelle déposée.
+    SaveDraft {
+        draft: Box<Draft>,
+        replace: Option<(String, u32)>,
+    },
+    /// Chercher dans le texte des messages d'un dossier : ceux gardés sur ce PC, puis le serveur.
+    Search {
+        folder: String,
+        text: String,
     },
 }
 
@@ -61,6 +81,7 @@ pub enum Work {
     Syncing,
     Reading,
     Sending,
+    Searching,
 }
 
 #[derive(Debug)]
@@ -89,6 +110,25 @@ pub enum News {
         account: String,
         work: Work,
     },
+    /// Le brouillon est gardé sur le serveur : (son dossier, son numéro s'il est connu), ou pourquoi il ne l'est pas.
+    DraftSaved {
+        account: String,
+        result: Result<(String, Option<u32>), String>,
+    },
+    /// Les messages du dossier dont le texte contient ce qui est cherché. `extra` : ceux qui ne sont pas parmi les
+    /// plus récents gardés dans la liste (le serveur les a trouvés plus loin).
+    Found {
+        account: String,
+        folder: String,
+        text: String,
+        uids: Vec<u32>,
+        extra: Vec<Summary>,
+    },
+    /// Le serveur annonce du nouveau dans ce dossier (un message arrivé, parti, lu ailleurs).
+    Changed {
+        account: String,
+        folder: String,
+    },
     /// Une commande n'a pas abouti : la raison, dans les mots du serveur ou du réseau.
     Failed {
         account: String,
@@ -96,16 +136,25 @@ pub enum News {
     },
 }
 
-/// Le lien de la fenêtre vers le fil d'un compte. Le lâcher ferme la connexion.
+/// Le lien de la fenêtre vers le fil d'un compte. Le lâcher ferme ses connexions.
 pub struct Engine {
     tx: mpsc::Sender<Command>,
+    stop: Arc<AtomicBool>,
 }
 
 impl Engine {
-    pub fn start(account: Account, store: Store, notify: impl Fn(News) + Send + 'static) -> Engine {
+    /// Met un compte au travail. `push` : guetter aussi le nouveau courrier sur une seconde connexion.
+    pub fn start(account: Account, store: Store, push: bool, notify: impl Fn(News) + Send + Sync + 'static) -> Engine {
         let (tx, rx) = mpsc::channel();
+        let notify: Notify = Arc::new(notify);
+        let stop = Arc::new(AtomicBool::new(false));
+        // le guet : sur un serveur qui sait prévenir (IDLE), le nouveau courrier arrive sans attendre
+        if push {
+            let (account, store, stop, notify) = (account.clone(), store.clone(), stop.clone(), notify.clone());
+            std::thread::spawn(move || watch(account, store, stop, notify));
+        }
         std::thread::spawn(move || {
-            let mut worker = Worker { account, store, imap: None, selected: None, notify: Box::new(notify) };
+            let mut worker = Worker { account, store, imap: None, selected: None, notify };
             for command in rx {
                 worker.handle(command);
             }
@@ -113,13 +162,74 @@ impl Engine {
                 imap.logout();
             }
         });
-        Engine { tx }
+        Engine { tx, stop }
     }
 
     pub fn send(&self, command: Command) {
         let _ = self.tx.send(command);
     }
 }
+
+impl Drop for Engine {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Le guet d'un compte : une seconde connexion, ouverte sur la boîte de réception, qui attend que le serveur
+/// annonce du nouveau (IDLE) et le dit aussitôt. Un serveur qui ne sait pas le faire est relevé à intervalles,
+/// comme avant. Le guet s'arrête quand le compte est lâché.
+fn watch(account: Account, store: Store, stop: Arc<AtomicBool>, notify: Notify) {
+    let stopped = || stop.load(Ordering::Relaxed);
+    // attend `secs` secondes, ou moins si l'on demande d'arrêter
+    let pause = |secs: u64| {
+        for _ in 0..secs * 4 {
+            if stopped() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+    };
+    let mut backoff = 5;
+    while !stopped() {
+        let inbox = store.folders(&account.id).into_iter().find(|f| f.role == Role::Inbox).map_or("INBOX".to_string(), |f| f.raw);
+        let session = (|| -> Result<Imap, imap::Error> {
+            let password = store.password(&account.id).ok_or_else(|| imap::Error::No("no password".into()))?;
+            let mut imap = Imap::connect(&account.imap_host, account.imap_port, account.imap_security)?;
+            imap.login(&account.user, &password)?;
+            Ok(imap)
+        })();
+        let mut imap = match session {
+            Ok(imap) => imap,
+            Err(_) => {
+                // pas de réseau, mot de passe refusé : le fil du compte le dira ; on réessaie plus tard
+                pause(backoff);
+                backoff = (backoff * 2).min(300);
+                continue;
+            }
+        };
+        if !imap.can("IDLE") {
+            imap.logout();
+            return;
+        }
+        if imap.select(&inbox).is_err() {
+            pause(backoff);
+            backoff = (backoff * 2).min(300);
+            continue;
+        }
+        backoff = 5;
+        let id = account.id.clone();
+        let result = imap.idle(&stopped, &mut || notify(News::Changed { account: id.clone(), folder: inbox.clone() }));
+        if result.is_ok() {
+            imap.logout();
+            return;
+        }
+        // la connexion est tombée (veille, réseau) : on se reconnecte, et ce qui a pu arriver entre-temps se relève
+        notify(News::Changed { account: account.id.clone(), folder: inbox });
+        pause(2);
+    }
+}
+
 
 /// Pourquoi une commande n'a pas abouti.
 enum Trouble {
@@ -146,7 +256,7 @@ struct Worker {
     imap: Option<Imap>,
     /// Le dossier ouvert sur le serveur.
     selected: Option<String>,
-    notify: Box<dyn Fn(News) + Send>,
+    notify: Notify,
 }
 
 fn now() -> i64 {
@@ -175,7 +285,11 @@ impl Worker {
             self.selected = None;
             // un envoi manqué a sa propre nouvelle : la fenêtre garde le message ouvert
             let account = self.account.id.clone();
-            self.tell(if matches!(command, Command::Send { .. }) { News::Sent { account, result: Err(why) } } else { News::Failed { account, why } });
+            self.tell(match command {
+                Command::Send { .. } => News::Sent { account, result: Err(why) },
+                Command::SaveDraft { .. } => News::DraftSaved { account, result: Err(why) },
+                _ => News::Failed { account, why },
+            });
         }
         self.working(Work::Idle);
     }
@@ -246,8 +360,86 @@ impl Worker {
                 self.update(folder, |list| list.retain(|m| !uids.contains(&m.uid)));
                 Ok(())
             }
-            Command::Send { draft } => self.send(draft),
+            Command::Send { draft, drop_draft } => {
+                self.send(draft)?;
+                // le brouillon qu'il remplace n'a plus lieu d'être ; s'il reste, ce n'est pas un envoi manqué
+                if let Some((folder, uid)) = drop_draft {
+                    let _ = self.drop_message(folder, *uid);
+                }
+                Ok(())
+            }
+            Command::SaveDraft { draft, replace } => self.save_draft(draft, replace.as_ref()),
+            Command::Search { folder, text } => self.search(folder, text),
         }
+    }
+
+    /// Retire un message d'un dossier sur le serveur et de la liste gardée.
+    fn drop_message(&mut self, folder: &str, uid: u32) -> Done {
+        self.open(folder)?;
+        self.imap()?.remove(&[uid])?;
+        if !self.store.listing(&self.account.id, folder).messages.is_empty() {
+            self.update(folder, |list| list.retain(|m| m.uid != uid));
+        }
+        Ok(())
+    }
+
+    fn save_draft(&mut self, draft: &Draft, replace: Option<&(String, u32)>) -> Done {
+        self.working(Work::Sending);
+        let id = self.account.id.clone();
+        let Some(drafts) = self.store.folders(&id).into_iter().find(|f| f.role == Role::Drafts) else {
+            return Err(Trouble::Refused("This account has no Drafts folder on its server.".into()));
+        };
+        let unique = std::collections::hash_map::RandomState::new().build_hasher().finish();
+        let raw = message::build(draft, now(), unique);
+        let uid = self.imap()?.append_draft(&drafts.raw, &raw)?;
+        if let Some((folder, old)) = replace {
+            let _ = self.drop_message(folder, *old);
+        }
+        self.tell(News::DraftSaved { account: id, result: Ok((drafts.raw, uid)) });
+        Ok(())
+    }
+
+    /// Cherche dans le texte des messages : d'abord ceux gardés sur ce PC (la réponse vient tout de suite, même
+    /// sans connexion), puis le serveur, qui connaît aussi les plus anciens.
+    fn search(&mut self, folder: &str, text: &str) -> Done {
+        let words: Vec<String> = message::fold(text).split_whitespace().map(str::to_string).collect();
+        if words.is_empty() {
+            return Ok(());
+        }
+        let id = self.account.id.clone();
+        let listing = self.store.listing(&id, folder);
+        let mut found: Vec<u32> = listing
+            .messages
+            .iter()
+            .filter(|m| {
+                self.store.body(&id, folder, m.uid).is_some_and(|raw| {
+                    let body = message::fold(&message::parse(&raw).text);
+                    words.iter().all(|w| body.contains(w.as_str()))
+                })
+            })
+            .map(|m| m.uid)
+            .collect();
+        let tell = |worker: &Worker, uids: &[u32], extra: Vec<Summary>| {
+            worker.tell(News::Found { account: id.clone(), folder: folder.to_string(), text: text.to_string(), uids: uids.to_vec(), extra });
+        };
+        tell(self, &found, vec![]);
+        self.working(Work::Searching);
+        // le serveur cherche avec les mots tels qu'ils ont été tapés (il ignore souvent la casse, pas les accents)
+        let typed: Vec<String> = text.split_whitespace().map(str::to_string).collect();
+        self.open(folder)?;
+        let on_server = self.imap()?.search_text(&typed)?;
+        let known: std::collections::HashSet<u32> = listing.messages.iter().map(|m| m.uid).collect();
+        // trouvés plus loin que les messages gardés : leurs lignes de liste (les plus récents, cinquante au plus)
+        let mut farther: Vec<u32> = on_server.iter().copied().filter(|u| !known.contains(u)).collect();
+        farther.sort_unstable_by(|a, b| b.cmp(a));
+        farther.truncate(50);
+        let mut extra = if farther.is_empty() { vec![] } else { self.imap()?.summaries(&farther)? };
+        extra.sort_by(|a, b| b.date.cmp(&a.date).then(b.uid.cmp(&a.uid)));
+        found.extend(on_server);
+        found.sort_unstable();
+        found.dedup();
+        tell(self, &found, extra);
+        Ok(())
     }
 
     fn sync(&mut self, wanted: &str) -> Done {
@@ -394,7 +586,7 @@ mod tests {
             ("a1".into(), "sam".into(), "127.0.0.1".into(), port, Security::Plain);
         store.set_password("a1", "sam", "pw");
         let (tx, rx) = mpsc::channel();
-        let engine = Engine::start(account, store.clone(), move |news| {
+        let engine = Engine::start(account, store.clone(), false, move |news| {
             let _ = tx.send(news);
         });
         // attend la prochaine nouvelle qui n'est pas « en train de... »

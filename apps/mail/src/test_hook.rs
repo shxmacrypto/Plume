@@ -72,10 +72,11 @@ fn state(app: &App) -> Value {
     let rows: Vec<Value> = app
         .shown
         .iter()
+        .zip(app.rows.iter())
         .skip(first)
         .take(40)
-        .map(|&i| &app.messages[i])
-        .map(|m| json!({ "uid": m.uid, "subject": m.subject, "from": m.from, "from_name": m.from_name, "to": m.to, "seen": m.flags.seen, "flagged": m.flags.flagged, "attachments": m.attachments }))
+        .map(|(&i, info)| (&app.messages[i], info))
+        .map(|(m, info)| json!({ "uid": m.uid, "subject": m.subject, "from": m.from, "from_name": m.from_name, "to": m.to, "seen": m.flags.seen, "flagged": m.flags.flagged, "attachments": m.attachments, "thread": info.count, "child": info.child }))
         .collect();
     json!({
         "accounts": app.boxes.iter().map(|mb| json!({
@@ -109,9 +110,15 @@ fn state(app: &App) -> Value {
         "edit_text": app.win.edit_text(),
         "sheet": app.sheet.as_ref().map(|s| match s {
             Sheet::Account(f) => json!({ "kind": "account", "fields": f.fields.iter().enumerate().map(|(i, v)| if i == 2 { "•".repeat(v.chars().count()) } else { v.clone() }).collect::<Vec<_>>(), "active": f.active, "error": f.error, "editing": f.editing }),
-            Sheet::Compose(f) => json!({ "kind": "compose", "fields": f.fields, "active": f.active, "error": f.error, "sending": f.sending, "files": f.files.iter().map(|(n, d)| json!([n, d.len()])).collect::<Vec<_>>(), "in_reply_to": f.in_reply_to }),
+            Sheet::Compose(f) => json!({ "kind": "compose", "fields": f.fields, "active": f.active, "error": f.error, "sending": f.sending, "saving": f.saving, "draft": f.draft.as_ref().map(|d| d.1), "files": f.files.iter().map(|(n, d)| json!([n, d.len()])).collect::<Vec<_>>(), "in_reply_to": f.in_reply_to }),
+            Sheet::Signature { account, text } => json!({ "kind": "signature", "account": account, "text": text }),
             Sheet::Confirm { title, action, .. } => json!({ "kind": "confirm", "title": title, "action": action }),
         }),
+        "suggest": app.suggest.iter().map(|c| json!([c.name, c.email])).collect::<Vec<_>>(),
+        "suggest_at": app.suggest_at,
+        "found": app.found.as_ref().map(|(t, uids)| json!({ "text": t, "uids": uids })),
+        "threads": app.set.threads,
+        "signature": app.boxes.iter().map(|mb| mb.account.signature.clone()).collect::<Vec<_>>(),
         "menu": app.menu.as_ref().map(|m| m.items.iter().map(|(label, _)| label.clone()).collect::<Vec<_>>()),
         "toast": app.toast.as_ref().map(|t| t.0.clone()),
         "hover": app.hover.map(|h| format!("{h:?}")),

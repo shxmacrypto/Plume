@@ -23,6 +23,8 @@ pub struct Settings {
     pub own_lang: bool,
     pub own_theme: bool,
     pub win: Option<Placement>,
+    /// Les messages d'une même conversation sont regroupés dans la liste.
+    pub threads: bool,
 }
 
 /// Windows est-il réglé sur le thème sombre pour les applications ?
@@ -51,7 +53,7 @@ fn read_json(path: &Path) -> Option<Value> {
 impl Settings {
     /// `dir` : le dossier de Plume Mail ; `test` : dossier d'essai, où rien n'est repris du navigateur Plume.
     pub fn load(dir: PathBuf, test: bool) -> Settings {
-        let mut s = Settings { dir, lang: "auto".into(), theme: "system".into(), accent: None, own_lang: false, own_theme: false, win: None };
+        let mut s = Settings { dir, lang: "auto".into(), theme: "system".into(), accent: None, own_lang: false, own_theme: false, win: None, threads: true };
         if !test
             && let Some(base) = std::env::var_os("LOCALAPPDATA")
             && let Some(plume) = read_json(&Path::new(&base).join("Plume").join("plume.json"))
@@ -63,6 +65,7 @@ impl Settings {
             s.apply_look(&v);
             s.own_lang = v.get("lang").is_some();
             s.own_theme = v.get("theme").is_some();
+            s.threads = v.get("threads").and_then(Value::as_bool).unwrap_or(true);
             if let Some(w) = v.get("win") {
                 let i = |k: &str| w.get(k).and_then(Value::as_i64).map(|x| x as i32);
                 if let (Some(x), Some(y), Some(ww), Some(h)) = (i("x"), i("y"), i("w"), i("h")) {
@@ -110,6 +113,9 @@ impl Settings {
         }
         if self.own_theme {
             v["theme"] = json!(self.theme);
+        }
+        if !self.threads {
+            v["threads"] = json!(false);
         }
         if let Some(w) = self.win {
             v["win"] = json!({ "x": w.x, "y": w.y, "w": w.w, "h": w.h, "max": w.maximized });

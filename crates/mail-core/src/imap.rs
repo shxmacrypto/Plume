@@ -239,12 +239,14 @@ pub struct Imap {
     tag: u32,
     /// Ce que le serveur sait faire (« MOVE », « UIDPLUS »…), en majuscules.
     pub caps: Vec<String>,
+    /// Le compte rendu de la dernière commande acceptée (« A7 OK [APPENDUID 77 12] done »).
+    last_ok: String,
 }
 
 impl Imap {
     /// Se connecte et lit le mot d'accueil du serveur. Rien n'est envoyé en clair si `security` n'est pas `Plain`.
     pub fn connect(host: &str, port: u16, security: Security) -> Result<Imap> {
-        let mut imap = Imap { conn: Conn::connect(host, port, security)?, buf: Vec::new(), at: 0, tag: 0, caps: vec![] };
+        let mut imap = Imap { conn: Conn::connect(host, port, security)?, buf: Vec::new(), at: 0, tag: 0, caps: vec![], last_ok: String::new() };
         let greeting = imap.line()?;
         if !greeting.starts_with(b"* OK") && !greeting.starts_with(b"* PREAUTH") {
             return Err(Error::Bad(String::from_utf8_lossy(&greeting).into_owned()));
@@ -255,7 +257,7 @@ impl Imap {
             imap.buf.clear();
             imap.at = 0;
             let Imap { conn, .. } = imap;
-            imap = Imap { conn: conn.secure(host)?, buf: Vec::new(), at: 0, tag: 1, caps: vec![] };
+            imap = Imap { conn: conn.secure(host)?, buf: Vec::new(), at: 0, tag: 1, caps: vec![], last_ok: String::new() };
         }
         imap.capabilities()?;
         Ok(imap)
@@ -405,6 +407,7 @@ impl Imap {
                             break;
                         }
                         if let Some(done) = self.status(&tag, &line) {
+                            self.last_ok = String::from_utf8_lossy(&line).into_owned();
                             return done.map(|_| data);
                         }
                         if line.starts_with(b"* ") {
@@ -421,6 +424,7 @@ impl Imap {
         loop {
             let line = self.line()?;
             if let Some(done) = self.status(&tag, &line) {
+                self.last_ok = String::from_utf8_lossy(&line).into_owned();
                 return done.map(|_| data);
             }
             if line.starts_with(b"* ") {
@@ -661,6 +665,97 @@ impl Imap {
         self.send(&parts).map(|_| ())
     }
 
+    /// Dépose un brouillon dans un dossier. Renvoie son numéro, si le serveur le dit (UIDPLUS).
+    pub fn append_draft(&mut self, folder: &str, message: &[u8]) -> Result<Option<u32>> {
+        let mut parts = vec![Part::Text("APPEND ".into())];
+        Imap::arg(&mut parts, folder);
+        parts.push(Part::Text(" (\\Draft \\Seen) ".into()));
+        parts.push(Part::Bytes(message));
+        self.send(&parts)?;
+        // « OK [APPENDUID 77 12] » : 12 est le numéro du brouillon
+        let upper = self.last_ok.to_ascii_uppercase();
+        Ok(upper.find("[APPENDUID ").and_then(|i| upper[i + 11..].split([' ', ']']).nth(1)?.parse().ok()))
+    }
+
+    /// Les messages du dossier ouvert dont le texte (en-têtes compris) contient chacun de ces mots.
+    pub fn search_text(&mut self, words: &[String]) -> Result<Vec<u32>> {
+        if words.is_empty() {
+            return Ok(vec![]);
+        }
+        let run = |imap: &mut Imap, charset: bool| -> Result<Vec<Vec<Tok>>> {
+            let mut parts = vec![Part::Text(if charset { "UID SEARCH CHARSET UTF-8".into() } else { "UID SEARCH".into() })];
+            for w in words {
+                parts.push(Part::Text(" TEXT ".into()));
+                Imap::arg(&mut parts, w);
+            }
+            imap.send(&parts)
+        };
+        // un serveur qui ne connaît pas « CHARSET UTF-8 » le dit ; des mots sans accent se cherchent alors sans lui
+        let data = match run(self, true) {
+            Err(Error::No(_) | Error::Bad(_)) if words.iter().all(|w| w.is_ascii()) => run(self, false)?,
+            other => other?,
+        };
+        let mut uids: Vec<u32> = data
+            .iter()
+            .filter(|r| r.first().and_then(Tok::atom).is_some_and(|a| a.eq_ignore_ascii_case("SEARCH")))
+            .flat_map(|r| r[1..].iter().filter_map(Tok::number))
+            .collect();
+        uids.sort_unstable();
+        uids.dedup();
+        Ok(uids)
+    }
+
+    /// Attend que le dossier ouvert change (IDLE) : un message arrive, part, change de marque. `changed` est appelé
+    /// à chaque fois ; l'attente dure tant que `stop` ne dit pas d'arrêter (regardé toutes les deux secondes) et se
+    /// renouvelle toutes les 25 minutes, comme le demande la norme. Ne revient qu'à l'arrêt ou sur une panne.
+    pub fn idle(&mut self, stop: &dyn Fn() -> bool, changed: &mut dyn FnMut()) -> Result<()> {
+        use std::time::{Duration, Instant};
+        const TICK: Duration = Duration::from_secs(2);
+        const RENEW: Duration = Duration::from_secs(25 * 60);
+        self.conn.set_read_timeout(Some(TICK))?;
+        let result = (|| -> Result<()> {
+            loop {
+                self.tag += 1;
+                let tag = format!("A{}", self.tag);
+                self.conn.write_all(format!("{tag} IDLE\r\n").as_bytes())?;
+                self.conn.flush()?;
+                let started = Instant::now();
+                let mut done_sent = false;
+                loop {
+                    let line = match self.line() {
+                        Ok(line) => line,
+                        // rien de neuf pendant deux secondes : faut-il s'arrêter, ou renouveler l'attente ?
+                        Err(e) if matches!(e.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock) => {
+                            if !done_sent && (stop() || started.elapsed() >= RENEW) {
+                                self.conn.write_all(b"DONE\r\n")?;
+                                self.conn.flush()?;
+                                done_sent = true;
+                            }
+                            continue;
+                        }
+                        Err(e) => return Err(e.into()),
+                    };
+                    if let Some(done) = self.status(&tag, &line) {
+                        done?;
+                        break;
+                    }
+                    if line.starts_with(b"+") {
+                        continue;
+                    }
+                    let upper = String::from_utf8_lossy(&line).to_ascii_uppercase();
+                    if upper.starts_with("* ") && (upper.ends_with(" EXISTS") || upper.ends_with(" EXPUNGE") || upper.contains(" FETCH ")) {
+                        changed();
+                    }
+                }
+                if stop() {
+                    return Ok(());
+                }
+            }
+        })();
+        let _ = self.conn.set_read_timeout(Some(Duration::from_secs(90)));
+        result
+    }
+
     /// Rien à demander : garde la connexion en vie, et dit si elle l'est encore.
     pub fn noop(&mut self) -> Result<()> {
         self.command("NOOP").map(|_| ())
@@ -724,6 +819,36 @@ pub(crate) mod tests {
         assert_eq!(quoted("a\"b\\c").as_deref(), Some("\"a\\\"b\\\\c\""));
         assert_eq!(quoted("Envoyés"), None);
         assert_eq!(quoted("a\r\nb"), None);
+    }
+
+    #[test]
+    fn drafts_search_and_waiting_for_news() {
+        let port = stage(
+            "* OK ready\r\n",
+            vec![
+                ("CAPABILITY", "* CAPABILITY IMAP4rev1 UIDPLUS IDLE\r\n{tag} OK\r\n".into()),
+                ("LOGIN", "{tag} OK\r\n".into()),
+                ("CAPABILITY", "* CAPABILITY IMAP4rev1 UIDPLUS IDLE\r\n{tag} OK\r\n".into()),
+                ("APPEND \"Drafts\" (\\Draft \\Seen) {10}", "{tag} OK [APPENDUID 77 12] appended\r\n".into()),
+                ("SELECT \"INBOX\"", "* 3 EXISTS\r\n{tag} OK\r\n".into()),
+                ("UID SEARCH CHARSET UTF-8 TEXT \"lien\" TEXT {8}", "* SEARCH 4 2\r\n{tag} OK\r\n".into()),
+                ("UID SEARCH CHARSET UTF-8 TEXT \"plan\"", "{tag} NO [BADCHARSET (US-ASCII)] no\r\n".into()),
+                ("UID SEARCH TEXT \"plan\"", "* SEARCH\r\n{tag} OK\r\n".into()),
+                // l'attente : une nouvelle tout de suite, puis le serveur clôt l'attente quand on dit DONE
+                ("IDLE", "+ idling\r\n* 4 EXISTS\r\n".into()),
+                // « DONE » n'a pas d'étiquette : la réponse porte celle de « IDLE »
+                ("DONE", "A9 OK idle done\r\n".into()),
+            ],
+        );
+        let mut imap = Imap::connect("127.0.0.1", port, Security::Plain).unwrap();
+        imap.login("sam", "pw").unwrap();
+        assert_eq!(imap.append_draft("Drafts", b"Subject: x").unwrap(), Some(12));
+        imap.select("INBOX").unwrap();
+        assert_eq!(imap.search_text(&["lien".into(), "réunion".into()]).unwrap(), [2, 4]);
+        assert!(imap.search_text(&["plan".into()]).unwrap().is_empty());
+        let news = std::cell::Cell::new(0);
+        imap.idle(&|| news.get() > 0, &mut || news.set(news.get() + 1)).unwrap();
+        assert_eq!(news.get(), 1);
     }
 
     #[test]

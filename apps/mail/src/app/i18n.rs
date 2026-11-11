@@ -107,6 +107,19 @@ pub struct Strings {
     pub months: [&'static str; 12],
     pub wrote: &'static str,
     pub sign_in_refused: &'static str,
+    pub searching: &'static str,
+    pub save_draft: &'static str,
+    pub draft_saved: &'static str,
+    pub draft_failed: &'static str,
+    pub draft_discard: &'static str,
+    pub edit_draft: &'static str,
+    pub signature_menu: &'static str,
+    pub signature_title: &'static str,
+    pub signature_hint: &'static str,
+    pub signature_placeholder: &'static str,
+    pub signature_saved: &'static str,
+    pub threads_on: &'static str,
+    pub threads_off: &'static str,
 }
 
 impl Strings {
@@ -214,6 +227,19 @@ static EN: Strings = Strings {
     months: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
     wrote: "{} wrote",
     sign_in_refused: "The mail server refused the sign-in. Check the password.",
+    searching: "Searching the text of messages…",
+    save_draft: "Save draft",
+    draft_saved: "Saved in Drafts.",
+    draft_failed: "The draft could not be saved: {}",
+    draft_discard: "Press Cancel again to close without keeping it.",
+    edit_draft: "Edit the draft",
+    signature_menu: "Signature: {}…",
+    signature_title: "Signature",
+    signature_hint: "Added under the messages you write from {}.",
+    signature_placeholder: "Your name, your title, a phone number…",
+    signature_saved: "Signature saved.",
+    threads_on: "Group conversations",
+    threads_off: "Show one message per line",
 };
 
 static FR: Strings = Strings {
@@ -301,6 +327,19 @@ static FR: Strings = Strings {
     months: ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."],
     wrote: "{} a écrit",
     sign_in_refused: "Le serveur de courrier a refusé la connexion. Vérifiez le mot de passe.",
+    searching: "Recherche dans le texte des messages…",
+    save_draft: "Garder en brouillon",
+    draft_saved: "Gardé dans les Brouillons.",
+    draft_failed: "Le brouillon n'a pas pu être gardé : {}",
+    draft_discard: "Appuyez encore sur Annuler pour fermer sans le garder.",
+    edit_draft: "Reprendre le brouillon",
+    signature_menu: "Signature : {}…",
+    signature_title: "Signature",
+    signature_hint: "Ajoutée sous les messages que vous écrivez depuis {}.",
+    signature_placeholder: "Votre nom, votre fonction, un numéro…",
+    signature_saved: "Signature enregistrée.",
+    threads_on: "Regrouper les conversations",
+    threads_off: "Afficher un message par ligne",
 };
 
 pub fn strings(lang: Lang) -> &'static Strings {

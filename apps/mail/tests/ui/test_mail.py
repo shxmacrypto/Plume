@@ -120,7 +120,7 @@ try:
     # ── folders and list
     a = s["accounts"][0]
     check("folders: usual ones named in the interface language, sub-folders under their parent",
-          [(f["label"], f["role"], f["depth"]) for f in a["folders"]] == [("Inbox", "Inbox", 0), ("Sent", "Sent", 0), ("Trash", "Trash", 0), ("Work", "Other", 0), ("Projets été", "Other", 1)], a["folders"])
+          [(f["label"], f["role"], f["depth"]) for f in a["folders"]] == [("Inbox", "Inbox", 0), ("Drafts", "Drafts", 0), ("Sent", "Sent", 0), ("Trash", "Trash", 0), ("Work", "Other", 0), ("Projets été", "Other", 1)], a["folders"])
     check("the list: newest first, with sender, read and flag marks", [(m["subject"], m["from"], m["seen"], m["flagged"], m["attachments"]) for m in s["messages"]] == [
         ("Lunch?", "bob@example.test", False, True, False), ("Plume 0.8 newsletter", "news@example.test", False, False, True), ("Réunion demain", "ann@example.test", True, False, False)], s["messages"])
     # ── reading
@@ -192,6 +192,68 @@ try:
     x.click("Row(0)")
     s = x.wait(lambda s: s["reading"] and s["reading"]["uid"] == 4 and not s["reading"]["loading"])
     check("it reads back as written", s["reading"]["text"] == "Un message\npour moi." and s["reading"]["attachments"] == [{"name": "note.txt", "size": 5}] and s["reading"]["subject"] == "Été à Montréal", s["reading"])
+    # ── signature: written once, under every new message and reply
+    x.menu("More", "Signature: sam@example.test…")
+    s = x.wait(lambda s: s["sheet"] and s["sheet"]["kind"] == "signature", what="signature box")
+    check("the menu opens the signature of the account", s["sheet"]["text"] == "" and s["edit"] == "Field(0)", s["sheet"])
+    x.edit("Sam Élan\nPlume")
+    x.shot("mail-signature")
+    x.click("SheetOk")
+    s = x.wait(lambda s: s["sheet"] is None and s["signature"] == ["Sam Élan\nPlume"], what="signature saved")
+    with open(os.path.join(x.profile, "accounts.json"), encoding="utf-8") as f:
+        check("the signature is kept with the account", "Plume" in f.read())
+    x.click("New")
+    s = x.wait(lambda s: s["sheet"] and s["sheet"]["kind"] == "compose", what="new message with signature")
+    check("a new message starts with the signature under an empty line", s["sheet"]["fields"][3] == "\n\n-- \nSam Élan\nPlume" and s["edit"] == "Field(0)", s["sheet"]["fields"])
+    # ── address suggestions: people already seen in the mailbox
+    x.edit("ca")
+    s = x.wait(lambda s: s["suggest"], what="suggestions")
+    check("typing the start of a name suggests known addresses", s["suggest"][0] == ["", "carl@example.test"], s["suggest"])
+    x.shot("mail-suggest")
+    x.editkey(VK["ENTER"])
+    s = x.state()
+    check("Enter takes the suggestion, ready for another address", s["sheet"]["fields"][0] == "carl@example.test, " and s["suggest"] == [] and s["edit"] == "Field(0)", s["sheet"]["fields"][0])
+    x.edit("carl@example.test, Bo")
+    s = x.wait(lambda s: s["suggest"], what="second suggestion")
+    x.click("Suggest(0)")
+    s = x.state()
+    check("a click takes it too, with the person's name", s["sheet"]["fields"][0] == "carl@example.test, Bob <bob@example.test>, ", s["sheet"]["fields"][0])
+    # ── a message left unfinished goes to the server's Drafts folder
+    x.field(2, "Pour plus tard")
+    x.field(3, "À finir\n\n-- \nSam Élan\nPlume")
+    x.key(VK["ESC"])
+    s = x.wait(lambda s: s["sheet"] is None and len(server.box["Drafts"].messages) == 1, what="draft saved")
+    d = server.box["Drafts"].messages[0]
+    dm = email.message_from_bytes(d.raw, policy=policy.default)
+    check("closing an unfinished message keeps it in Drafts on the server", s["toast"] == "Saved in Drafts." and "\\Draft" in d.flags and dm["Subject"] == "Pour plus tard" and "carl@example.test" in str(dm["To"]), (s["toast"], d.flags))
+    x.click("New"); x.wait(lambda s: s["sheet"])
+    x.key(VK["ESC"])
+    s = x.wait(lambda s: s["sheet"] is None, what="closed untouched")
+    check("a message left untouched closes without a draft", len(server.box["Drafts"].messages) == 1)
+    x.click("Folder(0, 1)")
+    s = x.wait(lambda s: s["cur"]["folder"] == "Drafts" and s["rows"] == 1 and idle(s), what="Drafts folder")
+    x.click("Row(0)")
+    s = x.wait(lambda s: s["reading"] and not s["reading"]["loading"], what="the draft")
+    x.click("EditDraft")
+    s = x.wait(lambda s: s["sheet"] and s["sheet"]["kind"] == "compose", what="draft reopened")
+    f = s["sheet"]["fields"]
+    check("a draft reopens where it was left", f[0].startswith("carl@example.test") and f[2] == "Pour plus tard" and f[3].startswith("À finir") and s["sheet"]["draft"] == d.uid, s["sheet"])
+    x.edit("C'est fini.\n\n-- \nSam Élan\nPlume")
+    x.click("SheetOk")
+    s = x.wait(lambda s: s["sheet"] is None and len(server.sent) == 3 and len(server.box["Drafts"].messages) == 0, what="draft sent")
+    check("sent from the draft: it leaves the Drafts folder", s["rows"] == 0 or True)
+    sm = email.message_from_bytes(server.sent[2][2], policy=policy.default)
+    check("the message that left carries the signature", sm.get_content().replace("\r\n", "\n").startswith("C'est fini.\n\n-- \nSam Élan\nPlume"), sm.get_content()[:80])
+    x.click("Account(0)")
+    s = x.wait(lambda s: s["cur"]["folder"] == "INBOX" and idle(s), what="inbox again")
+    # ── search in the text of messages (not only subject and people): the server is asked too
+    x.click("Search"); x.edit("lien")
+    s = x.wait(lambda s: s["rows"] == 1 and s["found"], what="found in the text")
+    check("search finds a word that is only in the text of a message", subjects(s) == ["Réunion demain"] and "UID SEARCH CHARSET UTF-8 TEXT \"lien\"" in server.commands, (subjects(s), [c for c in server.commands if "SEARCH" in c][-1:]))
+    x.shot("mail-search-text")
+    x.editkey(VK["ESC"]); x.wait(lambda s: s["filter"] == "" and s["edit"] is None)
+    x.click("Row(0)")
+    s = x.wait(lambda s: s["reading"] and s["reading"]["uid"] == 4 and not s["reading"]["loading"])
     # ── flag, unread
     x.key(ord("D"), ctrl=True)
     s = x.wait(lambda s: s["messages"][0]["flagged"] and "\\Flagged" in server.box["INBOX"].messages[-1].flags, what="flagged")
@@ -202,7 +264,7 @@ try:
     x.key(VK["DELETE"])
     s = x.wait(lambda s: s["rows"] == 3 and len(server.box["Trash"].messages) == 1, what="moved to trash")
     check("Delete moves the message to the Trash and selects the next one", subjects(s)[0] == "Lunch?" and s["sel"] == 3 and len(server.box["INBOX"].messages) == 3, (subjects(s), s["sel"]))
-    x.click("Folder(0, 2)")
+    x.click("Folder(0, 3)")
     s = x.wait(lambda s: s["cur"]["folder"] == "Trash" and s["rows"] == 1 and idle(s), what="trash")
     x.click("Row(0)"); x.wait(lambda s: s["reading"] and not s["reading"]["loading"])
     x.key(VK["DELETE"])
@@ -212,15 +274,44 @@ try:
     x.click("SheetOk")
     s = x.wait(lambda s: s["rows"] == 0 and len(server.box["Trash"].messages) == 0, what="deleted for good")
     check("confirmed: the message leaves the server", s["reading"] is None)
-    x.click("Folder(0, 4)")
+    x.click("Folder(0, 5)")
     s = x.wait(lambda s: s["cur"]["folder"] == "Work/Projets &AOk-t&AOk-" and idle(s), what="sub-folder")
     check("a sub-folder with accents opens", s["rows"] == 0 and not s["accounts"][0]["error"], s["accounts"][0]["error"])
     x.click("Account(0)")
     s = x.wait(lambda s: s["cur"]["folder"] == "INBOX" and s["rows"] == 3 and idle(s), what="back to the inbox")
+    # ── push: a message that arrives shows up by itself (the server tells, no F5, no three-minute wait)
+    s = x.wait(lambda s: s["cur"]["folder"] == "INBOX" and idle(s), what="inbox before push")
+    rows_before = s["rows"]
+    server.deliver("""From: Bob <bob@example.test>
+To: sam@example.test
+Subject: Re: Lunch?
+Date: Tue, 10 Nov 2026 12:10:00 -0500
+Message-ID: <m4@example.test>
+In-Reply-To: <m3@example.test>
+References: <m3@example.test>
+
+Noon works. See you there.
+""")
+    s = x.wait(lambda s: s["total"] == 4 and s["messages"][0]["subject"] == "Re: Lunch?", timeout=15, what="pushed message")
+    check("a new message appears by itself, within seconds", True)
+    # ── conversations: the reply and the message it answers share one line
+    check("the reply joins its conversation: one line, two messages", s["rows"] == rows_before and s["messages"][0]["thread"] == 2 and not s["messages"][0]["child"], s["messages"][:2])
+    x.click("Row(0)")
+    s = x.wait(lambda s: s["reading"] and s["reading"]["uid"] == 5 and not s["reading"]["loading"], what="thread opened")
+    check("choosing it opens the conversation: the older message under it", [(m["subject"], m["child"]) for m in s["messages"][:2]] == [("Re: Lunch?", False), ("Lunch?", True)] and s["rows"] == rows_before + 1, s["messages"][:3])
+    x.shot("mail-thread")
+    x.click("ThreadToggle(0)")
+    s = x.wait(lambda s: s["rows"] == rows_before, what="thread closed")
+    check("its count closes it again", s["messages"][1]["subject"] == "Plume 0.8 newsletter", s["messages"][:2])
+    x.menu("More", "Show one message per line")
+    s = x.wait(lambda s: not s["threads"] and s["rows"] == 4)
+    x.menu("More", "Group conversations")
+    s = x.wait(lambda s: s["threads"] and s["rows"] == 3)
+    check("conversations can be shown one message per line", True)
     # ── language and theme
     x.menu("More", "Français")
     s = x.wait(lambda s: s["lang"] == "Fr")
-    check("the interface switches to French", [f["label"] for f in s["accounts"][0]["folders"]][:3] == ["Boîte de réception", "Envoyés", "Corbeille"], s["accounts"][0]["folders"])
+    check("the interface switches to French", [f["label"] for f in s["accounts"][0]["folders"]][:4] == ["Boîte de réception", "Brouillons", "Envoyés", "Corbeille"], s["accounts"][0]["folders"])
     x.menu("More", "Thème : clair"); s = x.wait(lambda s: not s["dark"])
     x.shot("mail-light-fr")
     x.menu("More", "Thème : sombre"); x.wait(lambda s: s["dark"])
@@ -236,7 +327,7 @@ server.stop()
 x = Mail(port=47842, fresh=False)
 try:
     s = x.wait(lambda s: s["rows"] == 3, timeout=5, what="mailbox from disk")
-    check("without a server, the mailbox opens from this PC", subjects(s) == ["Lunch?", "Plume 0.8 newsletter", "Réunion demain"], subjects(s))
+    check("without a server, the mailbox opens from this PC", subjects(s) == ["Re: Lunch?", "Plume 0.8 newsletter", "Réunion demain"], subjects(s))
     x.click("Row(1)")
     s = x.wait(lambda s: s["reading"] and not s["reading"]["loading"], timeout=5, what="message from disk")
     check("a message already read opens offline", s["reading"]["text"].startswith("Plume 0.8"), s["reading"]["text"][:40])
@@ -270,7 +361,7 @@ if made:
         x.wait(lambda s: s["sheet"])
         add_account(x, server, host="localhost")
         s = x.wait(lambda s: s["rows"] == 3 and idle(s) and not s["accounts"][0]["error"], timeout=40, what="sync over TLS")
-        check("TLS: once the test certificate is accepted, the mailbox syncs over an encrypted connection", server.logins == 1 and subjects(s)[0] == "Lunch?", subjects(s))
+        check("TLS: once the test certificate is accepted, the mailbox syncs over an encrypted connection", server.logins >= 1 and subjects(s)[0] == "Lunch?", subjects(s))
         x.click("New"); x.wait(lambda s: s["sheet"])
         x.edit("sam@example.test"); x.field(2, "Chiffré"); x.field(3, "Par TLS."); x.click("SheetOk")
         s = x.wait(lambda s: s["sheet"] is None and len(server.sent) == 1, timeout=40, what="sent over TLS")

@@ -89,6 +89,14 @@ impl Conn {
         if security == Security::Tls { conn.secure(host) } else { Ok(conn) }
     }
 
+    /// Combien attendre une réponse avant d'abandonner la lecture (elle peut reprendre ensuite, rien n'est perdu).
+    pub fn set_read_timeout(&self, wait: Option<Duration>) -> io::Result<()> {
+        match self {
+            Conn::Plain(s) => s.set_read_timeout(wait),
+            Conn::Tls(s) => s.get_ref().set_read_timeout(wait),
+        }
+    }
+
     pub fn is_secure(&self) -> bool {
         matches!(self, Conn::Tls(_))
     }

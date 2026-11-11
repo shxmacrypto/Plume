@@ -332,6 +332,102 @@ pub fn build(draft: &Draft, now: i64, unique: u64) -> Vec<u8> {
     head.into_bytes()
 }
 
+/// Les adresses bien écrites d'un champ, en passant celles qui ne le sont pas (encore en train d'être tapées).
+pub fn addresses_lenient(field: &str) -> Vec<String> {
+    people_in(field).into_iter().map(|(_, address)| address).collect()
+}
+
+/// Les personnes d'un champ d'adresses : (nom, adresse), dans l'ordre, sans celles qui sont mal écrites.
+pub fn people_in(field: &str) -> Vec<(String, String)> {
+    pieces(field)
+        .into_iter()
+        .filter_map(|piece| {
+            let (name, address) = match (piece.rfind('<'), piece.rfind('>')) {
+                (Some(a), Some(b)) if a < b => (piece[..a].trim().trim_matches('"').trim(), piece[a + 1..b].trim()),
+                _ => ("", piece),
+            };
+            (addresses(address).len() == 1).then(|| (name.to_string(), address.to_string()))
+        })
+        .collect()
+}
+
+/// Minuscules et sans les accents les plus courants : pour chercher sans y penser.
+pub fn fold(s: &str) -> String {
+    s.chars()
+        .flat_map(char::to_lowercase)
+        .map(|c| match c {
+            'à' | 'â' | 'ä' | 'á' | 'ã' | 'å' => 'a',
+            'ç' => 'c',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'î' | 'ï' | 'í' | 'ì' => 'i',
+            'ô' | 'ö' | 'ó' | 'ò' | 'õ' => 'o',
+            'ù' | 'û' | 'ü' | 'ú' => 'u',
+            'ñ' => 'n',
+            'ÿ' => 'y',
+            other => other,
+        })
+        .collect()
+}
+
+/// Les conversations d'une liste de messages : pour chacun, le numéro de sa conversation (le même pour tous les
+/// messages qui se répondent, de près ou de loin, d'après « Message-ID » et « References »). Les numéros suivent
+/// l'ordre de la liste : la conversation du premier message est la 0.
+pub fn threads(messages: &[Summary]) -> Vec<usize> {
+    use std::collections::HashMap;
+    // chaque identifiant rencontré est un nœud ; un message relie le sien à tous ceux qu'il cite
+    let mut ids: HashMap<&str, usize> = HashMap::new();
+    let mut parent: Vec<usize> = vec![];
+    fn find(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    let mut own: Vec<usize> = Vec::with_capacity(messages.len());
+    for m in messages {
+        // un message sans identifiant est seul dans sa conversation
+        let me = parent.len();
+        parent.push(me);
+        if !m.message_id.is_empty() {
+            match ids.get(m.message_id.as_str()) {
+                Some(&other) => {
+                    let (a, b) = (find(&mut parent, me), find(&mut parent, other));
+                    parent[a] = b;
+                }
+                None => {
+                    ids.insert(m.message_id.as_str(), me);
+                }
+            }
+        }
+        for r in &m.references {
+            let other = match ids.get(r.as_str()) {
+                Some(&n) => n,
+                None => {
+                    let n = parent.len();
+                    parent.push(n);
+                    ids.insert(r.as_str(), n);
+                    n
+                }
+            };
+            let (a, b) = (find(&mut parent, me), find(&mut parent, other));
+            if a != b {
+                parent[a] = b;
+            }
+        }
+        own.push(me);
+    }
+    // des numéros dans l'ordre de la liste
+    let mut number: HashMap<usize, usize> = HashMap::new();
+    own.into_iter()
+        .map(|n| {
+            let root = find(&mut parent, n);
+            let next = number.len();
+            *number.entry(root).or_insert(next)
+        })
+        .collect()
+}
+
 /// L'objet d'une réponse ou d'un transfert : un seul « Re: », un seul « Fwd: ».
 pub fn subject_with(prefix: &str, subject: &str) -> String {
     let s = subject.trim();
@@ -451,6 +547,28 @@ mod tests {
                 && simple.starts_with("From: sam@example.com\r\nTo: ann@example.com\r\nSubject: Hi\r\n"),
             "{simple}"
         );
+    }
+
+    #[test]
+    fn conversations_people_and_folding() {
+        let m = |uid: u32, id: &str, refs: &[&str]| Summary { uid, message_id: id.into(), references: refs.iter().map(|r| r.to_string()).collect(), ..Summary::default() };
+        // du plus récent au plus ancien : deux réponses à un message absent du dossier, une réponse à une réponse
+        let list = [
+            m(9, "c@x", &["a@x", "b@x"]),
+            m(8, "z@x", &[]),
+            m(7, "b@x", &["a@x"]),
+            m(6, "", &[]),
+            m(5, "d@x", &["root@x"]),
+            m(4, "e@x", &["root@x"]),
+        ];
+        assert_eq!(threads(&list), [0, 1, 0, 2, 3, 3]);
+        assert!(threads(&[]).is_empty());
+        assert_eq!(
+            people_in("Ann Départ <ann@example.com>, \"Bob, Jr\" <bob@example.com>; carl@x.org, oops"),
+            [("Ann Départ".to_string(), "ann@example.com".to_string()), ("Bob, Jr".into(), "bob@example.com".into()), ("".into(), "carl@x.org".into())]
+        );
+        assert_eq!(addresses_lenient("ann@example.com, bo"), ["ann@example.com"]);
+        assert_eq!(fold("Réunion À MONTRÉAL ñ"), "reunion a montreal n");
     }
 
     #[test]

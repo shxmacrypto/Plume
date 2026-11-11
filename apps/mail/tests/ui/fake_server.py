@@ -43,10 +43,11 @@ class FakeMail:
         self.user, self.password, self.tls = user, password, tls
         self.lock = threading.RLock()
         # the names are the ones the server gives: accents written the IMAP way
-        self.box = {"INBOX": Mailbox(), "Sent": Mailbox("\\Sent"), "Trash": Mailbox("\\Trash"), "Work": Mailbox("\\Noselect"), "Work/Projets &AOk-t&AOk-": Mailbox()}
+        self.box = {"INBOX": Mailbox(), "Drafts": Mailbox("\\Drafts"), "Sent": Mailbox("\\Sent"), "Trash": Mailbox("\\Trash"), "Work": Mailbox("\\Noselect"), "Work/Projets &AOk-t&AOk-": Mailbox()}
         self.sent = []          # what SMTP received: (from, [to], raw)
         self.commands = []      # every IMAP command, without the passwords
         self.logins = 0
+        self.idlers = []        # connections waiting in IDLE: (send, selected mailbox)
         self.imap = self._serve(self._imap)
         self.smtp = self._serve(self._smtp)
         self.imap_port, self.smtp_port = self.imap.server_address[1], self.smtp.server_address[1]
@@ -77,6 +78,19 @@ class FakeMail:
         server = Server(("127.0.0.1", 0), Handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         return server
+
+    def deliver(self, raw, name="INBOX", flags=()):
+        """A message arrives in a folder; the connections waiting on it (IDLE) hear about it at once."""
+        with self.lock:
+            box = self.box[name]
+            m = box.add(raw, flags)
+            for send, selected in list(self.idlers):
+                if selected is box:
+                    try:
+                        send("* %d EXISTS\r\n" % len(box.messages))
+                    except OSError:
+                        pass
+        return m
 
     def stop(self):
         for s in (self.imap, self.smtp):
@@ -119,7 +133,7 @@ class FakeMail:
             with self.lock:
                 self.commands.append(cmd if cmd in ("LOGIN", "AUTHENTICATE") else rest)
             if cmd == "CAPABILITY":
-                send("* CAPABILITY IMAP4rev1 AUTH=PLAIN MOVE UIDPLUS\r\n%s OK done\r\n" % tag)
+                send("* CAPABILITY IMAP4rev1 AUTH=PLAIN MOVE UIDPLUS IDLE\r\n%s OK done\r\n" % tag)
             elif cmd == "AUTHENTICATE":
                 send("+ \r\n")
                 parts = base64.b64decode(f.readline().strip()).decode("utf-8").split("\0")
@@ -172,6 +186,34 @@ class FakeMail:
                         else:
                             out += b"* %d FETCH (UID %d FLAGS (%s))\r\n" % (n, m.uid, flags.encode())
                 send(out + ("%s OK done\r\n" % tag).encode())
+            elif cmd == "IDLE":
+                send("+ idling\r\n")
+                entry = (send, selected)
+                with self.lock:
+                    self.idlers.append(entry)
+                try:
+                    done = f.readline()
+                finally:
+                    with self.lock:
+                        self.idlers.remove(entry)
+                if not done:
+                    return
+                send("%s OK idle done\r\n" % tag)
+            elif cmd == "UID SEARCH":
+                # « [CHARSET UTF-8] TEXT mot TEXT mot » : chaque mot dans le message, sans tenir compte de la casse
+                words, rest = [], args
+                while rest.strip():
+                    key, _, rest = rest.strip().partition(" ")
+                    if key.upper() == "CHARSET":
+                        _, _, rest = rest.partition(" ")
+                    elif key.upper() == "TEXT":
+                        word, rest = text_arg(rest)
+                        words.append(word.lower())
+                    else:
+                        break
+                with self.lock:
+                    hits = [m.uid for m in selected.messages if all(w in m.raw.decode("utf-8", "replace").lower() for w in words)]
+                send("* SEARCH%s\r\n%s OK done\r\n" % ("".join(" %d" % u for u in hits), tag))
             elif cmd == "UID STORE":
                 m = re.match(r"(\S+) ([+-])FLAGS(?:\.SILENT)? \(([^)]*)\)", args)
                 with self.lock:
@@ -200,13 +242,17 @@ class FakeMail:
             elif cmd == "APPEND":
                 name, tail = text_arg(args)
                 m = re.search(r"\{(\d+)\}\s*$", tail)
+                flags = re.search(r"\(([^)]*)\)", tail)
                 send("+ go ahead\r\n")
                 raw = f.read(int(m.group(1)))
                 f.readline()
                 with self.lock:
-                    if name in self.box:
-                        self.box[name].add(raw, {"\\Seen"})
-                send("%s OK appended\r\n" % tag)
+                    if name not in self.box:
+                        send("%s NO [TRYCREATE] Unknown mailbox\r\n" % tag)
+                        continue
+                    box = self.box[name]
+                    added = box.add(raw, set(flags.group(1).split()) if flags else {"\\Seen"})
+                send("%s OK [APPENDUID %d %d] appended\r\n" % (tag, box.validity, added.uid))
             else:
                 send("%s BAD unknown command\r\n" % tag)
 
@@ -253,7 +299,7 @@ class FakeMail:
                     self.sent.append((sender, list(rcpt), data))
                     # mail for our own address lands in the inbox, unread, like on a real server
                     if self.user in rcpt:
-                        self.box["INBOX"].add(data)
+                        self.deliver(data)
                 send("250 queued\r\n")
             elif upper.startswith("QUIT"):
                 send("221 bye\r\n")

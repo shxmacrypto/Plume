@@ -28,6 +28,60 @@ pub struct Account {
     pub smtp_host: String,
     pub smtp_port: u16,
     pub smtp_security: Security,
+    /// Ajoutée sous les messages que l'on écrit (vide : aucune).
+    pub signature: String,
+    /// Comment s'identifier : par mot de passe, ou par la page du fournisseur (son jeton est gardé à la place).
+    pub sign_in: SignIn,
+}
+
+/// Comment un compte s'identifie auprès de ses serveurs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SignIn {
+    #[default]
+    Password,
+    /// Par la page de Microsoft (Outlook.com, Hotmail, Microsoft 365) : un jeton OAuth, jamais de mot de passe.
+    Microsoft,
+}
+
+impl SignIn {
+    pub fn name(self) -> &'static str {
+        match self {
+            SignIn::Password => "password",
+            SignIn::Microsoft => "microsoft",
+        }
+    }
+
+    pub fn parse(name: &str) -> SignIn {
+        if name == "microsoft" { SignIn::Microsoft } else { SignIn::Password }
+    }
+}
+
+/// Les contacts qui conviennent à ce qui est tapé (le début d'un mot de leur nom ou de leur adresse, sans tenir
+/// compte des accents ni de la casse), dans l'ordre de la liste, `limit` au plus.
+pub fn matching<'a>(contacts: &'a [Contact], typed: &str, limit: usize) -> Vec<&'a Contact> {
+    let typed = crate::message::fold(typed.trim());
+    if typed.is_empty() {
+        return vec![];
+    }
+    contacts
+        .iter()
+        .filter(|c| {
+            let email = c.email.to_lowercase();
+            let words = format!("{} {email}", crate::message::fold(&c.name));
+            email.starts_with(&typed) || words.split(|ch: char| ch.is_whitespace() || "<>\"'.@_-".contains(ch)).any(|w| w.starts_with(&typed))
+        })
+        .take(limit)
+        .collect()
+}
+
+/// Une personne à qui l'on a écrit ou qui nous a écrit : de quoi compléter une adresse.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Contact {
+    pub name: String,
+    pub email: String,
+    /// Combien de messages la citent, et la date du plus récent : les plus utiles d'abord.
+    pub count: usize,
+    pub last: i64,
 }
 
 impl Account {
@@ -64,6 +118,8 @@ impl Account {
             smtp_host,
             smtp_port,
             smtp_security,
+            signature: String::new(),
+            sign_in: SignIn::Password,
         }
     }
 
@@ -74,11 +130,17 @@ impl Account {
     }
 
     fn to_json(&self) -> Value {
-        json!({
+        let mut v = json!({
             "id": self.id, "name": self.name, "email": self.email, "user": self.user,
             "imap_host": self.imap_host, "imap_port": self.imap_port, "imap_security": self.imap_security.name(),
             "smtp_host": self.smtp_host, "smtp_port": self.smtp_port, "smtp_security": self.smtp_security.name(),
-        })
+            "signature": self.signature,
+        });
+        // un compte à mot de passe n'en dit rien (le mot de passe lui-même n'est jamais ici)
+        if self.sign_in != SignIn::Password {
+            v["sign_in"] = json!(self.sign_in.name());
+        }
+        v
     }
 
     fn from_json(v: &Value) -> Option<Account> {
@@ -95,6 +157,8 @@ impl Account {
             smtp_host: text("smtp_host")?,
             smtp_port: port("smtp_port")?,
             smtp_security: Security::parse(&text("smtp_security").unwrap_or_default()),
+            signature: text("signature").unwrap_or_default(),
+            sign_in: SignIn::parse(&text("sign_in").unwrap_or_default()),
         })
     }
 }
@@ -321,6 +385,34 @@ impl Store {
         }
     }
 
+    /// Les personnes que la boîte gardée connaît (expéditeurs et destinataires de tous les dossiers), les plus
+    /// fréquentes et les plus récentes d'abord. `me` : l'adresse du compte, qui n'en fait pas partie.
+    pub fn contacts(&self, account: &str, me: &str) -> Vec<Contact> {
+        use std::collections::HashMap;
+        let mut all: HashMap<String, Contact> = HashMap::new();
+        for folder in self.folders(account) {
+            for m in self.listing(account, &folder.raw).messages {
+                let from = (!m.from.is_empty()).then(|| (m.from_name.clone(), m.from.clone()));
+                for (name, email) in from.into_iter().chain(crate::message::people_in(&m.to)) {
+                    let key = email.to_lowercase();
+                    if key == me.to_lowercase() {
+                        continue;
+                    }
+                    let c = all.entry(key).or_insert_with(|| Contact { name: String::new(), email: email.clone(), count: 0, last: 0 });
+                    c.count += 1;
+                    // le nom le plus récent l'emporte
+                    if !name.is_empty() && (c.name.is_empty() || m.date >= c.last) {
+                        c.name = name;
+                    }
+                    c.last = c.last.max(m.date);
+                }
+            }
+        }
+        let mut list: Vec<Contact> = all.into_values().collect();
+        list.sort_by(|a, b| b.count.cmp(&a.count).then(b.last.cmp(&a.last)).then(a.email.cmp(&b.email)));
+        list
+    }
+
     /// Les numéros de messages ne valent plus (le serveur a refait le dossier) : tout ce qu'on en gardait part.
     pub fn clear_folder(&self, account: &str, folder: &str) {
         let _ = std::fs::remove_dir_all(self.folder_dir(account, folder));
@@ -447,6 +539,42 @@ mod tests {
         // un fichier abîmé : pas de compte, pas de plantage
         std::fs::write(store.dir.join("accounts.json"), b"[{\"id\": \"../x\"}, 42, {\"id\": \"a9\"}]").unwrap();
         assert!(store.accounts().is_empty());
+        let _ = std::fs::remove_dir_all(&store.dir);
+    }
+
+    #[test]
+    fn contacts_come_from_the_mailbox() {
+        let store = scratch("contacts");
+        let folders = vec![
+            Folder { raw: "INBOX".into(), name: "INBOX".into(), path: "INBOX".into(), role: Role::Inbox, no_select: false, depth: 0 },
+            Folder { raw: "Sent".into(), name: "Sent".into(), path: "Sent".into(), role: Role::Sent, no_select: false, depth: 0 },
+        ];
+        store.save_folders("a1", &folders);
+        let msg = |uid: u32, date: i64, from: (&str, &str), to: &str| Summary {
+            uid,
+            date,
+            from_name: from.0.into(),
+            from: from.1.into(),
+            to: to.into(),
+            ..Summary::default()
+        };
+        store.save_listing("a1", "INBOX", &Listing {
+            uid_validity: 1,
+            messages: vec![msg(2, 200, ("Ann Départ", "ann@example.com"), "sam@example.com, carl@example.com"), msg(1, 100, ("", "ann@example.com"), "Sam <SAM@example.com>")],
+        });
+        store.save_listing("a1", "Sent", &Listing { uid_validity: 1, messages: vec![msg(1, 300, ("Sam", "sam@example.com"), "Bob <bob@example.com>, Ann <ann@example.com>")] });
+        let all = store.contacts("a1", "sam@example.com");
+        // Ann trois fois (son nom le plus récent l'emporte), puis Bob et Carl ; jamais soi-même
+        assert_eq!(all.iter().map(|c| (c.name.as_str(), c.email.as_str(), c.count)).collect::<Vec<_>>(), [
+            ("Ann", "ann@example.com", 3),
+            ("Bob", "bob@example.com", 1),
+            ("", "carl@example.com", 1)
+        ]);
+        let names = |typed: &str| matching(&all, typed, 5).iter().map(|c| c.email.clone()).collect::<Vec<_>>();
+        assert_eq!(names("an"), ["ann@example.com"]);
+        assert_eq!(names("CA"), ["carl@example.com"]);
+        assert_eq!(names("example"), ["ann@example.com", "bob@example.com", "carl@example.com"]);
+        assert!(names("zz").is_empty() && names(" ").is_empty());
         let _ = std::fs::remove_dir_all(&store.dir);
     }
 
