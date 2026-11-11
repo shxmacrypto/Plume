@@ -12,7 +12,7 @@
 .sreset{display:flex;justify-content:flex-end;margin:-8px 0 24px}
 .set nav #setq{width:100%;margin:0 0 12px;height:34px}
 .set .body h3{margin-bottom:12px}
-body.rm .keycap.on{animation:none}
+body.rm .keycap.on,body.rmb .keycap.on{animation:none}
 
 /* ===== Socle : pages internes, petit panneau, fenêtre modale ===== */
 .pgw.wide{max-width:980px}
@@ -194,7 +194,7 @@ body.compact .nb{min-height:26px}
 body.zen:not(.peek) #zenStrip{display:block}
 body.zen #hdr{position:fixed;top:0;left:0;right:0;z-index:6;transform:translateY(-100%);transition:transform .18s var(--ease)}
 body.zen.peek #hdr{transform:none;box-shadow:0 10px 30px rgba(0,0,0,.35)}
-body.rm.zen #hdr{transition:none}
+body.rm.zen #hdr,body.rmb.zen #hdr{transition:none}
 body.zen #ov{top:4px;left:0}
 body.zen.peek #ov{top:var(--h)}
 body.zen:not(.peek) #side{display:none}

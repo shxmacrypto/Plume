@@ -82,7 +82,10 @@ FX.bar.push(() => {
   }
   b.hidden = !(S.batt && on('battIcon'));
   b.title = t('pf.battOn'); b.setAttribute('aria-label', t('pf.battOn'));
-  document.body.classList.toggle('rm', !!C().motion || (!!S.batt && on('battAnim')));
+  // « Réduire les animations » les coupe toutes ; l'économie de batterie (rmb) garde l'écran de démarrage et
+  // l'assistant de bienvenue, courts et demandés (« Revoir l'assistant de bienvenue » restait figé sur batterie)
+  document.body.classList.toggle('rm', !!C().motion);
+  document.body.classList.toggle('rmb', !C().motion && !!S.batt && on('battAnim'));
   document.body.classList.toggle('ramhov', C().ramShow !== 'always');
 });
 FX.click['batt-info'] = () => { SET.sec = 'perf'; setMode('set'); };

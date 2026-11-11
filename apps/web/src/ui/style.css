@@ -20,6 +20,7 @@ body.hc{--t2:var(--t1);--t3:rgba(235,235,245,.86);--t4:rgba(235,235,245,.62);--s
 body.light.hc{--t3:rgba(0,0,0,.8);--t4:rgba(0,0,0,.6);--sep:rgba(0,0,0,.45);--ring:inset 0 0 0 1.5px rgba(0,0,0,.6)}
 body.big{--tgt:40px}
 body.rm *,body.rm *::before,body.rm *::after{animation:none!important;transition:none!important}
+body.rmb *:not(#splash,#splash *,#onb,#onb *),body.rmb *:not(#splash,#splash *,#onb,#onb *)::before,body.rmb *:not(#splash,#splash *,#onb,#onb *)::after{animation:none!important;transition:none!important}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 *{margin:0;padding:0;box-sizing:border-box}
