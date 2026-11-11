@@ -782,7 +782,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "fex-core"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "memchr",
  "regex-automata",
@@ -1758,7 +1758,7 @@ checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
 
 [[package]]
 name = "mail-core"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "mail-parser",
  "schannel",
@@ -2359,7 +2359,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "plume"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -2377,7 +2377,7 @@ dependencies = [
 
 [[package]]
 name = "plume-backup"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "plume-ui",
  "plume-update",
@@ -2389,7 +2389,7 @@ dependencies = [
 
 [[package]]
 name = "plume-calendar"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "plume-ui",
  "plume-update",
@@ -2400,7 +2400,7 @@ dependencies = [
 
 [[package]]
 name = "plume-clean"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "fex-core",
  "plume-ui",
@@ -2414,7 +2414,7 @@ dependencies = [
 
 [[package]]
 name = "plume-clipboard"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "plume-ui",
  "plume-update",
@@ -2426,7 +2426,7 @@ dependencies = [
 
 [[package]]
 name = "plume-convert"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "miniz_oxide 0.8.9",
  "plume-ui",
@@ -2439,7 +2439,7 @@ dependencies = [
 
 [[package]]
 name = "plume-drop"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "getrandom 0.3.4",
  "plume-ui",
@@ -2452,7 +2452,7 @@ dependencies = [
 
 [[package]]
 name = "plume-fex"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "fex-core",
  "plume-ui",
@@ -2467,7 +2467,7 @@ dependencies = [
 
 [[package]]
 name = "plume-launcher"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "fex-core",
  "plume-ui",
@@ -2479,7 +2479,7 @@ dependencies = [
 
 [[package]]
 name = "plume-mail"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "mail-core",
  "plume-ui",
@@ -2490,7 +2490,7 @@ dependencies = [
 
 [[package]]
 name = "plume-media"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "kamadak-exif",
  "plume-ui",
@@ -2504,7 +2504,7 @@ dependencies = [
 
 [[package]]
 name = "plume-music"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "lofty",
  "miniz_oxide 0.8.9",
@@ -2520,7 +2520,7 @@ dependencies = [
 
 [[package]]
 name = "plume-passwords"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -2541,7 +2541,7 @@ dependencies = [
 
 [[package]]
 name = "plume-pdf"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "lopdf",
  "plume-ui",
@@ -2554,7 +2554,7 @@ dependencies = [
 
 [[package]]
 name = "plume-suite"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "plume-ui",
  "plume-update",
@@ -2564,7 +2564,7 @@ dependencies = [
 
 [[package]]
 name = "plume-task"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "plume-ui",
  "plume-update",
@@ -2576,7 +2576,7 @@ dependencies = [
 
 [[package]]
 name = "plume-ui"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "windows 0.61.3",
  "windows-numerics 0.2.0",
@@ -2584,7 +2584,7 @@ dependencies = [
 
 [[package]]
 name = "plume-update"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "serde_json",
  "sha2 0.10.9",
@@ -2593,7 +2593,7 @@ dependencies = [
 
 [[package]]
 name = "plume-viewer"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "getrandom 0.3.4",
  "hmac",
