@@ -100,13 +100,13 @@ if (-not $isGit) {
 Step "5/5 Publish on GitHub Releases"
 $assets = "dist\PlumeSetup.exe", "dist\PlumeSetup.exe.sha256"
 if ($DryRun) {
-    Write-Host "(skipped) gh release create $tag $($assets -join ' ') --title 'Plume $Version'"
+    Write-Host "(skipped) gh release create $tag $($assets -join ' ') --title 'Plume Suite $Version'"
 } elseif (Get-Command gh -ErrorAction SilentlyContinue) {
-    gh release create $tag @assets --repo $repo --title "Plume $Version" --notes $Notes
+    gh release create $tag @assets --repo $repo --title "Plume Suite $Version" --notes $Notes
     Write-Host "Published: https://github.com/$repo/releases/tag/$tag" -ForegroundColor Green
 } else {
     # Without the GitHub CLI: open the prefilled release page, the user drops the two files from dist\
-    $url = "https://github.com/$repo/releases/new?tag=$tag&title=" + [uri]::EscapeDataString("Plume $Version")
+    $url = "https://github.com/$repo/releases/new?tag=$tag&title=" + [uri]::EscapeDataString("Plume Suite $Version")
     $full = $null
     try { $full = $url + "&body=" + [uri]::EscapeDataString($Notes) } catch { }   # .NET refuses very long strings
     if ($full -and $full.Length -le 7000) {
