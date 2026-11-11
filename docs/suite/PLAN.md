@@ -39,27 +39,17 @@ read, it walks the drive again in the background.
 ## Repository layout
 
 ```
-Cargo.toml            workspace root (the browser package still lives at the root for now)
-rustfmt.toml          the code style, applied by `cargo fmt --all`
-apps/
-  fex/                Plume FEx (plume-fex.exe)
-    src/app/          the explorer: state, events, painting, loading, search, actions, servers, settings, strings
-    src/shell/        Windows: icons, places, menus, file operations, drag and drop, archives, SFTP, integration
-    tests/ui/         UI scenarios that drive the real window (see its README)
-  mail/               Plume Mail (plume-mail.exe)
-    src/app/          the window: state, events, painting, dialogs, settings, strings
-    tests/ui/         end-to-end scenario against a mail server that lives in the test
-crates/
-  plume-ui/           the interface kit shared by the apps: window, canvas, text, icons, text fields, dialogs
-  fex-core/           no interface: folder listing, sorting, index, query language, change journal
-  mail-core/          no interface: IMAP, SMTP, message reading and writing, the local mailbox, the account worker
-assets/brand/         logos of the suite, Plume FEx and Plume Mail (SVG sources, generated PNG and ICO)
-docs/suite/           this plan
-src/, launcher/ ...   Plume Web and its installer, unchanged for now
+apps/web/             Plume Web (plume.exe), the browser
+apps/suite/           Plume Suite (plume-suite.exe): installs, opens, updates and removes the apps
+apps/fex/             Plume FEx (plume-fex.exe)
+apps/mail/            Plume Mail (plume-mail.exe), held back from the installer until its Microsoft sign-in
+crates/plume-ui/      the native interface kit (Win32, Direct2D, DirectWrite)
+crates/fex-core/      FEx without interface        crates/mail-core/  Mail without interface
+crates/plume-update/  update check and download, shared by every app
+launcher/             PlumeSetup.exe, which holds the programs
+assets/brand/         every logo (SVG sources, generated PNG and ICO)
+tools/                shared build helper (icons, version info) and the release-notes copier
 ```
-
-Planned for the suite phase: move the browser to `apps/browser`, turn `launcher/` into the suite installer
-(`installer/`), and share the update code in `crates/`.
 
 ## What is built
 
@@ -227,7 +217,7 @@ Prefixes can be stacked: `file:case:regex:^Main`.
   stop at once ("index out of bounds") when started on battery with the battery saver on (the default), or on
   a metered connection with preloading on: `update_power` runs before the session is restored and asks
   `push()` to refresh the tab bar while there is no tab yet. Fix: `push()` returns while `tabs` is empty
-  (`src/main.rs`). Checked on battery, with a throwaway profile: the original code crashes on a first launch
+  (`apps/web/src/main.rs`). Checked on battery, with a throwaway profile: the original code crashes on a first launch
   and with a saved profile, the fixed code starts and closes cleanly. The same three lines are on `main`,
   with the 0.7.2 notes; they reach users when `release.ps1 0.7.2` is run there.
 
@@ -277,7 +267,7 @@ Plume Mail:
 - [x] **8. Suite**: Plume Suite (install, open, update, remove the apps), one installer holding every app, one
       update for all, website with a page per app, release notes. Released as **1.0.0** with Plume Web and
       Plume FEx; **Plume Mail is held back** (`PLUME_WITH_MAIL=1` adds it to the installer and to Plume Suite)
-      until its Microsoft application ID exists. *Still open: the browser moved to `apps/browser`.*
+      until its Microsoft application ID exists. After 1.0.0 the browser moved to `apps/web` like the other apps.
 
 ## Third-party code
 

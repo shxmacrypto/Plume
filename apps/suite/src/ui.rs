@@ -25,7 +25,7 @@ use windows::{
 pub const SITE: &str = "https://plumeweb.netlify.app/";
 const TOAST_TIMER: usize = 1;
 const LOGOS: [&[u8]; 4] = [
-    include_bytes!("../../../assets/logo256.png"),
+    include_bytes!("../../../assets/brand/plume-web-256.png"),
     include_bytes!("../../../assets/brand/plume-fex-256.png"),
     include_bytes!("../../../assets/brand/plume-mail-256.png"),
     include_bytes!("../../../assets/brand/plume-suite-256.png"),

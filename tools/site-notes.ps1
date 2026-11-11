@@ -1,16 +1,17 @@
 # Copies the release notes (CHANGELOG.md + CHANGELOG.fr.md) into the website (web\PlumeSite), whose
 # "Release notes" page shows them without asking GitHub. Run by release.ps1; can also run alone:
-#   .\site-notes.ps1            # write ..\..\PlumeSite\js\notes-data.js
-#   .\site-notes.ps1 -DryRun    # show what would be written
+#   .\tools\site-notes.ps1            # write ..\..\PlumeSite\js\notes-data.js (next to this repository)
+#   .\tools\site-notes.ps1 -DryRun    # show what would be written
 param([switch]$DryRun)
 $ErrorActionPreference = "Stop"
-$site = Join-Path $PSScriptRoot "..\..\PlumeSite\js"
+$repo = Split-Path $PSScriptRoot -Parent
+$site = Join-Path $repo "..\..\PlumeSite\js"
 if (-not (Test-Path $site)) {
     Write-Host "Website folder not found ($site): release notes not copied." -ForegroundColor Yellow
     return
 }
 function Read-Notes($name) {
-    $p = Join-Path $PSScriptRoot $name
+    $p = Join-Path $repo $name
     if (Test-Path $p) { return [IO.File]::ReadAllText($p) }
     return ""
 }

@@ -52,7 +52,7 @@ def main():
                 sys.exit("the background of %s is not transparent" % name)
             sheet.append((name, img))
             if name == "plume-web":
-                continue  # its files already exist: assets/logo256.png and assets/plume.ico
+                continue  # its files already exist: plume-web-256.png and plume-web.ico
             img.resize((256, 256), Image.LANCZOS).save(os.path.join(HERE, name + "-256.png"))
             img.resize((256, 256), Image.LANCZOS).save(os.path.join(HERE, name + ".ico"), sizes=[(s, s) for s in ICO_SIZES])
             print("wrote", name + ".ico", "and", name + "-256.png")

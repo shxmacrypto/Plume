@@ -1522,7 +1522,7 @@ mod tests {
         let now = CLOCK.now_utc;
         let c = ix.push("C:", NO_PARENT, 0, 0, F_DIR);
         let users = ix.push("Users", c, 0, now - 400 * DAY, F_DIR);
-        let sam = ix.push("samue", users, 0, now - 300 * DAY, F_DIR);
+        let sam = ix.push("sasha", users, 0, now - 300 * DAY, F_DIR);
         let docs = ix.push("Documents", sam, 0, now - 30 * DAY, F_DIR);
         let proj = ix.push("Projets Plume", docs, 0, now - 2 * DAY, F_DIR);
         let src = ix.push("src", proj, 0, now - DAY, F_DIR);
@@ -1542,7 +1542,7 @@ mod tests {
     }
 
     fn docs(ix: &Index) -> u32 {
-        ix.find(Path::new(r"C:\Users\samue\Documents")).unwrap()
+        ix.find(Path::new(r"C:\Users\sasha\Documents")).unwrap()
     }
 
     fn find(ix: &Index, q: &str) -> Vec<String> {
@@ -1659,7 +1659,7 @@ mod tests {
         assert_eq!(find(&ix, "?t?*.jpg"), ["Été à Montréal.JPG"]);
         assert_eq!(find(&ix, "ext:png;md"), ["photo01.png", "photo02.png", "README.md"]);
         assert_eq!(find(&ix, "ext:.DOCX rapport"), ["rapport brouillon.docx", "Rapport final 2026.docx"]);
-        assert_eq!(find(&ix, "folder: s"), ["samue", "src", "Documents", "Projets Plume", "Users", "Windows"]);
+        assert_eq!(find(&ix, "folder: s"), ["sasha", "src", "Documents", "Projets Plume", "Users", "Windows"]);
         assert_eq!(find(&ix, "folder:plume"), ["Projets Plume"]);
         assert_eq!(find(&ix, "file: main"), ["main.cpl", "main.rs", "Main_Window.rs"]);
         assert_eq!(find(&ix, "startwith:photo"), ["photo01.png", "photo02.png"]);
@@ -1835,8 +1835,8 @@ mod tests {
         assert_eq!(find(&ix, "documents\\ ext:png"), ["photo01.png", "photo02.png"]);
         assert_eq!(find(&ix, "c:\\windows\\main"), ["main.cpl"]);
         assert_eq!(find(&ix, "nope\\main"), NONE);
-        assert_eq!(find(&ix, "parent:c:\\users\\samue\\documents ext:png"), ["photo01.png", "photo02.png"]);
-        assert_eq!(find(&ix, "parent:\"C:\\Users\\samue\\Documents\\Projets Plume\""), ["README.md", "src"]);
+        assert_eq!(find(&ix, "parent:c:\\users\\sasha\\documents ext:png"), ["photo01.png", "photo02.png"]);
+        assert_eq!(find(&ix, "parent:\"C:\\Users\\sasha\\Documents\\Projets Plume\""), ["README.md", "src"]);
         assert_eq!(find(&ix, "parent:c: folder:"), ["Users", "Windows"]);
         assert_eq!(find(&ix, "parent:c:\\nope"), NONE);
         assert_eq!(find_in(&ix, "main", Some(docs(&ix))), ["main.rs", "Main_Window.rs"]);

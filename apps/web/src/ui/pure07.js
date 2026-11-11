@@ -1,4 +1,4 @@
-/* ===== 0.7 : fonctions pures (sans DOM), testées avec node (tests/ui07.test.js) ===== */
+/* ===== 0.7 : fonctions pures (sans DOM), testées avec node (apps/web/tests/ui07.test.js) ===== */
 const pureNorm = (x) => String(x).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 /* #10 Recherche floue : toutes les lettres dans l'ordre ; bonus aux débuts de mots et aux lettres qui se suivent */

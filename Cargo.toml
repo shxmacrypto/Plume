@@ -1,57 +1,11 @@
-[package]
-name = "plume"
-version = "1.0.0"
-edition = "2024"
-build = "build.rs"
-
-[dependencies]
-tao = "0.34"
-wry = { version = "0.53", features = ["devtools"] }
-webview2-com = "0.38"
-serde_json = "1"
-aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc", "getrandom"] }
-argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
-miniz_oxide = "0.8"
-sha2 = "0.10"
-plume-update = { path = "crates/plume-update" }
-sha1 = "0.10"
-windows-future = "0.2"
-windows = { version = "0.61", features = [
-    "Win32_Foundation",
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_UI_Shell",
-    "Win32_UI_Input_KeyboardAndMouse",
-    "Win32_UI_Controls_Dialogs",
-    "Win32_Graphics_Gdi",
-    "Win32_Graphics_Dwm",
-    "Win32_Globalization",
-    "Win32_System_LibraryLoader",
-    "Win32_System_Com",
-    "Win32_System_Com_Urlmon",
-    "Win32_System_Registry",
-    "Win32_System_Threading",
-    "Win32_Security",
-    "Win32_Networking_WinInet",
-    "Win32_System_Power",
-    "Win32_System_ProcessStatus",
-    "Win32_System_SystemInformation",
-    "Win32_NetworkManagement_IpHelper",
-    "Win32_Networking_WinSock",
-    "Win32_System_WinRT",
-    "Foundation",
-    "Security_Credentials",
-    "Security_Credentials_UI",
-    "Security_Cryptography",
-    "Storage_Streams",
-] }
-
-# Suite Plume : le navigateur (ce paquet, encore à la racine), Plume Suite, Plume FEx et Plume Mail partagent un
-# espace de travail et une seule version (ci-dessous et `version` de [package] : release.ps1 change les deux).
-# `cargo build --release` construit le navigateur seul ; les autres : `cargo build --release -p plume-suite` etc.
+# Plume Suite : toutes les applications (apps/) et leurs bibliothèques (crates/) partagent un espace de travail et
+# une seule version, ci-dessous (release.ps1 la change). `cargo build --release` construit Plume Web seul ; les autres :
+# `cargo build --release -p plume-suite`, `-p plume-fex`, `-p plume-mail`.
 [workspace]
-members = [".", "apps/suite", "apps/fex", "apps/mail", "crates/fex-core", "crates/mail-core", "crates/plume-ui", "crates/plume-update"]
+resolver = "3"
+members = ["apps/web", "apps/suite", "apps/fex", "apps/mail", "crates/fex-core", "crates/mail-core", "crates/plume-ui", "crates/plume-update"]
 
-default-members = ["."]
+default-members = ["apps/web"]
 exclude = ["launcher", "vendor/wry"]
 
 [workspace.package]

@@ -129,7 +129,7 @@ Plume builds with the **GNU** Rust toolchain, so Visual Studio is not needed.
    ```
    The result is the installer `dist\PlumeSetup.exe` plus `dist\PlumeSetup.exe.sha256`. It holds Plume Suite, Plume Web and Plume FEx; set `PLUME_WITH_MAIL=1` to add Plume Mail (Plume Suite then offers it too).
 
-Run the tests with `cargo test --workspace` (Rust) and `node --test tests/ui07.test.js` (Plume Web's interface functions: calculator, fuzzy search, QR codes). Tests that need the network are marked `#[ignore]`. FEx, Mail and the installer also have end-to-end scenarios that drive the real windows (`apps/*/tests`).
+Run the tests with `cargo test --workspace` (Rust) and `node --test apps/web/tests/ui07.test.js` (Plume Web's interface functions: calculator, fuzzy search, QR codes). Tests that need the network are marked `#[ignore]`. FEx, Mail and the installer also have end-to-end scenarios that drive the real windows (`apps/*/tests`).
 
 Before a commit, these two commands must have nothing left to say (`rustup component add clippy rustfmt` installs them):
 
@@ -140,7 +140,7 @@ cargo clippy --workspace --all-targets
 
 The code style is set in `rustfmt.toml` (lines up to 160 columns). `vendor/wry` is left out of both.
 
-`vendor/wry` is a copy of wry 0.53.5 with two small changes: the WebView2 profile name used by containers, and page messages from addresses that `http::Uri` can't parse (such as local `file:///` pages) no longer crash Plume (see `vendor/wry/PLUME.md`). `Cargo.toml` points to it with `[patch.crates-io]`.
+`vendor/wry` is a copy of wry 0.53.5 with two small changes: the WebView2 profile name used by containers, and page messages from addresses that `http::Uri` can't parse (such as local `file:///` pages) no longer crash Plume (see `vendor/wry/PLUME.md`). The root `Cargo.toml` points to it with `[patch.crates-io]`.
 
 ## Publish a new version
 
@@ -159,37 +159,27 @@ The version number has a single source: `version` in `Cargo.toml` (`[workspace.p
 ## Project layout
 
 ```
+apps/web/          Plume Web, the browser (Rust, wry + tao + WebView2)
+  src/main.rs        windows, tabs, events
+  src/settings.json  every setting: default per mode, section, network use (read by settings.rs and the interface)
+  src/*.rs           settings, performance, tabs, privacy, look, tools, vault, import, extensions, ad blocker,
+                     media downloads, DevTools bridge, setup, default browser, updates (one file per subject)
+  src/ui/            the browser interface: HTML, CSS, JavaScript (one feat_*.js per theme)
+  src/page.js        script injected into web pages (autofill, reader, dark mode, read aloud...)
+  assets/adlist.txt  the ad list            tests/   interface functions (node --test)
 apps/suite/        Plume Suite: install, open, update and remove the apps
-apps/fex/          Plume FEx (see its README)                apps/mail/   Plume Mail (see its README)
+apps/fex/          Plume FEx, the file explorer (see its README)
+apps/mail/         Plume Mail, the mail app (see its README; not in the installer yet)
 crates/plume-ui/   the native interface kit of FEx, Mail and Suite (Win32, Direct2D, DirectWrite)
 crates/fex-core/   FEx without interface: listing, index, change journal, query language
 crates/mail-core/  Mail without interface: IMAP, SMTP, messages, OAuth, the kept mailbox
 crates/plume-update/  the update check and download shared by every app
-src/main.rs        Plume Web: windows, tabs, events (Rust, wry + tao + WebView2)
-src/settings.json  every setting: default per mode, section, network use; read by settings.rs and the interface
-src/settings.rs    defaults, migration of older profiles, mode switch, resets
-src/perf.rs        process memory / CPU, battery, metered connection
-src/tabs07.rs      workspaces, archive, split screen, Peek, sessions, notes, custom shortcuts
-src/feats07.rs     command palette and mouse gestures messages
-src/priv07.rs      containers, clear on close, privacy report, password audit, Windows Hello, secure DNS
-src/pwgen.rs       password generator, audit, breach check (k-anonymity)   src/hello.rs  Windows Hello
-src/look07.rs      Zen and full screen, adaptive tint, new tab images and widgets, custom CSS/JS
-src/tools07.rs     picture-in-picture, media control, focus mode, color picker, PDF/Markdown, read later
-src/ui/            the browser interface: style.css, style07.css, body.html, i18n.js, i18n07.js, app.js, settings.js,
-                   feat_*.js (one file per theme), pure07.js (calculator, fuzzy search, QR codes), devtools.js, boot.js
-src/page.js        script injected into web pages: password autofill, reader mode, dark mode, read aloud and the 0.7 page features
-tests/             tests of the interface functions (node --test)
-vendor/wry/        wry 0.53.5 with WebView2 profiles (containers)
-src/vault.rs       encrypted password vault
-src/import.rs      Chromium / Firefox profile import (sqlite.rs reads their databases with Windows' winsqlite3.dll)
-src/ext.rs         Chrome Web Store download + CRX/ZIP unpacking        src/bicon.rs  real browser icons
-src/adblock.rs     blocker (assets/adlist.txt)                          src/media.rs  yt-dlp / FFmpeg downloads
-src/devtools.rs    bridge to the Chrome DevTools Protocol for Plume DevTools
-src/setup.rs       installed Plume: shortcuts, Settings › Apps entry, uninstall
-src/defbrowser.rs  default browser: Windows registration, links handed to the Plume window already open
-src/update.rs      in-app updates: GitHub release, download, SHA-256 check
-launcher/          PlumeSetup.exe: embeds the four programs and installs, updates and removes them
-assets/            logo, icon, ad list
+launcher/          PlumeSetup.exe: holds the programs and installs, updates and removes them
+assets/brand/      every logo and icon (SVG sources, PNG, ICO)
+tools/             icon_res.rs (icons and version info of every .exe), site-notes.ps1 (release notes for the website)
+vendor/wry/        wry 0.53.5 with two small changes (see vendor/wry/PLUME.md)
+docs/              the suite plan, screenshots
+build.ps1          builds dist\PlumeSetup.exe        release.ps1   publishes a version
 ```
 
 ## Credits

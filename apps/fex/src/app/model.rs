@@ -72,7 +72,7 @@ impl Location {
         Some(Location::Remote { server, path: path.to_string() })
     }
 
-    /// Du lecteur jusqu'à ce dossier : `C:\`, `C:\Users`, `C:\Users\samue`.
+    /// Du lecteur jusqu'à ce dossier : `C:\`, `C:\Users`, `C:\Users\sasha`.
     pub fn chain(&self) -> Vec<PathBuf> {
         match self {
             Location::Path(p) => {
@@ -85,7 +85,7 @@ impl Location {
     }
 }
 
-/// Dernier élément d'un chemin (« samue »), ou la racine sans barre finale (« C: », « \\serveur\partage »).
+/// Dernier élément d'un chemin (« sasha »), ou la racine sans barre finale (« C: », « \\serveur\partage »).
 pub fn leaf(p: &Path) -> String {
     match p.file_name() {
         Some(n) => n.to_string_lossy().into_owned(),
@@ -566,24 +566,24 @@ mod tests {
 
     #[test]
     fn locations() {
-        let l = Location::Path(PathBuf::from(r"C:\Users\samue"));
+        let l = Location::Path(PathBuf::from(r"C:\Users\sasha"));
         assert_eq!(l.parent(), Some(Location::Path(PathBuf::from(r"C:\Users"))));
         assert_eq!(Location::Path(PathBuf::from(r"C:\")).parent(), Some(Location::ThisPc));
         assert_eq!(Location::ThisPc.parent(), None);
-        assert_eq!(l.chain(), vec![PathBuf::from(r"C:\"), PathBuf::from(r"C:\Users"), PathBuf::from(r"C:\Users\samue")]);
-        assert_eq!(leaf(Path::new(r"C:\Users\samue")), "samue");
+        assert_eq!(l.chain(), vec![PathBuf::from(r"C:\"), PathBuf::from(r"C:\Users"), PathBuf::from(r"C:\Users\sasha")]);
+        assert_eq!(leaf(Path::new(r"C:\Users\sasha")), "sasha");
         assert_eq!(leaf(Path::new(r"C:\")), "C:");
         assert_eq!(leaf(Path::new(r"\\srv\share\")), r"\\srv\share");
     }
 
     #[test]
     fn addresses() {
-        let base = Path::new(r"C:\Users\samue");
+        let base = Path::new(r"C:\Users\sasha");
         assert_eq!(parse_address(r"C:\Windows\", None), Some(PathBuf::from(r"C:\Windows")));
         assert_eq!(parse_address(r#"  "C:\Program Files"  "#, None), Some(PathBuf::from(r"C:\Program Files")));
         assert_eq!(parse_address("c:", None), Some(PathBuf::from(r"c:\")));
         assert_eq!(parse_address("C:/Windows/System32/..", None), Some(PathBuf::from(r"C:\Windows")));
-        assert_eq!(parse_address("Documents", Some(base)), Some(PathBuf::from(r"C:\Users\samue\Documents")));
+        assert_eq!(parse_address("Documents", Some(base)), Some(PathBuf::from(r"C:\Users\sasha\Documents")));
         assert_eq!(parse_address("..", Some(base)), Some(PathBuf::from(r"C:\Users")));
         assert_eq!(parse_address("Documents", None), None);
         assert_eq!(parse_address("   ", Some(base)), None);

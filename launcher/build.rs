@@ -1,5 +1,5 @@
 // Intègre l'icône, et recompile l'installeur quand l'un des programmes qu'il porte change.
-include!("../icon_res.rs");
+include!("../tools/icon_res.rs");
 fn main() {
     embed_icon(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/brand/plume-suite.ico"), "Plume Suite Setup", "PlumeSetup.exe");
     // Plume Mail n'est dans l'installeur que si PLUME_WITH_MAIL le demande (il attend la connexion Microsoft)

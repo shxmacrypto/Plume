@@ -23,8 +23,8 @@ function Read-Text($p) { [IO.File]::ReadAllText((Join-Path $PSScriptRoot $p)) }
 function Write-Text($p, $s) { if (-not $DryRun) { [IO.File]::WriteAllText((Join-Path $PSScriptRoot $p), $s, $utf8) } }
 function Step($s) { Write-Host "`n==> $s" -ForegroundColor Cyan }
 
-# GitHub repository: taken from the git remote, otherwise from src/main.rs (const REPO)
-$repo = ([regex]::Match((Read-Text "src\main.rs"), 'const REPO: &str = "([^"]+)"')).Groups[1].Value
+# GitHub repository: taken from the git remote, otherwise from apps/web/src/main.rs (const REPO)
+$repo = ([regex]::Match((Read-Text "apps\web\src\main.rs"), 'const REPO: &str = "([^"]+)"')).Groups[1].Value
 $isGit = Test-Path (Join-Path $PSScriptRoot ".git")
 # git runs through cmd (like cargo in build.ps1): it prints progress on stderr, which
 # Windows PowerShell would otherwise turn into a terminating error under "Stop".
@@ -34,13 +34,13 @@ if ($isGit) {
 }
 Write-Host "Plume $tag  ->  github.com/$repo$(if ($DryRun) { '   (dry run: nothing is changed)' })" -ForegroundColor Green
 
-Step "1/5 Version $Version in Cargo.toml + launcher/Cargo.toml (+ REPO in src/main.rs)"
-# Cargo.toml has two: the browser's [package] and [workspace.package] (Plume Suite, Plume FEx, Plume Mail)
+Step "1/5 Version $Version in Cargo.toml + launcher/Cargo.toml (+ REPO in apps/web/src/main.rs)"
+# Cargo.toml holds the one version of every app ([workspace.package]); the launcher has its own
 foreach ($f in "Cargo.toml", "launcher\Cargo.toml") {
     $re = [regex]'(?m)^version = "[^"]+"'
     Write-Text $f ($re.Replace((Read-Text $f), "version = `"$Version`""))
 }
-Write-Text "src\main.rs" ([regex]::Replace((Read-Text "src\main.rs"), 'const REPO: &str = "[^"]+"', "const REPO: &str = `"$repo`""))
+Write-Text "apps\web\src\main.rs" ([regex]::Replace((Read-Text "apps\web\src\main.rs"), 'const REPO: &str = "[^"]+"', "const REPO: &str = `"$repo`""))
 
 Step "2/5 Release notes"
 $placeholder = "- (describe the changes)"
@@ -79,7 +79,7 @@ if (Test-Path (Join-Path $PSScriptRoot $siteCfg)) {
     Write-Text $siteCfg $js
     Write-Host "$(if ($DryRun) { '(skipped) ' })Website js\config.js -> $Version, $bytes bytes. Also update its What's new section, then commit and push PlumeSite with GitHub Desktop." -ForegroundColor Yellow
     # its "Release notes" page: CHANGELOG.md + CHANGELOG.fr.md (write the French notes before releasing)
-    & (Join-Path $PSScriptRoot "site-notes.ps1") -DryRun:$DryRun
+    & (Join-Path $PSScriptRoot "tools\site-notes.ps1") -DryRun:$DryRun
 }
 
 Step "4/5 Commit, tag, push"

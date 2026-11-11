@@ -228,7 +228,7 @@ impl Index {
         id
     }
 
-    /// Chemin complet d'un élément : « C:\Users\samue\notes.txt ».
+    /// Chemin complet d'un élément : « C:\Users\sasha\notes.txt ».
     pub fn path(&self, i: u32) -> PathBuf {
         let mut parts = vec![];
         let mut cur = i;
