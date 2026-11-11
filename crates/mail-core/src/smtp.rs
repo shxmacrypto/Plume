@@ -62,11 +62,13 @@ pub struct Server<'a> {
     pub security: Security,
     pub user: &'a str,
     pub password: &'a str,
+    /// `password` est un jeton du fournisseur (XOAUTH2), pas un mot de passe.
+    pub bearer: bool,
 }
 
 /// Envoie un message. `from` et `to` : les adresses seules (l'enveloppe) ; `message` : en-têtes et corps.
 pub fn send(server: &Server, from: &str, to: &[String], message: &[u8]) -> Result<()> {
-    let Server { host, port, security, user, password } = *server;
+    let Server { host, port, security, user, password, bearer } = *server;
     if to.is_empty() {
         return Err("No recipient.".into());
     }
@@ -82,7 +84,19 @@ pub fn send(server: &Server, from: &str, to: &[String], message: &[u8]) -> Resul
         features = smtp.say(HELLO, 2)?;
     }
     // le mot de passe ne part jamais sur une connexion en clair, sauf vers un serveur d'essai de ce PC
-    if !user.is_empty() {
+    if bearer {
+        let line = format!("AUTH XOAUTH2 {}\r\n", crate::oauth::xoauth2(user, password));
+        smtp.conn.write_all(line.as_bytes()).and_then(|_| smtp.conn.flush()).map_err(|e| e.to_string())?;
+        let (code, text) = smtp.reply().map_err(|e| e.to_string())?;
+        if code == 334 {
+            // le refus s'explique d'abord ; une ligne vide, et vient le code final
+            let _ = smtp.say("", 5);
+            return Err(format!("535 {}", "The mail server refused the sign-in token."));
+        }
+        if code / 100 != 2 {
+            return Err(format!("{code} {text}"));
+        }
+    } else if !user.is_empty() {
         let auth = features.lines().find(|l| l.to_ascii_uppercase().starts_with("AUTH")).unwrap_or_default().to_ascii_uppercase();
         if auth.contains("PLAIN") || !auth.contains("LOGIN") {
             smtp.say(&format!("AUTH PLAIN {}", sasl_plain(user, password)), 2)?;
@@ -180,7 +194,7 @@ mod tests {
     }
 
     fn server(port: u16, password: &'static str) -> Server<'static> {
-        Server { host: "127.0.0.1", port, security: Security::Plain, user: "sam", password }
+        Server { host: "127.0.0.1", port, security: Security::Plain, user: "sam", password, bearer: false }
     }
 
     #[test]

@@ -483,6 +483,32 @@ impl Imap {
         self.capabilities()
     }
 
+    /// S'identifie par un jeton du fournisseur (XOAUTH2), comme l'exige Microsoft.
+    pub fn login_token(&mut self, user: &str, token: &str) -> Result<()> {
+        let sasl = crate::oauth::xoauth2(user, token);
+        self.tag += 1;
+        let tag = format!("A{}", self.tag);
+        // la réponse initiale tient sur la ligne de commande quand le serveur le permet (SASL-IR)
+        let mut sent = self.can("SASL-IR");
+        let first = if sent { format!("{tag} AUTHENTICATE XOAUTH2 {sasl}\r\n") } else { format!("{tag} AUTHENTICATE XOAUTH2\r\n") };
+        self.conn.write_all(first.as_bytes())?;
+        self.conn.flush()?;
+        loop {
+            let line = self.line()?;
+            if line.starts_with(b"+") {
+                // la suite attendue ; ou, une fois le jeton donné, l'explication d'un refus : une ligne vide la clôt
+                let reply = if sent { "\r\n".to_string() } else { format!("{sasl}\r\n") };
+                sent = true;
+                self.conn.write_all(reply.as_bytes())?;
+                self.conn.flush()?;
+            } else if let Some(done) = self.status(&tag, &line) {
+                done?;
+                break;
+            }
+        }
+        self.capabilities()
+    }
+
     /// Tous les dossiers du compte, la boîte de réception d'abord, puis par rôle, puis par nom.
     pub fn folders(&mut self) -> Result<Vec<Folder>> {
         let data = self.command("LIST \"\" \"*\"")?;

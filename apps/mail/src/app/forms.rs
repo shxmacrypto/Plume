@@ -6,9 +6,26 @@ use mail_core::{
     engine::Command,
     message::{self, Draft},
     net::Security,
-    store::Account,
+    oauth,
+    store::{Account, SignIn},
 };
 use plume_ui::{Align, Canvas, Color, Cx, EditStyle, Font, Mods, Rect, Theme, m, rect};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
+
+/// Où en est la connexion par la page de Microsoft.
+pub enum OAuth {
+    Idle,
+    /// La page est ouverte dans le navigateur ; `cancel` arrête l'attente.
+    Waiting { url: String, cancel: Arc<AtomicBool> },
+    /// Connecté : le jeton qui sert à renouveler l'accès.
+    Ready(String),
+}
 
 /// D'où part un message que l'on écrit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,6 +45,8 @@ pub struct AccountForm {
     pub reveal: bool,
     /// Les serveurs ont été écrits à la main : on ne les devine plus à partir de l'adresse.
     pub own_servers: bool,
+    /// Un compte Microsoft : la connexion par sa page, à la place du mot de passe.
+    pub oauth: OAuth,
 }
 
 pub struct ComposeForm {
@@ -110,7 +129,7 @@ impl App {
             None => Default::default(),
         };
         self.toast = None;
-        self.sheet = Some(Sheet::Account(AccountForm { fields, active: 0, error: None, editing, reveal: false, own_servers: editing.is_some() }));
+        self.sheet = Some(Sheet::Account(AccountForm { fields, active: 0, error: None, editing, reveal: false, own_servers: editing.is_some(), oauth: OAuth::Idle }));
         self.open_field(0, None);
     }
 
@@ -168,6 +187,81 @@ impl App {
         self.open_compose(form, (first == 3).then_some((0, 0)));
     }
 
+    /// Le compte de la boîte « Ajouter un compte » se connecte par la page de Microsoft (d'après son adresse, ou
+    /// son serveur de réception).
+    pub fn microsoft_form(f: &AccountForm) -> bool {
+        Account::guess("", &f.fields[1]).needs_web_sign_in() || server(&f.fields[3]).is_some_and(|(host, _)| host == "outlook.office365.com")
+    }
+
+    /// Ouvre la page de Microsoft dans le navigateur et attend qu'il revienne (sur un autre fil) ; un second clic
+    /// pendant l'attente l'annule.
+    fn sign_in(&mut self, cx: &mut Cx) {
+        let s = self.s;
+        let Some(Sheet::Account(f)) = self.sheet.as_mut() else { return };
+        if let OAuth::Waiting { cancel, .. } = &f.oauth {
+            cancel.store(true, Ordering::Relaxed);
+            f.oauth = OAuth::Idle;
+            return;
+        }
+        let Some(provider) = oauth::microsoft() else { return self.sheet_error(s.account_web_sign_in) };
+        let email = f.fields[1].trim().to_string();
+        if message::addresses(&email).len() != 1 {
+            return self.sheet_error(s.account_bad_email);
+        }
+        let pending = match oauth::begin(&provider, &email) {
+            Ok(p) => p,
+            Err(e) => return self.sheet_error(&e.to_string()),
+        };
+        let cancel = Arc::new(AtomicBool::new(false));
+        let url = pending.url.clone();
+        f.oauth = OAuth::Waiting { url: url.clone(), cancel: cancel.clone() };
+        f.error = None;
+        // essais automatiques : le script joue le navigateur
+        let browser = !(cfg!(feature = "test-hook") && std::env::var_os("PLUME_MAIL_TEST_OAUTH").is_some());
+        if browser {
+            cx.after(move |w| {
+                w.open(&url);
+            });
+        }
+        let sender = self.win.sender();
+        std::thread::spawn(move || {
+            let result = oauth::finish(&provider, pending, Duration::from_secs(600), &cancel);
+            sender.send(move |h, cx| {
+                if let Some(app) = h.as_any().downcast_mut::<App>() {
+                    app.signed_in(result);
+                    cx.repaint();
+                }
+            });
+        });
+    }
+
+    /// Le navigateur est revenu (ou la connexion a échoué, ou a été annulée).
+    fn signed_in(&mut self, result: Result<oauth::Tokens, String>) {
+        let Some(Sheet::Account(f)) = self.sheet.as_mut() else { return };
+        if !matches!(f.oauth, OAuth::Waiting { .. }) {
+            return;
+        }
+        match result {
+            Ok(tokens) if !tokens.refresh.is_empty() => {
+                f.oauth = OAuth::Ready(tokens.refresh);
+                f.error = None;
+            }
+            Ok(_) => {
+                f.oauth = OAuth::Idle;
+                f.error = Some("Microsoft gave no lasting sign-in (offline_access).".into());
+            }
+            Err(why) if why == "cancelled" => f.oauth = OAuth::Idle,
+            Err(why) => {
+                f.oauth = OAuth::Idle;
+                f.error = Some(why);
+            }
+        }
+        // le navigateur a pris la place : la fenêtre revient au premier plan (pas pendant les essais automatiques)
+        if std::env::var_os("PLUME_MAIL_NOACTIVATE").is_none() {
+            self.win.bring_to_front();
+        }
+    }
+
     /// Ferme la boîte ouverte. Un message commencé n'est pas perdu : il part dans les brouillons du serveur, et la
     /// boîte se ferme quand il y est.
     pub fn close_sheet(&mut self) {
@@ -180,6 +274,10 @@ impl App {
                 self.save_draft(true);
             }
             return self.win.repaint();
+        }
+        // une connexion Microsoft en attente s'arrête avec la boîte
+        if let Some(Sheet::Account(AccountForm { oauth: OAuth::Waiting { cancel, .. }, .. })) = self.sheet.as_ref() {
+            cancel.store(true, Ordering::Relaxed);
         }
         self.sheet = None;
         self.suggest.clear();
@@ -424,6 +522,14 @@ impl App {
 
     /// Pose le champ de saisie sur le champ `i`. `select` : où mettre le curseur (None : à la fin).
     pub fn open_field(&mut self, i: usize, select: Option<(usize, usize)>) {
+        // un compte Microsoft n'a pas de mot de passe à taper : on passe au champ d'à côté
+        if let Some(Sheet::Account(f)) = self.sheet.as_ref()
+            && i == 2
+            && App::microsoft_form(f)
+        {
+            let next = if f.active == 3 { 1 } else { 3 };
+            return self.open_field(next, None);
+        }
         let Some((area, mut style, text)) = self.field_box(i) else { return self.win.repaint() };
         style.select = select;
         self.suggest.clear();
@@ -517,6 +623,7 @@ impl App {
             Id::SheetCancel => return self.close_sheet(),
             Id::SheetOk => return self.sheet_ok(cx),
             Id::Field(i) => return self.open_field(i, None),
+            Id::SignIn => return self.sign_in(cx),
             Id::SheetReveal => {
                 if let Some(Sheet::Account(f)) = self.sheet.as_mut() {
                     f.reveal = !f.reveal;
@@ -560,7 +667,7 @@ impl App {
 
     // ───────────────────────── valider ─────────────────────────
 
-    fn sheet_error(&mut self, text: &str) {
+    pub fn sheet_error(&mut self, text: &str) {
         match self.sheet.as_mut() {
             Some(Sheet::Account(f)) => f.error = Some(text.to_string()),
             Some(Sheet::Compose(f)) => f.error = Some(text.to_string()),
@@ -576,6 +683,11 @@ impl App {
             Some(Sheet::Account(f)) => {
                 let [name, email, password, imap, smtp] = f.fields.clone();
                 let editing = f.editing;
+                let microsoft = App::microsoft_form(f);
+                let token = match &f.oauth {
+                    OAuth::Ready(token) => Some(token.clone()),
+                    _ => None,
+                };
                 let email = email.trim().to_string();
                 if message::addresses(&email).len() != 1 {
                     return self.sheet_error(s.account_bad_email);
@@ -586,19 +698,36 @@ impl App {
                 let mut account = Account::guess(&name, &email);
                 (account.imap_host, account.imap_port, account.imap_security) = (imap_host, imap_port, security(imap_port, 993));
                 (account.smtp_host, account.smtp_port, account.smtp_security) = (smtp_host, smtp_port, security(smtp_port, 465));
-                if account.needs_web_sign_in() {
-                    return self.sheet_error(s.account_web_sign_in);
-                }
-                // un compte déjà là garde son mot de passe si le champ reste vide
-                if password.is_empty() && editing.is_none() {
+                if microsoft {
+                    if oauth::microsoft().is_none() {
+                        return self.sheet_error(s.account_web_sign_in);
+                    }
+                    // un compte Microsoft déjà là garde sa connexion ; un nouveau doit d'abord se connecter
+                    let known = editing.and_then(|b| self.boxes.get(b)).is_some_and(|mb| mb.account.sign_in == SignIn::Microsoft);
+                    if token.is_none() && !known {
+                        return self.sheet_error(s.ms_first);
+                    }
+                    account.sign_in = SignIn::Microsoft;
+                } else if password.is_empty() && editing.is_none() {
+                    // un compte déjà là garde son mot de passe si le champ reste vide
                     return self.sheet_error(s.account_no_password);
                 }
                 account.id = match editing.and_then(|b| self.boxes.get(b)) {
                     Some(mb) => mb.account.id.clone(),
                     None => self.store.new_id(&self.boxes.iter().map(|mb| mb.account.clone()).collect::<Vec<_>>()),
                 };
-                if !password.is_empty() {
-                    self.store.set_password(&account.id, &account.user, &password);
+                // le jeton de Microsoft prend la place du mot de passe, au même endroit (chiffré par Windows)
+                match (&token, microsoft) {
+                    (Some(token), true) => {
+                        self.store.set_password(&account.id, &account.user, token);
+                    }
+                    (_, false) if !password.is_empty() => {
+                        self.store.set_password(&account.id, &account.user, &password);
+                    }
+                    _ => {}
+                }
+                if let Some(mb) = editing.and_then(|b| self.boxes.get(b)) {
+                    account.signature = mb.account.signature.clone();
                 }
                 self.close_sheet();
                 let b = match editing.filter(|b| *b < self.boxes.len()) {
@@ -741,17 +870,39 @@ impl App {
                     t.t1,
                     Align::Left,
                 );
-                c.text(s.account_hint, rect(l.card.x + pad, l.card.y + 42.0, inner, 18.0), Font::Small, t.t3, Align::Left);
-                for (i, label) in [s.f_name, s.f_email, s.f_password, s.f_imap, s.f_smtp].into_iter().enumerate() {
+                let microsoft = App::microsoft_form(f);
+                c.text(if microsoft { s.ms_hint } else { s.account_hint }, rect(l.card.x + pad, l.card.y + 42.0, inner, 18.0), Font::Small, t.t3, Align::Left);
+                for (i, label) in [s.f_name, s.f_email, if microsoft { s.f_microsoft } else { s.f_password }, s.f_imap, s.f_smtp].into_iter().enumerate() {
                     c.text(label, rect(l.fields[i].x + 2.0, l.fields[i].y - 19.0, inner, 16.0), Font::Small, t.t3, Align::Left);
-                    field(c, &mut self.hits, i, l.fields[i], &f.fields[i], i == 2 && !f.reveal);
+                    if !(microsoft && i == 2) {
+                        field(c, &mut self.hits, i, l.fields[i], &f.fields[i], i == 2 && !f.reveal);
+                    }
                 }
-                let hot = self.hover == Some(Id::SheetReveal);
-                if hot {
-                    c.fill_round(l.extra, 8.0, t.fill2);
+                if microsoft {
+                    // à la place du mot de passe : le bouton qui ouvre la page de Microsoft, et où l'on en est
+                    let r = l.fields[2];
+                    let hot = self.hover == Some(Id::SignIn);
+                    let known = f.editing.and_then(|b| self.boxes.get(b)).is_some_and(|mb| mb.account.sign_in == SignIn::Microsoft);
+                    let (label, done) = match &f.oauth {
+                        OAuth::Waiting { .. } => (s.ms_waiting, false),
+                        OAuth::Ready(_) => (s.ms_signed_in, true),
+                        OAuth::Idle if known => (s.ms_signed_in, true),
+                        OAuth::Idle => (s.ms_sign_in, false),
+                    };
+                    c.fill_round(r, m::FIELD_R, if hot { t.fill2 } else { t.fill });
+                    if done {
+                        c.fill_round(rect(r.x + 12.0, r.y + r.h / 2.0 - 4.0, 8.0, 8.0), 4.0, t.green);
+                    }
+                    c.text(label, rect(r.x + if done { 28.0 } else { 12.0 }, r.y, r.w - 40.0, r.h), Font::Body, if done { t.t1 } else { t.accent }, Align::Left);
+                    self.hits.add(r, Id::SignIn);
+                } else {
+                    let hot = self.hover == Some(Id::SheetReveal);
+                    if hot {
+                        c.fill_round(l.extra, 8.0, t.fill2);
+                    }
+                    c.text(if f.reveal { s.hide } else { s.show }, l.extra, Font::Small, if hot { t.t1 } else { t.t3 }, Align::Center);
+                    self.hits.add(l.extra, Id::SheetReveal);
                 }
-                c.text(if f.reveal { s.hide } else { s.show }, l.extra, Font::Small, if hot { t.t1 } else { t.t3 }, Align::Center);
-                self.hits.add(l.extra, Id::SheetReveal);
                 (s.save, f.error.clone(), false, false)
             }
             Sheet::Signature { account, text } => {

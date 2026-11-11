@@ -89,6 +89,8 @@ pub enum Id {
     SheetOk,
     SheetCancel,
     SheetReveal,
+    /// « Se connecter avec Microsoft », à la place du mot de passe.
+    SignIn,
     Attach,
     SaveDraft,
     Chip(usize),
@@ -765,7 +767,7 @@ impl App {
                 }
             }
             Id::MenuDim => self.menu = None,
-            Id::Field(_) | Id::SheetOk | Id::SheetCancel | Id::SheetReveal | Id::Attach | Id::SaveDraft | Id::Chip(_) | Id::Suggest(_) => self.sheet_click(id, cx),
+            Id::Field(_) | Id::SheetOk | Id::SheetCancel | Id::SheetReveal | Id::SignIn | Id::Attach | Id::SaveDraft | Id::Chip(_) | Id::Suggest(_) => self.sheet_click(id, cx),
             Id::List | Id::Reading | Id::SheetCard | Id::SheetDim => {}
         }
         cx.repaint();

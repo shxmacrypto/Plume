@@ -2,7 +2,10 @@
 //! Elle n'existe que dans une compilation `--features test-hook`, et ne s'ouvre que si la variable
 //! PLUME_MAIL_TEST_PORT est définie. Protocole : une commande JSON par ligne sur 127.0.0.1, une réponse par ligne.
 
-use crate::app::{App, Id, forms::Sheet};
+use crate::app::{
+    App, Id,
+    forms::{OAuth, Sheet},
+};
 use mail_core::engine::Work;
 use plume_ui::{Button, Cx, Event, Handler, Mods, Pt, Sender, Window, pt};
 use serde_json::{Value, json};
@@ -109,7 +112,16 @@ fn state(app: &App) -> Value {
         "edit": app.edit.map(|e| format!("{e:?}")),
         "edit_text": app.win.edit_text(),
         "sheet": app.sheet.as_ref().map(|s| match s {
-            Sheet::Account(f) => json!({ "kind": "account", "fields": f.fields.iter().enumerate().map(|(i, v)| if i == 2 { "•".repeat(v.chars().count()) } else { v.clone() }).collect::<Vec<_>>(), "active": f.active, "error": f.error, "editing": f.editing }),
+            Sheet::Account(f) => json!({
+                "kind": "account",
+                "fields": f.fields.iter().enumerate().map(|(i, v)| if i == 2 { "•".repeat(v.chars().count()) } else { v.clone() }).collect::<Vec<_>>(),
+                "active": f.active,
+                "error": f.error,
+                "editing": f.editing,
+                "microsoft": App::microsoft_form(f),
+                "oauth": match &f.oauth { OAuth::Idle => "idle", OAuth::Waiting { .. } => "waiting", OAuth::Ready(_) => "ready" },
+                "oauth_url": match &f.oauth { OAuth::Waiting { url, .. } => Some(url.clone()), _ => None },
+            }),
             Sheet::Compose(f) => json!({ "kind": "compose", "fields": f.fields, "active": f.active, "error": f.error, "sending": f.sending, "saving": f.saving, "draft": f.draft.as_ref().map(|d| d.1), "files": f.files.iter().map(|(n, d)| json!([n, d.len()])).collect::<Vec<_>>(), "in_reply_to": f.in_reply_to }),
             Sheet::Signature { account, text } => json!({ "kind": "signature", "account": account, "text": text }),
             Sheet::Confirm { title, action, .. } => json!({ "kind": "confirm", "title": title, "action": action }),

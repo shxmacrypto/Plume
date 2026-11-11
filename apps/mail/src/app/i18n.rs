@@ -120,6 +120,12 @@ pub struct Strings {
     pub signature_saved: &'static str,
     pub threads_on: &'static str,
     pub threads_off: &'static str,
+    pub f_microsoft: &'static str,
+    pub ms_sign_in: &'static str,
+    pub ms_waiting: &'static str,
+    pub ms_signed_in: &'static str,
+    pub ms_first: &'static str,
+    pub ms_hint: &'static str,
 }
 
 impl Strings {
@@ -202,7 +208,7 @@ static EN: Strings = Strings {
     account_bad_email: "Write a complete email address, like name@example.com.",
     account_no_password: "Type the password of the account.",
     account_bad_server: "Write the servers as name:port, like imap.example.com:993.",
-    account_web_sign_in: "Microsoft accounts need to sign in through Microsoft's page. Plume Mail cannot do that yet.",
+    account_web_sign_in: "This version of Plume Mail cannot sign in to Microsoft accounts.",
     save: "Save",
     show: "Show",
     hide: "Hide",
@@ -240,6 +246,12 @@ static EN: Strings = Strings {
     signature_saved: "Signature saved.",
     threads_on: "Group conversations",
     threads_off: "Show one message per line",
+    f_microsoft: "Microsoft account",
+    ms_sign_in: "Sign in with Microsoft…",
+    ms_waiting: "Finish in your browser… (click to cancel)",
+    ms_signed_in: "Signed in with Microsoft",
+    ms_first: "Sign in with Microsoft first.",
+    ms_hint: "Signing in happens on Microsoft's page, in your browser.",
 };
 
 static FR: Strings = Strings {
@@ -302,7 +314,7 @@ static FR: Strings = Strings {
     account_bad_email: "Écrivez une adresse complète, comme nom@exemple.com.",
     account_no_password: "Tapez le mot de passe du compte.",
     account_bad_server: "Écrivez les serveurs sous la forme nom:port, comme imap.exemple.com:993.",
-    account_web_sign_in: "Les comptes Microsoft exigent de se connecter par la page de Microsoft. Plume Mail ne sait pas encore le faire.",
+    account_web_sign_in: "Cette version de Plume Mail ne sait pas se connecter aux comptes Microsoft.",
     save: "Enregistrer",
     show: "Afficher",
     hide: "Masquer",
@@ -340,6 +352,12 @@ static FR: Strings = Strings {
     signature_saved: "Signature enregistrée.",
     threads_on: "Regrouper les conversations",
     threads_off: "Afficher un message par ligne",
+    f_microsoft: "Compte Microsoft",
+    ms_sign_in: "Se connecter avec Microsoft…",
+    ms_waiting: "Terminez dans votre navigateur… (cliquez pour annuler)",
+    ms_signed_in: "Connecté avec Microsoft",
+    ms_first: "Connectez-vous d'abord avec Microsoft.",
+    ms_hint: "Connexion sur la page de Microsoft, dans votre navigateur.",
 };
 
 pub fn strings(lang: Lang) -> &'static Strings {

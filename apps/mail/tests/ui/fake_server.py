@@ -39,8 +39,9 @@ class Mailbox:
 
 
 class FakeMail:
-    def __init__(self, user="sam@example.test", password="pw-test", tls=None):
+    def __init__(self, user="sam@example.test", password="pw-test", tls=None, tokens=()):
         self.user, self.password, self.tls = user, password, tls
+        self.tokens = set(tokens)   # the access tokens accepted for XOAUTH2 (a Microsoft account)
         self.lock = threading.RLock()
         # the names are the ones the server gives: accents written the IMAP way
         self.box = {"INBOX": Mailbox(), "Drafts": Mailbox("\\Drafts"), "Sent": Mailbox("\\Sent"), "Trash": Mailbox("\\Trash"), "Work": Mailbox("\\Noselect"), "Work/Projets &AOk-t&AOk-": Mailbox()}
@@ -134,6 +135,22 @@ class FakeMail:
                 self.commands.append(cmd if cmd in ("LOGIN", "AUTHENTICATE") else rest)
             if cmd == "CAPABILITY":
                 send("* CAPABILITY IMAP4rev1 AUTH=PLAIN MOVE UIDPLUS IDLE\r\n%s OK done\r\n" % tag)
+            elif cmd == "AUTHENTICATE" and args.upper().startswith("XOAUTH2"):
+                initial = args[7:].strip()
+                if not initial:
+                    send("+ \r\n")
+                    initial = f.readline().decode("utf-8").strip()
+                fields = base64.b64decode(initial).decode("utf-8").split("\x01")
+                authed = fields[0] == "user=" + self.user and fields[1].removeprefix("auth=Bearer ") in self.tokens
+                with self.lock:
+                    self.logins += authed
+                if authed:
+                    send("%s OK logged in\r\n" % tag)
+                else:
+                    # a refused token: first the reason, then the answer once the client sent an empty line
+                    send("+ eyJzdGF0dXMiOiI0MDEifQ==\r\n")
+                    f.readline()
+                    send("%s NO [AUTHENTICATIONFAILED] Invalid token\r\n" % tag)
             elif cmd == "AUTHENTICATE":
                 send("+ \r\n")
                 parts = base64.b64decode(f.readline().strip()).decode("utf-8").split("\0")
@@ -271,6 +288,15 @@ class FakeMail:
             upper = line.upper()
             if upper.startswith("EHLO"):
                 send("250-fake\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n")
+            elif upper.startswith("AUTH XOAUTH2"):
+                fields = base64.b64decode(line.split(" ", 2)[2]).decode("utf-8").split("\x01")
+                authed = fields[0] == "user=" + self.user and fields[1].removeprefix("auth=Bearer ") in self.tokens
+                if authed:
+                    send("235 ok\r\n")
+                else:
+                    send("334 eyJzdGF0dXMiOiI0MDEifQ==\r\n")
+                    f.readline()
+                    send("535 5.7.3 Authentication unsuccessful\r\n")
             elif upper.startswith("AUTH PLAIN"):
                 parts = base64.b64decode(line.split(" ", 2)[2]).decode("utf-8").split("\0")
                 authed = parts[-2:] == [self.user, self.password]

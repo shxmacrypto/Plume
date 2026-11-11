@@ -5,8 +5,8 @@
 use crate::{
     imap::{self, Flags, Folder, Imap, Role},
     message::{self, Draft, Parsed, Summary},
-    smtp,
-    store::{Account, Listing, Store},
+    oauth, smtp,
+    store::{Account, Listing, SignIn, Store},
 };
 use std::{
     collections::HashMap,
@@ -148,13 +148,14 @@ impl Engine {
         let (tx, rx) = mpsc::channel();
         let notify: Notify = Arc::new(notify);
         let stop = Arc::new(AtomicBool::new(false));
+        let keys = Arc::new(Keys { account: account.clone(), store: store.clone(), cache: Default::default() });
         // le guet : sur un serveur qui sait prévenir (IDLE), le nouveau courrier arrive sans attendre
         if push {
-            let (account, store, stop, notify) = (account.clone(), store.clone(), stop.clone(), notify.clone());
-            std::thread::spawn(move || watch(account, store, stop, notify));
+            let (keys, store, stop, notify) = (keys.clone(), store.clone(), stop.clone(), notify.clone());
+            std::thread::spawn(move || watch(keys, store, stop, notify));
         }
         std::thread::spawn(move || {
-            let mut worker = Worker { account, store, imap: None, selected: None, notify };
+            let mut worker = Worker { account, store, keys, imap: None, selected: None, notify };
             for command in rx {
                 worker.handle(command);
             }
@@ -179,7 +180,8 @@ impl Drop for Engine {
 /// Le guet d'un compte : une seconde connexion, ouverte sur la boîte de réception, qui attend que le serveur
 /// annonce du nouveau (IDLE) et le dit aussitôt. Un serveur qui ne sait pas le faire est relevé à intervalles,
 /// comme avant. Le guet s'arrête quand le compte est lâché.
-fn watch(account: Account, store: Store, stop: Arc<AtomicBool>, notify: Notify) {
+fn watch(keys: Arc<Keys>, store: Store, stop: Arc<AtomicBool>, notify: Notify) {
+    let account = keys.account.clone();
     let stopped = || stop.load(Ordering::Relaxed);
     // attend `secs` secondes, ou moins si l'on demande d'arrêter
     let pause = |secs: u64| {
@@ -193,13 +195,7 @@ fn watch(account: Account, store: Store, stop: Arc<AtomicBool>, notify: Notify) 
     let mut backoff = 5;
     while !stopped() {
         let inbox = store.folders(&account.id).into_iter().find(|f| f.role == Role::Inbox).map_or("INBOX".to_string(), |f| f.raw);
-        let session = (|| -> Result<Imap, imap::Error> {
-            let password = store.password(&account.id).ok_or_else(|| imap::Error::No("no password".into()))?;
-            let mut imap = Imap::connect(&account.imap_host, account.imap_port, account.imap_security)?;
-            imap.login(&account.user, &password)?;
-            Ok(imap)
-        })();
-        let mut imap = match session {
+        let mut imap = match keys.imap() {
             Ok(imap) => imap,
             Err(_) => {
                 // pas de réseau, mot de passe refusé : le fil du compte le dira ; on réessaie plus tard
@@ -231,6 +227,75 @@ fn watch(account: Account, store: Store, stop: Arc<AtomicBool>, notify: Notify) 
 }
 
 
+
+/// De quoi s'identifier, partagé par le fil du compte et son guet.
+enum Secret {
+    Password(String),
+    /// Un jeton du fournisseur (connexion Microsoft).
+    Bearer(String),
+}
+
+struct Keys {
+    account: Account,
+    store: Store,
+    /// Le jeton d'accès en cours et l'instant où le renouveler.
+    cache: std::sync::Mutex<Option<(String, std::time::Instant)>>,
+}
+
+impl Keys {
+    fn secret(&self) -> Result<Secret, Trouble> {
+        let id = &self.account.id;
+        match self.account.sign_in {
+            SignIn::Password => self.store.password(id).map(Secret::Password).ok_or_else(|| Trouble::Refused("No password is saved for this account.".into())),
+            SignIn::Microsoft => {
+                let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some((token, until)) = cache.as_ref()
+                    && std::time::Instant::now() < *until
+                {
+                    return Ok(Secret::Bearer(token.clone()));
+                }
+                let provider = oauth::microsoft().ok_or_else(|| Trouble::Refused(SIGN_IN_AGAIN.into()))?;
+                let refresh = self.store.password(id).ok_or_else(|| Trouble::Refused(SIGN_IN_AGAIN.into()))?;
+                let tokens = oauth::refresh(&provider, &refresh).map_err(|e| match e {
+                    oauth::Failure::Network(m) => Trouble::Network(m),
+                    oauth::Failure::Refused(m) => Trouble::Refused(format!("{SIGN_IN_AGAIN} ({m})")),
+                })?;
+                // Microsoft donne parfois un nouveau jeton de renouvellement : c'est lui qu'on garde
+                if !tokens.refresh.is_empty() && tokens.refresh != refresh {
+                    self.store.set_password(id, &self.account.user, &tokens.refresh);
+                }
+                let until = std::time::Instant::now() + tokens.expires.saturating_sub(std::time::Duration::from_secs(120));
+                *cache = Some((tokens.access.clone(), until));
+                Ok(Secret::Bearer(tokens.access))
+            }
+        }
+    }
+
+    /// Le jeton a été refusé : le prochain essai en demandera un neuf.
+    fn forget(&self) {
+        *self.cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    /// Une connexion au serveur de réception, identifiée.
+    fn imap(&self) -> Result<Imap, Trouble> {
+        let a = &self.account;
+        let secret = self.secret()?;
+        let mut imap = Imap::connect(&a.imap_host, a.imap_port, a.imap_security)?;
+        let signed = match &secret {
+            Secret::Password(p) => imap.login(&a.user, p),
+            Secret::Bearer(t) => imap.login_token(&a.user, t),
+        };
+        if signed.is_err() && matches!(secret, Secret::Bearer(_)) {
+            self.forget();
+        }
+        signed?;
+        Ok(imap)
+    }
+}
+
+/// Ce que dit un compte Microsoft dont la connexion ne vaut plus.
+const SIGN_IN_AGAIN: &str = "Sign in to Microsoft again, in the account settings.";
+
 /// Pourquoi une commande n'a pas abouti.
 enum Trouble {
     /// Le réseau : on se reconnecte et on réessaie une fois.
@@ -253,6 +318,7 @@ type Done = Result<(), Trouble>;
 struct Worker {
     account: Account,
     store: Store,
+    keys: Arc<Keys>,
     imap: Option<Imap>,
     /// Le dossier ouvert sur le serveur.
     selected: Option<String>,
@@ -294,19 +360,11 @@ impl Worker {
         self.working(Work::Idle);
     }
 
-    fn password(&self) -> Result<String, Trouble> {
-        self.store.password(&self.account.id).ok_or_else(|| Trouble::Refused("No password is saved for this account.".into()))
-    }
-
     /// La connexion au serveur, ouverte et identifiée au besoin.
     fn imap(&mut self) -> Result<&mut Imap, Trouble> {
         if self.imap.is_none() {
             self.working(Work::Connecting);
-            let password = self.password()?;
-            let a = &self.account;
-            let mut imap = Imap::connect(&a.imap_host, a.imap_port, a.imap_security)?;
-            imap.login(&a.user, &password)?;
-            self.imap = Some(imap);
+            self.imap = Some(self.keys.imap()?);
             self.selected = None;
         }
         Ok(self.imap.as_mut().expect("just connected"))
@@ -527,10 +585,18 @@ impl Worker {
         }
         let unique = std::collections::hash_map::RandomState::new().build_hasher().finish();
         let raw = message::build(draft, now(), unique);
-        let password = self.password()?;
+        let (secret, bearer) = match self.keys.secret()? {
+            Secret::Password(p) => (p, false),
+            Secret::Bearer(t) => (t, true),
+        };
         let a = self.account.clone();
-        let server = smtp::Server { host: &a.smtp_host, port: a.smtp_port, security: a.smtp_security, user: &a.user, password: &password };
-        smtp::send(&server, &a.email, &to, &raw).map_err(Trouble::Refused)?;
+        let server = smtp::Server { host: &a.smtp_host, port: a.smtp_port, security: a.smtp_security, user: &a.user, password: &secret, bearer };
+        smtp::send(&server, &a.email, &to, &raw).map_err(|why| {
+            if bearer {
+                self.keys.forget();
+            }
+            Trouble::Refused(why)
+        })?;
         self.tell(News::Sent { account: a.id.clone(), result: Ok(()) });
         // La copie dans « Envoyés ». Gmail la range lui-même : l'y déposer la mettrait en double. Si elle échoue,
         // le message est parti quand même : on ne le signale pas comme un envoi manqué.

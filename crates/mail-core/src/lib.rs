@@ -6,5 +6,6 @@ pub mod html;
 pub mod imap;
 pub mod message;
 pub mod net;
+pub mod oauth;
 pub mod smtp;
 pub mod store;

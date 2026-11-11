@@ -437,9 +437,50 @@ mod credentials {
         s.encode_utf16().chain(Some(0)).collect()
     }
 
+    /// Un secret par morceaux : une entrée en garde 2 560 octets au plus, un jeton de Microsoft peut dépasser.
+    const PIECE: usize = 2048;
+
+    fn piece_name(target: &str, k: usize) -> String {
+        if k == 0 { target.to_string() } else { format!("{target}#{}", k + 1) }
+    }
+
     pub fn write(target: &str, user: &str, password: &str) -> bool {
+        let bytes = password.as_bytes();
+        let pieces: Vec<&[u8]> = if bytes.is_empty() { vec![bytes] } else { bytes.chunks(PIECE).collect() };
+        for (k, piece) in pieces.iter().enumerate() {
+            if !write_one(&piece_name(target, k), user, piece) {
+                return false;
+            }
+        }
+        // les morceaux d'un secret plus long d'avant
+        let mut k = pieces.len();
+        while read_one(&piece_name(target, k)).is_some() {
+            delete_one(&piece_name(target, k));
+            k += 1;
+        }
+        true
+    }
+
+    pub fn read(target: &str) -> Option<String> {
+        let mut all = read_one(target)?;
+        let mut k = 1;
+        while let Some(more) = read_one(&piece_name(target, k)) {
+            all.extend(more);
+            k += 1;
+        }
+        String::from_utf8(all).ok()
+    }
+
+    pub fn delete(target: &str) {
+        let mut k = 0;
+        while read_one(&piece_name(target, k)).is_some() {
+            delete_one(&piece_name(target, k));
+            k += 1;
+        }
+    }
+
+    fn write_one(target: &str, user: &str, secret: &[u8]) -> bool {
         let (mut target, mut user) = (wide(target), wide(user));
-        let secret = password.as_bytes();
         let credential = CREDENTIALW {
             Flags: CRED_FLAGS(0),
             Type: CRED_TYPE_GENERIC,
@@ -457,20 +498,19 @@ mod credentials {
         unsafe { CredWriteW(&credential, 0).is_ok() }
     }
 
-    pub fn read(target: &str) -> Option<String> {
+    fn read_one(target: &str) -> Option<Vec<u8>> {
         let target = wide(target);
         let mut found: *mut CREDENTIALW = std::ptr::null_mut();
         unsafe {
             CredReadW(PCWSTR(target.as_ptr()), CRED_TYPE_GENERIC, None, &mut found).ok()?;
             let c = &*found;
-            let secret = std::slice::from_raw_parts(c.CredentialBlob, c.CredentialBlobSize as usize);
-            let password = String::from_utf8(secret.to_vec()).ok();
+            let secret = if c.CredentialBlob.is_null() { vec![] } else { std::slice::from_raw_parts(c.CredentialBlob, c.CredentialBlobSize as usize).to_vec() };
             CredFree(found as *const _);
-            password
+            Some(secret)
         }
     }
 
-    pub fn delete(target: &str) {
+    fn delete_one(target: &str) {
         let target = wide(target);
         unsafe {
             let _ = CredDeleteW(PCWSTR(target.as_ptr()), CRED_TYPE_GENERIC, None);
@@ -497,8 +537,16 @@ mod tests {
         assert_eq!(credentials::read(&target).as_deref(), Some("s3cret é 🔑"));
         assert!(credentials::write(&target, "sam@example.com", "changed"));
         assert_eq!(credentials::read(&target).as_deref(), Some("changed"));
+        // un jeton plus long qu'une entrée : en plusieurs morceaux, relu en entier ; plus court ensuite, les morceaux en trop partent
+        let long: String = (0..6000).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
+        assert!(credentials::write(&target, "sam@example.com", &long));
+        assert_eq!(credentials::read(&target).as_deref(), Some(long.as_str()));
+        assert!(credentials::write(&target, "sam@example.com", "short"));
+        assert_eq!(credentials::read(&target).as_deref(), Some("short"));
+        assert_eq!(credentials::read(&format!("{target}#2")), None);
+        assert!(credentials::write(&target, "sam@example.com", &long));
         credentials::delete(&target);
-        assert_eq!(credentials::read(&target), None);
+        assert_eq!((credentials::read(&target), credentials::read(&format!("{target}#3"))), (None, None));
     }
 
     #[test]
