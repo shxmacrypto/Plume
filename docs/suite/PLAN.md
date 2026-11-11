@@ -63,9 +63,9 @@ Planned for the suite phase: move the browser to `apps/browser`, turn `launcher/
 
 ## What is built
 
-Everything below runs and is covered by tests: **80 unit tests** (`cargo test -p plume-ui -p fex-core
--p mail-core -p plume-fex -p plume-mail`), **220 checks** in the Plume FEx UI scenarios and **45 checks** in
-the Plume Mail scenario.
+Everything below runs and is covered by tests (1.0.0): **131 unit tests** (`cargo test --workspace`), **257
+checks** in the 19 Plume FEx UI scenarios, **63 + 10 checks** in the two Plume Mail scenarios and **29 checks** in
+the installer and Plume Suite scenario.
 
 ### Plume FEx
 
