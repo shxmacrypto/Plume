@@ -34,6 +34,8 @@ button { font: inherit; border: 0; cursor: pointer; color: inherit; }
 
 #session { position: fixed; inset: 0; background: #000; }
 #screen { position: absolute; inset: 0; width: 100%; height: 100%; outline: none; cursor: none; }
+/* with a mouse, the pointer of this computer stays visible over the PC's screen */
+@media (pointer: fine) { #screen { cursor: default; } }
 .wait { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 18px; background: rgba(11, 20, 22, 0.86); text-align: center; padding: 20px; }
 .wait p { color: var(--t2); max-width: 340px; }
 .spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.15); border-top-color: var(--acc2); animation: r 0.9s linear infinite; }

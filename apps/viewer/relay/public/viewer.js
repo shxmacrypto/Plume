@@ -230,6 +230,10 @@ function transform() {
   return { s, ox: fit.ox * camera.zoom - camera.x, oy: fit.oy * camera.zoom - camera.y };
 }
 
+// the mouse of this computer, over the screen (a phone has none)
+let mouseOver = false, lastMouse = 0;
+setInterval(() => { if (mouseOver && remote.cursor && performance.now() - lastMouse > 1500 && performance.now() - lastMouse < 1700) draw(); }, 200);
+
 function draw() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, view.width, view.height);
@@ -237,7 +241,9 @@ function draw() {
   const { s, ox, oy } = transform();
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(fb, ox, oy, remote.w * s, remote.h * s);
-  if (remote.cursor && remote.cx >= 0) drawCursor(ox + remote.cx * s, oy + remote.cy * s, Math.max(1, s * 1.1) * (window.devicePixelRatio || 1) * 0.9);
+  // with a mouse, your own pointer shows; the PC's one is drawn when yours rests or is elsewhere
+  const ownPointer = mouseOver && performance.now() - lastMouse < 1500;
+  if (remote.cursor && remote.cx >= 0 && !ownPointer) drawCursor(ox + remote.cx * s, oy + remote.cy * s, Math.max(1, s * 1.1) * (window.devicePixelRatio || 1) * 0.9);
 }
 
 function drawCursor(x, y, k) {
@@ -265,7 +271,8 @@ const send = (m) => { if (S && S.input && S.input.readyState === 'open') S.input
 
 /* ---------- mouse (PC) ---------- */
 let rightNext = false;
-view.addEventListener('mousemove', (e) => { const p = toRemote(e.clientX, e.clientY); send({ t: 'mm', x: p.x, y: p.y }); });
+view.addEventListener('mousemove', (e) => { mouseOver = true; lastMouse = performance.now(); const p = toRemote(e.clientX, e.clientY); send({ t: 'mm', x: p.x, y: p.y }); });
+view.addEventListener('mouseleave', () => { mouseOver = false; draw(); });
 view.addEventListener('mousedown', (e) => {
   e.preventDefault(); view.focus();
   const p = toRemote(e.clientX, e.clientY);
