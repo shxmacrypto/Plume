@@ -1,15 +1,17 @@
 //! The Cleanup page: one card per suggestion (what it is, its size, what blocks it), the files of a list to pick
 //! one by one, and the bar that starts the cleanup.
 
-use super::{App, Dups, Hit, ROW_H, blocked_text, paint::ic};
+use super::{App, Dups, Hit, blocked_text, paint::ic};
 use crate::{
     clean::{Blocked, Kind, human},
     i18n::{ago, count, fill, tr},
 };
-use plume_ui::{Align, Canvas, Color, Font, Rect, icons, icons::Icon, rect};
+use plume_ui::{Align, Canvas, Font, Rect, icons, icons::Icon, rect};
 use std::sync::atomic::Ordering;
 
 const CARD_H: f32 = 96.0;
+/// Between two cards.
+const GAP: f32 = 14.0;
 
 fn icon_of(k: Kind) -> &'static Icon {
     match k {
@@ -49,8 +51,9 @@ impl App {
         // the last cleanup
         if let Some(o) = self.result.clone() {
             let r = rect(x0, y, w, 52.0);
-            c.fill_round(r, 14.0, p.accent.fade(0.14));
-            c.icon(&icons::CHECK, rect(r.x + 18.0, r.y + 18.0, 16.0, 16.0), p.accent);
+            c.fill_round(r, 16.0, p.accent.fade(if p.dark { 0.16 } else { 0.12 }));
+            c.stroke_round(r, 16.0, p.accent.fade(0.45), 1.0);
+            c.icon(&icons::CHECK, rect(r.x + 20.0, r.y + 18.0, 16.0, 16.0), p.ink);
             let mut s = fill(tr("{size} freed."), &[&human(o.freed)]);
             if self.set.recycle && self.places.sandbox.is_none() {
                 s.push(' ');
@@ -64,30 +67,31 @@ impl App {
                 s.push(' ');
                 s.push_str(&fill(tr("{n} not touched: Plume Clean never removes them there."), &[&count(o.refused)]));
             }
-            c.text(&s, rect(r.x + 46.0, r.y, r.w - 140.0, r.h), Font::Body, p.t1, Align::Left);
-            self.pill_right(c, r.right() - 12.0, r.y + 10.0, tr("OK"), false, Hit::DismissResult);
-            y += 64.0;
+            c.text(&s, rect(r.x + 48.0, r.y, r.w - 140.0, r.h), Font::Body, p.t1, Align::Left);
+            self.pill_right(c, r.right() - 10.0, r.y + 10.0, tr("OK"), false, Hit::DismissResult);
+            y += 66.0;
         }
         // administrator rights
         let admin_waiting = self.sugg.iter().any(|s| s.blocked == Some(Blocked::Admin));
         if admin_waiting {
             let r = rect(x0, y, w, 52.0);
-            c.fill_round(r, 14.0, p.warn.fade(0.12));
-            c.icon(&ic::SHIELD, rect(r.x + 18.0, r.y + 18.0, 16.0, 16.0), p.warn);
-            c.text(tr("Some of Windows' own files need administrator rights."), rect(r.x + 46.0, r.y, r.w - 260.0, r.h), Font::Body, p.t1, Align::Left);
-            self.pill_right(c, r.right() - 12.0, r.y + 10.0, tr("Restart as administrator"), false, Hit::Elevate);
-            y += 64.0;
+            c.fill_round(r, 16.0, p.warn.fade(0.12));
+            c.stroke_round(r, 16.0, p.warn.fade(0.4), 1.0);
+            c.icon(&ic::SHIELD, rect(r.x + 20.0, r.y + 18.0, 16.0, 16.0), p.warn);
+            c.text(tr("Some of Windows' own files need administrator rights."), rect(r.x + 48.0, r.y, r.w - 300.0, r.h), Font::Body, p.t1, Align::Left);
+            self.pill_right(c, r.right() - 10.0, r.y + 10.0, tr("Restart as administrator"), false, Hit::Elevate);
+            y += 66.0;
         }
         // the cards
         let bar_h = 72.0;
         let list = rect(x0 - 8.0, y, w + 16.0, body.bottom() - y - bar_h);
         self.clean_rect = list;
-        let content = self.sugg.len() as f32 * (CARD_H + 10.0);
-        self.clean_scroll = self.clean_scroll.min((content - list.h + 10.0).max(0.0));
+        let content = self.sugg.len() as f32 * (CARD_H + GAP);
+        self.clean_scroll = self.clean_scroll.min((content - list.h + GAP).max(0.0));
         c.clip(list);
         let n = self.sugg.len();
         for i in 0..n {
-            let cy = list.y + i as f32 * (CARD_H + 10.0) - self.clean_scroll;
+            let cy = list.y + i as f32 * (CARD_H + GAP) - self.clean_scroll;
             if cy > list.bottom() || cy + CARD_H < list.y {
                 continue;
             }
@@ -95,11 +99,11 @@ impl App {
         }
         c.unclip();
         if self.sugg.is_empty() && self.measuring {
-            c.text(tr("Looking at temporary files, caches and downloads…"), list, Font::Body, p.t3, Align::Center);
+            self.empty_state(c, list, &ic::SPARKLE, tr("Measuring…"), tr("Looking at temporary files, caches and downloads…"), None);
         }
         // the bar
         let bar = rect(0.0, body.bottom() - bar_h, body.x + body.w, bar_h);
-        c.fill(bar, p.bar);
+        c.gradient_v(bar, p.hdr1, p.hdr2);
         c.hline(0.0, bar.y, bar.w, p.line);
         let sel = self.selected_total();
         let bin = self.sugg.iter().any(|s| s.selected && s.kind == Kind::RecycleBin && s.blocked.is_none());
@@ -107,13 +111,12 @@ impl App {
         c.text(&what, rect(x0, bar.y, w - 220.0, bar.h), Font::Title, if sel > 0 || bin { p.t1 } else { p.t3 }, Align::Left);
         let label = if self.cleaning { tr("Cleaning…") } else { tr("Clean selected") };
         let ready = (sel > 0 || bin) && !self.cleaning;
+        let tw = c.text_width(label, Font::BodyBold) + 40.0;
+        let r = rect(x0 + w - tw, bar.y + (bar_h - 36.0) / 2.0, tw, 36.0);
         if ready {
-            self.pill_right(c, x0 + w, bar.y + 20.0, label, true, Hit::Clean);
+            self.pill_in(c, r, label, true, Hit::Clean);
         } else {
-            let tw = c.text_width(label, Font::BodyBold) + 32.0;
-            let r = rect(x0 + w - tw, bar.y + 20.0, tw, 32.0);
-            c.fill_round(r, 16.0, p.t1.fade(0.06));
-            c.text(label, r, Font::BodyBold, p.t3, Align::Center);
+            self.pill_off(c, r, label);
         }
     }
 
@@ -123,18 +126,28 @@ impl App {
         let usable = s.blocked.is_none() && s.count > 0;
         c.fill_round(r, 16.0, p.card);
         if s.selected && usable {
-            c.stroke_round(r, 16.0, p.accent.fade(0.7), 1.5);
+            c.stroke_round(r, 16.0, p.accent.fade(0.8), 1.5);
         } else {
             c.stroke_round(r, 16.0, p.line, 1.0);
         }
-        let tick = rect(r.x + 18.0, r.y + 20.0, 22.0, 22.0);
+        let tick = rect(r.x + 20.0, r.y + 20.0, 22.0, 22.0);
         self.check(c, tick, s.selected && usable, usable);
         if usable {
             self.hits.add(rect(r.x, r.y, 56.0, r.h).intersect(&clip), Hit::Tick(i));
         }
-        c.fill_round(rect(r.x + 54.0, r.y + 16.0, 30.0, 30.0), 9.0, p.accent.fade(if usable { 0.16 } else { 0.07 }));
-        c.icon(icon_of(s.kind), rect(r.x + 61.0, r.y + 23.0, 16.0, 16.0), if usable { p.accent } else { p.t3 });
-        let tx = r.x + 98.0;
+        c.fill_round(rect(r.x + 56.0, r.y + 14.0, 34.0, 34.0), 10.0, if s.selected && usable { p.accent.fade(0.16) } else { p.fill });
+        c.icon(
+            icon_of(s.kind),
+            rect(r.x + 65.0, r.y + 23.0, 16.0, 16.0),
+            if s.selected && usable {
+                p.ink
+            } else if usable {
+                p.t2
+            } else {
+                p.t4
+            },
+        );
+        let tx = r.x + 104.0;
         let right_w = 220.0;
         c.text(
             tr(s.kind.title()),
@@ -179,7 +192,7 @@ impl App {
         }
         // what to do about it
         let ay = r.bottom() - 40.0;
-        let right = r.right() - 18.0;
+        let right = r.right() - 20.0;
         if let Some(b) = &s.blocked {
             let text = blocked_text(b);
             let tw = c.text_width(&text, Font::SmallBold) + 18.0;
@@ -217,11 +230,11 @@ impl App {
         if s.kind == Kind::Duplicates {
             self.pill(c, x, y, tr("Tick all copies but the oldest"), false, Hit::KeepOldest);
         }
-        let list = rect(x0 - 8.0, y + 46.0, w + 16.0, body.bottom() - y - 66.0);
-        c.fill_round(list, 16.0, p.card);
-        let rows = list.inset_xy(6.0, 6.0);
+        let list = rect(x0, y + 46.0, w, body.bottom() - y - 70.0);
+        self.card(c, list);
+        let rows = list.inset_xy(8.0, 8.0);
         self.review_rect = rows;
-        let rh = ROW_H + 10.0;
+        let rh = 48.0;
         self.review_scroll = self.review_scroll.min((s.items.len() as f32 * rh - rows.h).max(0.0));
         let first = (self.review_scroll / rh).floor() as usize;
         let now = crate::clean::now_filetime();
@@ -234,11 +247,12 @@ impl App {
             let it = &s.items[k];
             let row = rect(rows.x, ry, rows.w, rh - 2.0);
             let hit = Hit::ReviewRow(k);
-            if s.kind == Kind::Duplicates && it.group % 2 == 1 {
-                c.fill_round(row, 8.0, p.t1.fade(0.03));
-            }
             if self.hovered(&hit) {
-                c.fill_round(row, 8.0, p.t1.fade(0.06));
+                c.fill_round(row, 10.0, p.hover);
+            } else if it.selected {
+                c.fill_round(row, 10.0, p.accent.fade(0.08));
+            } else if s.kind == Kind::Duplicates && it.group % 2 == 1 {
+                c.fill_round(row, 10.0, p.hover.fade(0.5));
             }
             // the first of each group of duplicates: a thin line above
             if s.kind == Kind::Duplicates && k > 0 && s.items[k - 1].group != it.group {
@@ -258,8 +272,7 @@ impl App {
         }
         c.unclip();
         if s.items.is_empty() {
-            c.text(tr("Nothing here."), rows, Font::Body, p.t3, Align::Center);
+            self.empty_state(c, rows, icon_of(s.kind), tr("Nothing here."), tr(s.kind.explain()), None);
         }
-        let _ = Color::TRANSPARENT;
     }
 }

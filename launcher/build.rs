@@ -10,7 +10,9 @@ fn main() {
         println!("cargo:rustc-cfg=plume_mail");
     }
     let mut vars = vec!["PLUME_SUITE_EXE", "PLUME_CORE_EXE", "PLUME_LOADER_DLL", "PLUME_FEX_EXE", "PLUME_VIEWER_EXE", "PLUME_MUSIC_EXE"];
-    for app in ["DROP", "LAUNCHER", "PASSWORDS", "MEDIA", "TASK", "CLEAN", "BACKUP", "CLIPBOARD", "PDF", "CALENDAR", "CONVERT"] {
+    for app in
+        ["DROP", "LAUNCHER", "PASSWORDS", "MEDIA", "TASK", "CLEAN", "BACKUP", "CLIPBOARD", "PDF", "CALENDAR", "CONVERT", "NOTEPAD", "CUT", "CREATE", "BOOST"]
+    {
         vars.push(Box::leak(format!("PLUME_{app}_EXE").into_boxed_str()));
     }
     if mail {

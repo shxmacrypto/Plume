@@ -9,6 +9,7 @@
 
 mod clip;
 mod crypto;
+mod detect;
 mod hotkey;
 mod i18n;
 mod image;
@@ -154,7 +155,8 @@ fn main() {
             let _ = AddClipboardFormatListener(hwnd);
         }
     }
-    win.timer(model::PRUNE, Some(3_600_000));
+    // every minute: sensitive items only live a short time
+    win.timer(model::PRUNE, Some(60_000));
     let tip = win.with(|h, _| ui::with_app(h).map(|a| a.tray_tip())).flatten().unwrap_or_default();
     sys::tray_add(hwnd, &tip);
 
@@ -207,7 +209,13 @@ fn main() {
                     WM_LBUTTONUP | WM_LBUTTONDBLCLK => sys::show(hwnd, true),
                     WM_RBUTTONUP | WM_CONTEXTMENU => {
                         let paused = m.try_borrow().map(|m| m.set.paused).unwrap_or(false);
-                        let labels = [i18n::tr("Open Plume Clipboard"), i18n::tr("Open the panel"), i18n::tr("Pause"), i18n::tr("Quit")];
+                        let labels = [
+                            i18n::tr("Open Plume Clipboard"),
+                            i18n::tr("Open the panel"),
+                            i18n::tr("Pause"),
+                            i18n::tr("Quit"),
+                            i18n::tr("Clear sensitive items"),
+                        ];
                         match sys::tray_menu(hwnd, labels, paused) {
                             sys::MENU_OPEN => sys::show(hwnd, true),
                             sys::MENU_PANEL => open_panel(panel),
@@ -215,6 +223,13 @@ fn main() {
                                 win.with(|h, cx| {
                                     if let Some(a) = ui::with_app(h) {
                                         a.change_setting(|s| s.paused = !s.paused, cx);
+                                    }
+                                });
+                            }
+                            sys::MENU_CLEAR_SECRETS => {
+                                win.with(|h, cx| {
+                                    if let Some(a) = ui::with_app(h) {
+                                        a.act_public(ui::Hit::ClearSecrets, cx);
                                     }
                                 });
                             }

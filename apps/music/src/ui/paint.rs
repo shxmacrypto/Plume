@@ -34,7 +34,7 @@ impl App {
             }
             self.request_cover(s);
         }
-        c.fill_round(r, radius, if p.dark { Color::hex(0x2a2a30) } else { Color::hex(0xdedee4) });
+        c.fill_round(r, radius, p.solid2);
         let s = (r.w * 0.4).min(48.0);
         c.icon(&ic::NOTE, rect(r.x + (r.w - s) / 2.0, r.y + (r.h - s) / 2.0, s, s), p.t3);
     }
@@ -63,9 +63,9 @@ impl App {
         let fill = if primary {
             if hot { p.accent.mix(Color::hex(0xffffff), 0.12) } else { p.accent }
         } else if hot {
-            p.t1.fade(0.16)
+            p.fill2
         } else {
-            p.t1.fade(0.09)
+            p.fill
         };
         c.fill_round(r, r.h / 2.0, fill);
         c.text(label, r, Font::BodyBold, if primary { p.on_accent } else { p.t1 }, Align::Center);
@@ -132,7 +132,7 @@ impl App {
     fn place_edit(&mut self, modal_field: Option<Rect>) {
         let p = self.pal.clone();
         let want = match self.edit_for {
-            Some("modal") => modal_field.map(|r| (r, self.modal_text.clone(), p.card)),
+            Some("modal") => modal_field.map(|r| (r, self.modal_text.clone(), p.fill.over(p.solid))),
             Some("search") if !self.now_open && self.modal.is_none() => self.search_rect.map(|r| (r, self.query.clone(), p.t1.fade(0.08).over(p.bg))),
             _ => None,
         };
@@ -173,7 +173,7 @@ impl App {
             let r = rect(cap_x + k as f32 * m::CAPTION_W, 0.0, m::CAPTION_W, 34.0);
             let hot = self.hovered(&id) || self.pressed.as_ref() == Some(&id);
             if hot {
-                c.fill(r, if id == Hit::Close { Color::hex(0xc42b1c) } else { p.t1.fade(0.1) });
+                c.fill(r, if id == Hit::Close { p.close_hover } else { p.t1.fade(0.1) });
             }
             let ink = if id == Hit::Close && hot {
                 Color::hex(0xffffff)
@@ -467,8 +467,8 @@ impl App {
         let y = if menu.y + mh > h - 8.0 { (menu.y - mh).max(8.0) } else { menu.y };
         let box_ = rect(x, y, mw, mh);
         c.fill_round(box_.offset(0.0, 6.0).inset(-2.0), 14.0, Color::hex(0).fade(0.25));
-        c.fill_round(box_, 12.0, if p.dark { Color::hex(0x2a2a30) } else { Color::hex(0xffffff) });
-        c.stroke_round(box_, 12.0, p.line, 1.0);
+        c.fill_round(box_, 12.0, p.solid);
+        c.stroke_round(box_, 12.0, p.ring, 1.0);
         for (i, (label, header)) in items.iter().enumerate() {
             let row = rect(x + 6.0, y + 6.0 + i as f32 * 36.0, mw - 12.0, 34.0);
             if *header {
@@ -488,7 +488,7 @@ impl App {
     fn paint_modal(&mut self, c: &mut Canvas, w: f32, h: f32) -> Option<Rect> {
         let modal = self.modal.clone()?;
         let p = self.pal.clone();
-        c.fill(rect(0.0, 0.0, w, h), Color::hex(0).fade(0.55));
+        c.fill(rect(0.0, 0.0, w, h), Color::hex(0).fade(if p.dark { 0.5 } else { 0.28 }));
         let mw = (w - 80.0).min(520.0);
         let (title, body, ok, cancel, field): (String, String, Option<String>, String, bool) = match &modal {
             Modal::Import { stage } => {
@@ -548,9 +548,9 @@ impl App {
         let howto_h = if howto { 252.0 } else { 0.0 };
         let mh = 76.0 + body_h + howto_h + if field { 56.0 } else { 0.0 } + 70.0;
         let b = rect((w - mw) / 2.0, (h - mh) / 2.0, mw, mh);
-        c.fill_round(b, 18.0, p.card);
-        c.stroke_round(b, 18.0, p.line, 1.0);
-        draw::text(c, &title, rect(b.x + 28.0, b.y + 22.0, mw - 56.0, 32.0), 20.0, 700, p.t1, Align::Left);
+        c.fill_round(b, 20.0, p.solid);
+        c.stroke_round(b, 20.0, p.ring, 1.0);
+        c.text(&title, rect(b.x + 28.0, b.y + 24.0, mw - 56.0, 28.0), Font::Large, p.t1, Align::Left);
         let mut y = b.y + 66.0;
         if !body.is_empty() {
             c.text_block(&body, rect(b.x + 28.0, y, mw - 56.0, body_h), Font::Body, p.t2);
@@ -568,31 +568,32 @@ impl App {
         let mut field_rect = None;
         if field {
             let f = rect(b.x + 28.0, y, mw - 56.0, 42.0);
-            c.fill_round(f, 10.0, p.t1.fade(0.06).over(p.card));
+            c.fill_round(f, 10.0, p.fill.over(p.solid));
             c.stroke_round(f, 10.0, p.accent, 1.5);
-            c.icon(&ic::LINK, rect(f.x + 13.0, f.y + 12.0, 18.0, 18.0), p.t3);
+            let icon = if matches!(modal, Modal::Import { .. }) { &ic::LINK } else { &icons::PENCIL };
+            c.icon(icon, rect(f.x + 13.0, f.y + 12.0, 18.0, 18.0), p.t3);
             if self.edit_for != Some("modal") {
                 c.text(&self.modal_text, rect(f.x + 40.0, f.y, f.w - 52.0, f.h), Font::Body, p.t1, Align::Left);
             }
             self.hits.add(f, Hit::ModalField);
             field_rect = Some(f);
         }
-        let by = b.bottom() - 58.0;
+        let by = b.bottom() - 60.0;
         let mut x = b.right() - 28.0;
         if let Some(ok) = ok {
             let bw = c.text_width(&ok, Font::BodyBold) + 40.0;
             x -= bw;
-            self.pill(c, rect(x, by, bw, 38.0), &ok, true, Hit::ModalOk);
+            self.pill(c, rect(x, by, bw, 36.0), &ok, true, Hit::ModalOk);
             x -= 10.0;
         }
         let cw = c.text_width(&cancel, Font::BodyBold) + 36.0;
         x -= cw;
-        self.pill(c, rect(x, by, cw, 38.0), &cancel, false, Hit::ModalCancel);
+        self.pill(c, rect(x, by, cw, 36.0), &cancel, false, Hit::ModalCancel);
         // songs copied in Spotify (all of a playlist, beyond the 100 of a shared link)
         if let Modal::Import { stage: ImportStage::Link | ImportStage::Failed(_) | ImportStage::Done { capped: true, .. } } = &modal {
             let label = tr("Paste copied songs");
             let pw = c.text_width(label, Font::BodyBold) + 36.0;
-            self.pill(c, rect(b.x + 28.0, by, pw, 38.0), label, false, Hit::Action("paste_songs"));
+            self.pill(c, rect(b.x + 28.0, by, pw, 36.0), label, false, Hit::Action("paste_songs"));
         }
         if matches!(modal, Modal::Tools) {
             let _ = yt::have_ytdlp();
@@ -653,9 +654,9 @@ impl App {
         };
         let tw = (c.text_width(text, Font::Body) + 44.0).min(w - 40.0);
         let r = rect((w - tw) / 2.0, h - PLAYER_H - 66.0 + (1.0 - a) * 10.0, tw, 42.0);
-        let bg = if p.dark { Color::hex(0xffffff) } else { Color::hex(0x1c1c20) };
-        c.fill_round(r, 21.0, bg.fade(a));
-        c.text(text, r.inset_xy(18.0, 0.0), Font::BodyBold, if p.dark { Color::hex(0x111111) } else { Color::hex(0xffffff) }.fade(a), Align::Center);
+        c.fill_round(r, 21.0, p.solid2.fade(a));
+        c.stroke_round(r, 21.0, p.ring.fade(a), 1.0);
+        c.text(text, r.inset_xy(18.0, 0.0), Font::Body, p.t1.fade(a), Align::Center);
         self.hits.add(r, Hit::Toast);
     }
 

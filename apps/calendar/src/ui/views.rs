@@ -107,8 +107,8 @@ impl App {
         let ws = self.set.week_start();
         let first = self.range().0;
         let wn = if self.set.week_numbers { 34.0 } else { 0.0 };
-        let mut r = area.inset_xy(12.0, 0.0);
-        r.h -= 12.0;
+        let mut r = area.inset_xy(16.0, 0.0);
+        r.h -= 16.0;
         let head = r.cut_top(28.0);
         let cw = (r.w - wn) / 7.0;
         let ch = r.h / 6.0;
@@ -124,8 +124,8 @@ impl App {
         self.geo.days.clear();
         self.geo.grid = Rect::default();
         self.geo.allday = Rect::default();
-        c.fill_round(grid, 12.0, t.card);
-        c.stroke_round(grid, 12.0, t.ring, 1.0);
+        c.fill_round(grid, 16.0, t.card);
+        c.stroke_round(grid, 16.0, t.sep, 1.0);
         let today = self.today();
         let z = self.zone();
         let drag = self.drag_days();
@@ -275,10 +275,10 @@ impl App {
         let h24 = self.h24();
         let today = self.today();
         let now = self.now();
-        let mut r = area.inset_xy(12.0, 0.0);
-        r.h -= 12.0;
-        c.fill_round(r, 12.0, t.card);
-        c.stroke_round(r, 12.0, t.ring, 1.0);
+        let mut r = area.inset_xy(16.0, 0.0);
+        r.h -= 16.0;
+        c.fill_round(r, 16.0, t.card);
+        c.stroke_round(r, 16.0, t.sep, 1.0);
         let inner = r.inset(1.0);
         let col_x = inner.x + GUTTER;
         let col_w = (inner.w - GUTTER - 10.0) / n as f32;
@@ -329,7 +329,7 @@ impl App {
         let ad_h = (shown_lanes.max(1) as f32 * 22.0 + 8.0 + if more { 18.0 } else { 0.0 }).max(30.0);
         let allday = rect(inner.x, head.bottom(), inner.w, ad_h);
         c.hline(inner.x, allday.y, inner.w, t.sep);
-        c.text(tr("All day"), rect(allday.x + 4.0, allday.y + 4.0, GUTTER - 8.0, 20.0), Font::Small, t.t3, Align::Center);
+        c.text(tr("All-day"), rect(allday.x + 4.0, allday.y + 4.0, GUTTER - 8.0, 20.0), Font::Small, t.t3, Align::Center);
         let drag_days = self.drag_days();
         for (k, d) in days.iter().enumerate() {
             let cell = rect(col_x + k as f32 * col_w, allday.y, col_w, allday.h);
@@ -501,14 +501,26 @@ impl App {
 
     // ───────────────────────── agenda ─────────────────────────
 
+    /// Nothing coming: an icon, a title, a line and the button that adds something.
+    fn paint_empty(&mut self, c: &mut Canvas, r: Rect) {
+        let t = self.t.clone();
+        let cy = r.y + r.h * 0.38;
+        c.fill_round(rect(r.x + r.w / 2.0 - 32.0, cy - 92.0, 64.0, 64.0), 32.0, t.fill);
+        c.icon(&super::paint::CALENDAR, rect(r.x + r.w / 2.0 - 16.0, cy - 76.0, 32.0, 32.0), t.t2);
+        c.text(tr("Nothing planned"), rect(r.x, cy - 12.0, r.w, 26.0), Font::Large, t.t1, Align::Center);
+        c.text(&fill(tr("Nothing in the next {} days."), &[&AGENDA_DAYS.to_string()]), rect(r.x, cy + 16.0, r.w, 22.0), Font::Body, t.t3, Align::Center);
+        let bw = c.text_width(tr("New event"), Font::BodyBold) + 40.0;
+        self.btn(c, rect(r.x + (r.w - bw) / 2.0, cy + 54.0, bw, 36.0), tr("New event"), 1, Id::NewEvent);
+    }
+
     pub(super) fn paint_agenda(&mut self, c: &mut Canvas, area: Rect) {
         let t = self.t.clone();
         let z = self.zone();
         let h24 = self.h24();
         let today = self.today();
         let (a, _) = self.range();
-        let mut r = area.inset_xy(12.0, 0.0);
-        r.h -= 12.0;
+        let mut r = area.inset_xy(16.0, 0.0);
+        r.h -= 16.0;
         self.geo.agenda = r;
         self.geo.days.clear();
         self.geo.month_first = None;
@@ -516,9 +528,14 @@ impl App {
         self.geo.month = Rect::default();
         let w = r.w.min(820.0);
         let x = r.x + (r.w - w) / 2.0;
+        if self.occs.is_empty() {
+            self.agenda_h = 0.0;
+            self.agenda_scroll = 0.0;
+            self.paint_empty(c, r);
+            return;
+        }
         let mut y = r.y - self.agenda_scroll;
         c.clip(r);
-        let mut any = false;
         for k in 0..AGENDA_DAYS {
             let d = a.add_days(k);
             let ds = tz::day_start(&z, d);
@@ -527,30 +544,29 @@ impl App {
             if items.is_empty() && d != today {
                 continue;
             }
-            any |= !items.is_empty();
             // the day's head
             let head = if d == today { format!("{} · {}", tr("Today"), i18n::long_date(d)) } else { i18n::cap(&i18n::long_date(d)) };
             c.text(&head, rect(x + 6.0, y + 10.0, w - 12.0, 24.0), Font::BodyBold, if d == today { t.accent } else { t.t1 }, Align::Left);
             y += 40.0;
-            let card = rect(x, y, w, (items.len().max(1)) as f32 * 52.0 + 8.0);
+            let card = rect(x, y, w, (items.len().max(1)) as f32 * 48.0 + 8.0);
             if card.bottom() > r.y && card.y < r.bottom() {
-                c.fill_round(card, 12.0, t.card);
-                c.stroke_round(card, 12.0, t.ring, 1.0);
+                c.fill_round(card, 16.0, t.card);
+                c.stroke_round(card, 16.0, t.sep, 1.0);
             }
             y += 4.0;
             if items.is_empty() {
-                c.text(tr("Nothing planned"), rect(x + 18.0, y, w - 36.0, 52.0), Font::Body, t.t3, Align::Left);
-                y += 52.0;
+                c.text(tr("Nothing planned"), rect(x + 20.0, y, w - 40.0, 48.0), Font::Body, t.t3, Align::Left);
+                y += 48.0;
             }
             for (j, &i) in items.iter().enumerate() {
-                let row = rect(x + 4.0, y, w - 8.0, 52.0);
+                let row = rect(x + 4.0, y, w - 8.0, 48.0);
                 if row.bottom() > r.y && row.y < r.bottom() {
                     let o = self.occs[i].clone();
                     let ev = self.store.event(&o).clone();
                     let col = color(&self.store.color(&o));
                     let id = Id::AgendaRow(i);
                     if self.hot(&id) {
-                        c.fill_round(row, 9.0, t.hover);
+                        c.fill_round(row, 10.0, t.hover);
                     }
                     if j > 0 {
                         c.hline(row.x + 110.0, row.y, row.w - 120.0, t.sep);
@@ -562,27 +578,23 @@ impl App {
                         let sb = if o.end > de { "…".to_string() } else { i18n::time(z.to_wall(o.end).secs, h24) };
                         (sa, sb)
                     };
-                    c.text(&tl, rect(row.x + 14.0, row.y + 8.0, 86.0, 18.0), Font::BodyBold, t.t1, Align::Left);
-                    c.text(&tl2, rect(row.x + 14.0, row.y + 27.0, 86.0, 16.0), Font::Small, t.t3, Align::Left);
-                    c.fill_round(rect(row.x + 104.0, row.y + 10.0, 4.0, 32.0), 2.0, col);
+                    c.text(&tl, rect(row.x + 16.0, row.y + 6.0, 86.0, 18.0), Font::BodyBold, t.t1, Align::Left);
+                    c.text(&tl2, rect(row.x + 16.0, row.y + 25.0, 86.0, 16.0), Font::Small, t.t3, Align::Left);
+                    c.fill_round(rect(row.x + 104.0, row.y + 8.0, 4.0, 32.0), 2.0, col);
                     let cal = self.store.cals[o.cal].name.clone();
                     let cw = c.text_width(&cal, Font::Small).min(160.0);
-                    c.text(&ev.title, rect(row.x + 120.0, row.y + 8.0, row.w - 140.0 - cw, 20.0), Font::BodyBold, t.t1, Align::Left);
+                    c.text(&ev.title, rect(row.x + 120.0, row.y + 5.0, row.w - 140.0 - cw, 20.0), Font::BodyBold, t.t1, Align::Left);
                     let mut sub = ev.location.clone();
                     if self.store.events[o.cal][o.ev].rrule.is_some() || o.rid.is_some() {
                         sub = if sub.is_empty() { "↻".into() } else { format!("↻  {sub}") };
                     }
-                    c.text(&sub, rect(row.x + 120.0, row.y + 28.0, row.w - 140.0 - cw, 16.0), Font::Small, t.t3, Align::Left);
-                    c.text(&cal, rect(row.right() - 14.0 - cw, row.y, cw, row.h), Font::Small, t.t3, Align::Right);
+                    c.text(&sub, rect(row.x + 120.0, row.y + 25.0, row.w - 140.0 - cw, 16.0), Font::Small, t.t3, Align::Left);
+                    c.text(&cal, rect(row.right() - 16.0 - cw, row.y, cw, row.h), Font::Small, t.t3, Align::Right);
                     self.hits.add(row.intersect(&r), id);
                 }
-                y += 52.0;
+                y += 48.0;
             }
             y += 8.0;
-        }
-        if !any {
-            c.text(&fill(tr("Nothing in the next {} days."), &[&AGENDA_DAYS.to_string()]), rect(x, y + 20.0, w, 24.0), Font::Body, t.t3, Align::Center);
-            y += 60.0;
         }
         c.unclip();
         self.agenda_h = y + self.agenda_scroll - r.y + 20.0;

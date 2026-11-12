@@ -56,11 +56,17 @@ pub fn decode_png(wic: &IWICImagingFactory, bytes: &[u8], px: u32) -> Option<IWI
 }
 
 /// Colors of the map's blocks, in turn.
-pub const HUES: [u32; 8] = [0x34d399, 0x60a5fa, 0xfbbf24, 0xf472b6, 0xa78bfa, 0x2dd4bf, 0xfb923c, 0x94a3b8];
+pub const HUES: [u32; 8] = [0x84cc16, 0x60a5fa, 0xfbbf24, 0xf472b6, 0xa78bfa, 0x2dd4bf, 0xfb923c, 0x94a3b8];
 
 impl App {
     pub fn hovered(&self, h: &Hit) -> bool {
         self.hover.as_ref() == Some(h)
+    }
+
+    /// A card: Plume's card color, round corners, a hairline around.
+    pub fn card(&self, c: &mut Canvas, r: Rect) {
+        c.fill_round(r, 16.0, self.pal.card);
+        c.stroke_round(r, 16.0, self.pal.line, 1.0);
     }
 
     /// A round button: primary (accent) or quiet. Returns its width.
@@ -74,16 +80,25 @@ impl App {
     pub fn pill_in(&mut self, c: &mut Canvas, r: Rect, label: &str, primary: bool, hit: Hit) {
         let p = self.pal.clone();
         let hot = self.hovered(&hit);
-        let fill = if primary {
-            if hot { p.accent.mix(Color::hex(0xffffff), 0.14) } else { p.accent }
-        } else if hot {
-            p.t1.fade(0.16)
-        } else {
-            p.t1.fade(0.08)
+        let down = hot && self.pressed.as_ref() == Some(&hit);
+        let fill = match (primary, hot, down) {
+            (true, _, true) => p.accent.mix(Color::hex(0), 0.18),
+            (true, true, _) => p.accent.mix(Color::hex(0xffffff), 0.12),
+            (true, _, _) => p.accent,
+            (false, _, true) => p.fill2.over(p.fill.over(p.card)),
+            (false, true, _) => p.fill2,
+            (false, _, _) => p.fill,
         };
         c.fill_round(r, r.h / 2.0, fill);
         c.text(label, r, Font::BodyBold, if primary { p.on_accent } else { p.t1 }, Align::Center);
         self.hits.add(r, hit);
+    }
+
+    /// A button that cannot be pressed now.
+    pub fn pill_off(&mut self, c: &mut Canvas, r: Rect, label: &str) {
+        let p = self.pal.clone();
+        c.fill_round(r, r.h / 2.0, p.fill);
+        c.text(label, r, Font::BodyBold, p.t3, Align::Center);
     }
 
     /// A pill drawn right-aligned, ending at `right`. Returns its left edge.
@@ -97,25 +112,73 @@ impl App {
         let p = self.pal.clone();
         let hot = self.hovered(&hit);
         if hot {
-            c.fill_round(r, r.h / 2.0, p.t1.fade(0.1));
+            c.fill_round(r, r.h / 2.0, p.fill);
         }
-        let s = 16.0;
-        c.icon(icon, r.centered(s, s), if hot { p.t1 } else { p.t2 });
+        c.icon(icon, r.centered(16.0, 16.0), if hot { p.t1 } else { p.t2 });
         self.hits.add(r, hit);
+    }
+
+    /// A segmented control: a pill track, the chosen segment raised. Each item: label, what it does, chosen.
+    /// Returns the track.
+    pub fn segmented(&mut self, c: &mut Canvas, x: f32, y: f32, items: &[(String, Hit, bool)]) -> Rect {
+        let p = self.pal.clone();
+        let widths: Vec<f32> = items.iter().map(|(l, _, _)| c.text_width(l, Font::BodyBold) + 30.0).collect();
+        let track = rect(x, y, widths.iter().sum::<f32>() + 6.0, 34.0);
+        c.fill_round(track, 17.0, p.fill);
+        let mut sx = x + 3.0;
+        for ((label, hit, on), w) in items.iter().zip(widths) {
+            let r = rect(sx, y + 3.0, w, 28.0);
+            if *on {
+                c.fill_round(r, 14.0, p.fill2.over(p.fill.over(p.card)));
+                c.stroke_round(r, 14.0, p.ring, 1.0);
+            } else if self.hovered(hit) {
+                c.fill_round(r, 14.0, p.hover);
+            }
+            c.text(label, r, Font::BodyBold, if *on { p.t1 } else { p.t2 }, Align::Center);
+            self.hits.add(r, hit.clone());
+            sx += w;
+        }
+        track
+    }
+
+    /// An iOS-style switch, on = accent.
+    pub fn switch(&mut self, c: &mut Canvas, x: f32, y: f32, on: bool) -> Rect {
+        let p = self.pal.clone();
+        let r = rect(x, y, 44.0, 26.0);
+        c.fill_round(r, 13.0, if on { p.accent } else { p.fill2 });
+        let knob = if on { r.right() - 23.0 } else { r.x + 3.0 };
+        c.fill_round(rect(knob, r.y + 3.0, 20.0, 20.0), 10.0, Color::hex(0xffffff));
+        r
+    }
+
+    /// Nothing to show yet: an icon, a title, one line, and the button that starts something.
+    pub fn empty_state(&mut self, c: &mut Canvas, area: Rect, icon: &Icon, title: &str, line: &str, button: Option<(&str, Hit)>) {
+        let p = self.pal.clone();
+        let h = 56.0 + 14.0 + 28.0 + 24.0 + if button.is_some() { 52.0 } else { 0.0 };
+        let y = area.y + (area.h - h) / 2.0;
+        let cx = area.x + area.w / 2.0;
+        c.fill_round(rect(cx - 28.0, y, 56.0, 56.0), 18.0, p.fill);
+        c.icon(icon, rect(cx - 10.0, y + 18.0, 20.0, 20.0), p.t2);
+        c.text(title, rect(area.x, y + 70.0, area.w, 28.0), Font::Large, p.t1, Align::Center);
+        c.text(line, rect(area.x + 16.0, y + 98.0, area.w - 32.0, 22.0), Font::Body, p.t3, Align::Center);
+        if let Some((label, hit)) = button {
+            let w = c.text_width(label, Font::BodyBold) + 36.0;
+            self.pill_in(c, rect(cx - w / 2.0, y + 136.0, w, 34.0), label, true, hit);
+        }
     }
 
     /// A check box (round corners), ticked or not.
     pub fn check(&mut self, c: &mut Canvas, r: Rect, on: bool, enabled: bool) {
         let p = self.pal.clone();
         if !enabled {
-            c.stroke_round(r, 6.0, p.t3.fade(0.4), 1.5);
+            c.stroke_round(r, 6.0, p.t4, 1.5);
             return;
         }
         if on {
             c.fill_round(r, 6.0, p.accent);
             c.icon_stroke(&icons::CHECK, r.inset(3.0), p.on_accent, 2.4);
         } else {
-            c.stroke_round(r, 6.0, p.t2.fade(0.8), 1.6);
+            c.stroke_round(r, 6.0, p.t3, 1.6);
         }
     }
 
@@ -147,49 +210,55 @@ impl App {
 
     fn paint_top(&mut self, c: &mut Canvas, w: f32, cx: &PaintCx) {
         let p = self.pal.clone();
-        c.fill(rect(0.0, 0.0, w, TOP_H), p.bar);
+        c.gradient_v(rect(0.0, 0.0, w, TOP_H), p.hdr1, p.hdr2);
         c.hline(0.0, TOP_H - 0.5, w, p.line);
         let wic = self.wic.clone();
-        c.image(1, rect(18.0, 14.0, 28.0, 28.0), 1.0, || decode_png(&wic, crate::LOGO, 64));
-        c.text("Plume Clean", rect(56.0, 0.0, 130.0, TOP_H), Font::Large, p.t1, Align::Left);
-        // the pages
+        c.image(1, rect(14.0, (TOP_H - 18.0) / 2.0, 18.0, 18.0), 1.0, || decode_png(&wic, crate::LOGO, 64));
+        c.text("Plume Clean", rect(40.0, 0.0, 110.0, TOP_H), Font::BodyBold, if cx.active { p.t1 } else { p.t3 }, Align::Left);
+        // the pages: a segmented control with icons
         let tabs: [(View, &Icon, &str); 3] = [(View::Drives, &icons::DRIVE, "Drives"), (View::Map, &ic::MAP, "Map"), (View::Cleanup, &ic::SPARKLE, "Cleanup")];
-        let mut x = 200.0;
-        for (v, icon, label) in tabs {
-            let label = tr(label);
-            let tw = c.text_width(label, Font::BodyBold) + 50.0;
-            let r = rect(x, 12.0, tw, 32.0);
+        let widths: Vec<f32> = tabs.iter().map(|(_, _, l)| c.text_width(tr(l), Font::BodyBold) + 54.0).collect();
+        let track = rect(152.0, (TOP_H - 34.0) / 2.0, widths.iter().sum::<f32>() + 6.0, 34.0);
+        c.fill_round(track, 17.0, p.fill);
+        let mut x = track.x + 3.0;
+        for ((v, icon, label), tw) in tabs.into_iter().zip(widths) {
+            let r = rect(x, track.y + 3.0, tw, 28.0);
             let on = self.view == v;
             let hit = Hit::Tab(v);
-            let fill = if on {
-                p.accent.fade(if p.dark { 0.2 } else { 0.14 })
+            if on {
+                c.fill_round(r, 14.0, p.fill2.over(p.fill.over(p.hdr2)));
+                c.stroke_round(r, 14.0, p.ring, 1.0);
             } else if self.hovered(&hit) {
-                p.t1.fade(0.07)
-            } else {
-                Color::TRANSPARENT
-            };
-            c.fill_round(r, 16.0, fill);
-            let ink = if on { p.accent } else { p.t2 };
-            c.icon(icon, rect(r.x + 14.0, r.y + 8.0, 16.0, 16.0), ink);
-            c.text(label, rect(r.x + 36.0, r.y, tw - 42.0, r.h), Font::BodyBold, if on { p.t1 } else { p.t2 }, Align::Left);
+                c.fill_round(r, 14.0, p.hover);
+            }
+            c.icon(icon, rect(r.x + 14.0, r.y + 6.0, 16.0, 16.0), if on { p.ink } else { p.t2 });
+            c.text(tr(label), rect(r.x + 36.0, r.y, tw - 42.0, r.h), Font::BodyBold, if on { p.t1 } else { p.t2 }, Align::Left);
             self.hits.add(r, hit);
-            x += tw + 6.0;
+            x += tw;
         }
         let cap_x = w - 3.0 * m::CAPTION_W;
-        let gear = rect(cap_x - 46.0, 12.0, 34.0, 32.0);
-        let on = self.view == View::Settings;
-        if on {
-            c.fill_round(gear, 16.0, p.accent.fade(0.2));
+        let gear = rect(cap_x - 46.0, (TOP_H - 34.0) / 2.0, 34.0, 34.0);
+        if self.view == View::Settings {
+            c.fill_round(gear, 17.0, p.fill2);
+            c.stroke_round(gear, 17.0, p.ring, 1.0);
+            c.icon(&icons::GEAR, gear.centered(16.0, 16.0), p.ink);
+            self.hits.add(gear, Hit::Tab(View::Settings));
+        } else {
+            self.icon_btn(c, &icons::GEAR, gear, Hit::Tab(View::Settings));
         }
-        self.icon_btn(c, &icons::GEAR, gear, Hit::Tab(View::Settings));
         let glyphs = [(Hit::Min, '\u{E921}'), (Hit::Max, if cx.maximized { '\u{E923}' } else { '\u{E922}' }), (Hit::Close, '\u{E8BB}')];
         for (k, (id, glyph)) in glyphs.into_iter().enumerate() {
-            let r = rect(cap_x + k as f32 * m::CAPTION_W, 0.0, m::CAPTION_W, 36.0);
+            let r = rect(cap_x + k as f32 * m::CAPTION_W, 0.0, m::CAPTION_W, TOP_H - 8.0);
             let hot = self.hovered(&id) || self.pressed.as_ref() == Some(&id);
             if hot {
-                c.fill(r, if id == Hit::Close { Color::hex(0xc42b1c) } else { p.t1.fade(0.1) });
+                c.fill(r, if id == Hit::Close { p.close_hover } else { p.hover });
             }
-            c.glyph(glyph, r, if id == Hit::Close && hot { Color::hex(0xffffff) } else { p.t2 });
+            let ink = match (id == Hit::Close && hot, cx.active) {
+                (true, _) => Color::hex(0xffffff),
+                (false, true) => p.t1,
+                (false, false) => p.t3,
+            };
+            c.glyph(glyph, r, ink);
             self.hits.add(r, id);
         }
     }
@@ -199,10 +268,10 @@ impl App {
         let p = self.pal.clone();
         c.text(title, rect(x, y, w, 34.0), Font::Hero, p.t1, Align::Left);
         if sub.is_empty() {
-            return y + 44.0;
+            return y + 48.0;
         }
         c.text(sub, rect(x, y + 36.0, w, 20.0), Font::Body, p.t3, Align::Left);
-        y + 70.0
+        y + 72.0
     }
 
     fn paint_drives(&mut self, c: &mut Canvas, body: Rect) {
@@ -211,54 +280,55 @@ impl App {
         let w = body.w - 64.0;
         let mut y = self.heading(c, x0, body.y + 28.0, w, tr("Your drives"), tr("Pick a drive to see what fills it. Nothing is changed by a scan."));
         let n = self.drives.len().max(1);
-        let cols = ((w + 16.0) / 336.0).floor().clamp(1.0, n as f32) as usize;
-        let cw = (w - (cols as f32 - 1.0) * 16.0) / cols as f32;
+        let gap = 14.0;
+        let cols = ((w + gap) / 336.0).floor().clamp(1.0, n as f32) as usize;
+        let cw = (w - (cols as f32 - 1.0) * gap) / cols as f32;
         let drives = self.drives.clone();
         for (i, d) in drives.iter().enumerate() {
             let (col, row) = (i % cols, i / cols);
-            let r = rect(x0 + col as f32 * (cw + 16.0), y + row as f32 * 140.0, cw, 124.0);
-            c.fill_round(r, 16.0, p.card);
-            c.stroke_round(r, 16.0, p.line, 1.0);
-            c.fill_round(rect(r.x + 18.0, r.y + 18.0, 40.0, 40.0), 12.0, p.accent.fade(0.16));
-            c.icon(if d.root.to_string_lossy().len() <= 3 { &icons::DRIVE } else { &icons::FOLDER }, rect(r.x + 28.0, r.y + 28.0, 20.0, 20.0), p.accent);
-            c.text(&d.title(), rect(r.x + 70.0, r.y + 16.0, r.w - 196.0, 24.0), Font::Title, p.t1, Align::Left);
+            let r = rect(x0 + col as f32 * (cw + gap), y + row as f32 * (128.0 + gap), cw, 128.0);
+            self.card(c, r);
+            c.fill_round(rect(r.x + 20.0, r.y + 20.0, 40.0, 40.0), 12.0, p.fill);
+            let icon = if d.root.to_string_lossy().len() <= 3 { &icons::DRIVE } else { &icons::FOLDER };
+            c.icon(icon, rect(r.x + 30.0, r.y + 30.0, 20.0, 20.0), p.t2);
+            c.text(&d.title(), rect(r.x + 72.0, r.y + 18.0, r.w - 200.0, 24.0), Font::Title, p.t1, Align::Left);
             let line = fill(tr("{free} free of {total}"), &[&human(d.free), &human(d.total)]);
-            c.text(&line, rect(r.x + 70.0, r.y + 38.0, r.w - 196.0, 20.0), Font::Small, p.t3, Align::Left);
+            c.text(&line, rect(r.x + 72.0, r.y + 40.0, r.w - 200.0, 20.0), Font::Small, p.t3, Align::Left);
             // the bar: used, free
-            let bar = rect(r.x + 18.0, r.y + 72.0, r.w - 36.0, 10.0);
-            c.fill_round(bar, 5.0, p.t1.fade(0.1));
+            let bar = rect(r.x + 20.0, r.y + 76.0, r.w - 40.0, 8.0);
+            c.fill_round(bar, 4.0, p.fill);
             let k = if d.total > 0 { d.used() as f32 / d.total as f32 } else { 0.0 };
             let ink = if k > 0.9 {
-                Color::hex(0xf87171)
+                p.red
             } else if k > 0.75 {
                 p.warn
             } else {
                 p.accent
             };
-            c.fill_round(rect(bar.x, bar.y, (bar.w * k).max(10.0), bar.h), 5.0, ink);
-            c.text(&fill(tr("{used} used"), &[&human(d.used())]), rect(r.x + 18.0, r.y + 90.0, r.w / 2.0, 20.0), Font::Small, p.t2, Align::Left);
-            c.text(&format!("{:.0} %", k * 100.0), rect(r.x + r.w / 2.0, r.y + 90.0, r.w / 2.0 - 18.0, 20.0), Font::SmallBold, p.t2, Align::Right);
+            c.fill_round(rect(bar.x, bar.y, (bar.w * k).max(8.0), bar.h), 4.0, ink);
+            c.text(&fill(tr("{used} used"), &[&human(d.used())]), rect(r.x + 20.0, r.y + 92.0, r.w / 2.0, 20.0), Font::Small, p.t2, Align::Left);
+            c.text(&format!("{:.0} %", k * 100.0), rect(r.x + r.w / 2.0, r.y + 92.0, r.w / 2.0 - 20.0, 20.0), Font::SmallBold, p.t2, Align::Right);
             let scanning_this = self.scanning.is_some() && self.target.as_deref() == Some(d.root.as_path());
             let label = if scanning_this { tr("Scanning…") } else { tr("Scan") };
-            self.pill_in(c, rect(r.right() - 112.0, r.y + 20.0, 94.0, 32.0), label, true, Hit::ScanDrive(i));
+            let bw = c.text_width(label, Font::BodyBold) + 36.0;
+            self.pill_in(c, rect(r.right() - 20.0 - bw, r.y + 20.0, bw, 34.0), label, true, Hit::ScanDrive(i));
         }
-        y += drives.len().div_ceil(cols) as f32 * 140.0 + 8.0;
+        y += drives.len().div_ceil(cols) as f32 * (128.0 + gap);
         // a folder
         let r = rect(x0, y, w.min(680.0), 76.0);
-        c.fill_round(r, 16.0, p.card);
-        c.stroke_round(r, 16.0, p.line, 1.0);
-        c.icon(&icons::FOLDER, rect(r.x + 22.0, r.y + 28.0, 20.0, 20.0), p.t2);
-        c.text(tr("A folder"), rect(r.x + 56.0, r.y + 14.0, r.w - 240.0, 24.0), Font::Title, p.t1, Align::Left);
-        c.text(tr("Scan only one folder, faster."), rect(r.x + 56.0, r.y + 38.0, r.w - 240.0, 20.0), Font::Small, p.t3, Align::Left);
-        self.pill_right(c, r.right() - 18.0, r.y + 22.0, tr("Choose a folder…"), false, Hit::ScanFolder);
+        self.card(c, r);
+        c.fill_round(rect(r.x + 20.0, r.y + 18.0, 40.0, 40.0), 12.0, p.fill);
+        c.icon(&icons::FOLDER, rect(r.x + 30.0, r.y + 28.0, 20.0, 20.0), p.t2);
+        c.text(tr("A folder"), rect(r.x + 72.0, r.y + 14.0, r.w - 260.0, 24.0), Font::Title, p.t1, Align::Left);
+        c.text(tr("Scan only one folder, faster."), rect(r.x + 72.0, r.y + 38.0, r.w - 260.0, 20.0), Font::Small, p.t3, Align::Left);
+        self.pill_right(c, r.right() - 20.0, r.y + 22.0, tr("Choose a folder…"), false, Hit::ScanFolder);
         if let Some(t) = self.tree.clone() {
-            let y2 = r.bottom() + 16.0;
-            let r2 = rect(x0, y2, w.min(680.0), 64.0);
-            c.fill_round(r2, 16.0, p.card);
-            c.icon(&ic::MAP, rect(r2.x + 22.0, r2.y + 22.0, 20.0, 20.0), p.accent);
+            let r2 = rect(x0, r.bottom() + gap, w.min(680.0), 64.0);
+            self.card(c, r2);
+            c.icon(&ic::MAP, rect(r2.x + 30.0, r2.y + 22.0, 20.0, 20.0), p.ink);
             let s = fill(tr("Last scan: {path}, {size}"), &[&t.root.to_string_lossy(), &human(t.node(0).size)]);
-            c.text(&s, rect(r2.x + 56.0, r2.y, r2.w - 220.0, r2.h), Font::Body, p.t1, Align::Left);
-            self.pill_right(c, r2.right() - 18.0, r2.y + 16.0, tr("Open the map"), false, Hit::OpenMap);
+            c.text(&s, rect(r2.x + 72.0, r2.y, r2.w - 260.0, r2.h), Font::Body, p.t1, Align::Left);
+            self.pill_right(c, r2.right() - 20.0, r2.y + 16.0, tr("Open the map"), false, Hit::OpenMap);
         }
     }
 
@@ -267,18 +337,18 @@ impl App {
         let p = self.pal.clone();
         let items: Vec<String> = menu.items.iter().map(|(l, _)| l.clone()).collect();
         let mw = items.iter().map(|l| c.text_width(l, Font::Body)).fold(160.0f32, f32::max) + 44.0;
-        let mh = items.len() as f32 * 34.0 + 12.0;
+        let mh = items.len() as f32 * 36.0 + 12.0;
         let x = menu.x.min(w - mw - 8.0).max(8.0);
         let y = if menu.y + mh > h - 8.0 { (menu.y - mh).max(8.0) } else { menu.y };
         let b = rect(x, y, mw, mh);
-        c.fill_round(b.offset(0.0, 6.0).inset(-2.0), 14.0, Color::hex(0).fade(0.25));
-        c.fill_round(b, 12.0, if p.dark { Color::hex(0x2a2a30) } else { Color::hex(0xffffff) });
-        c.stroke_round(b, 12.0, p.line, 1.0);
+        c.fill_round(b.offset(0.0, 6.0).inset(-2.0), 16.0, Color::hex(0).fade(if p.dark { 0.3 } else { 0.12 }));
+        c.fill_round(b, 14.0, p.solid);
+        c.stroke_round(b, 14.0, p.ring, 1.0);
         for (i, label) in items.iter().enumerate() {
-            let row = rect(x + 6.0, y + 6.0 + i as f32 * 34.0, mw - 12.0, 32.0);
+            let row = rect(x + 6.0, y + 6.0 + i as f32 * 36.0, mw - 12.0, 36.0);
             let hit = Hit::MenuItem(i);
             if self.hovered(&hit) {
-                c.fill_round(row, 8.0, p.t1.fade(0.08));
+                c.fill_round(row, 10.0, p.hover);
             }
             c.text(label, rect(row.x + 12.0, row.y, row.w - 20.0, row.h), Font::Body, p.t1, Align::Left);
             self.hits.add(row, hit);
@@ -290,7 +360,7 @@ impl App {
         let p = self.pal.clone();
         // everything under the dialog stops answering
         self.hits.clear();
-        c.fill(rect(0.0, 0.0, w, h), Color::hex(0).fade(0.55));
+        c.fill(rect(0.0, 0.0, w, h), Color::hex(0).fade(if p.dark { 0.5 } else { 0.3 }));
         let (title, lines, ok) = match modal {
             Modal::Confirm => {
                 let mut lines = Vec::new();
@@ -321,29 +391,33 @@ impl App {
                 tr("Restart"),
             ),
         };
-        let mw = (w - 80.0).min(520.0);
+        let mw = (w - 80.0).min(560.0);
         let line_h = 22.0;
-        let mh = 64.0 + lines.len() as f32 * line_h + 76.0;
+        let mh = 68.0 + lines.len() as f32 * line_h + 80.0;
         let b = rect((w - mw) / 2.0, (h - mh) / 2.0, mw, mh);
-        c.fill_round(b.offset(0.0, 8.0).inset(-2.0), 20.0, Color::hex(0).fade(0.3));
-        c.fill_round(b, 18.0, p.card);
-        c.stroke_round(b, 18.0, p.line, 1.0);
-        c.text(&title, rect(b.x + 26.0, b.y + 22.0, b.w - 52.0, 28.0), Font::Large, p.t1, Align::Left);
+        c.fill_round(b.offset(0.0, 10.0).inset(-2.0), 22.0, Color::hex(0).fade(if p.dark { 0.35 } else { 0.12 }));
+        c.fill_round(b, 20.0, p.solid);
+        c.stroke_round(b, 20.0, p.ring, 1.0);
+        c.text(&title, rect(b.x + 24.0, b.y + 22.0, b.w - 48.0, 28.0), Font::Large, p.t1, Align::Left);
         for (i, l) in lines.iter().enumerate() {
-            c.text(l, rect(b.x + 26.0, b.y + 62.0 + i as f32 * line_h, b.w - 52.0, line_h), Font::Body, p.t2, Align::Left);
+            c.text(l, rect(b.x + 24.0, b.y + 64.0 + i as f32 * line_h, b.w - 48.0, line_h), Font::Body, p.t2, Align::Left);
         }
-        let by = b.bottom() - 56.0;
-        let left = self.pill_right(c, b.right() - 24.0, by, ok, true, Hit::ModalOk);
-        self.pill_right(c, left - 10.0, by, tr("Cancel"), false, Hit::ModalCancel);
+        let by = b.bottom() - 58.0;
+        let ow = c.text_width(ok, Font::BodyBold) + 36.0;
+        self.pill_in(c, rect(b.right() - 24.0 - ow, by, ow, 34.0), ok, true, Hit::ModalOk);
+        let cancel = tr("Cancel");
+        let cw = c.text_width(cancel, Font::BodyBold) + 36.0;
+        self.pill_in(c, rect(b.right() - 24.0 - ow - 10.0 - cw, by, cw, 34.0), cancel, false, Hit::ModalCancel);
     }
 
     fn paint_toast(&mut self, c: &mut Canvas, w: f32, h: f32) {
         let Some((text, _)) = self.toast.clone() else { return };
         let p = self.pal.clone();
-        let tw = c.text_width(&text, Font::Body) + 40.0;
-        let r = rect((w - tw) / 2.0, h - 72.0, tw, 40.0);
-        c.fill_round(r, 20.0, if p.dark { Color::hex(0x2e2e34) } else { Color::hex(0x1c1c20) });
-        c.text(&text, r, Font::Body, Color::hex(0xffffff), Align::Center);
+        let tw = (c.text_width(&text, Font::Body) + 40.0).min(w - 40.0);
+        let r = rect((w - tw) / 2.0, h - 118.0, tw, 38.0);
+        c.fill_round(r, 19.0, p.solid2);
+        c.stroke_round(r, 19.0, p.ring, 1.0);
+        c.text(&text, r.inset_xy(16.0, 0.0), Font::Body, p.t1, Align::Center);
         self.hits.add(r, Hit::Toast);
     }
 }

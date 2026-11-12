@@ -97,6 +97,16 @@ pub fn text_box(c: &mut Canvas, s: &str, q: Rect, size: f32, weight: u32, color:
     }
 }
 
+/// The accent as text or a small icon: a touch lighter on dark backgrounds, so that it reads as well as the rest.
+pub fn accent_ink(t: &plume_ui::Theme) -> Color {
+    if t.dark { t.accent.mix(t.t1, 0.28) } else { t.accent }
+}
+
+/// A selected line or page: the accent at 16 %.
+pub fn selection(t: &plume_ui::Theme) -> Color {
+    t.accent.fade(0.16)
+}
+
 /// Plume Clipboard's icons (16 × 16, like Plume's).
 pub mod ic {
     use super::*;
@@ -121,6 +131,11 @@ pub mod ic {
         ARROW_UP = [P("M8 13V3.5M4 7.5 8 3.5l4 4")];
         ARROW_DOWN = [P("M8 3v9.5M4 8.5l4 4 4-4")];
         SHIELD = [P("M8 2 3 4v4c0 3 2.2 5.2 5 6 2.8-.8 5-3 5-6V4z")];
+        LOCK = [R(3.5, 7.0, 9.0, 7.0, 1.8), P("M5.5 7V5a2.5 2.5 0 0 1 5 0v2")];
+        KEY = [C(5.5, 10.5, 2.8), P("M7.5 8.5 13.5 2.5M11.5 4.5l1.5 1.5M9.8 6.2l1.4 1.4")];
+        GLOBE = [C(8.0, 8.0, 6.0), P("M2 8h12M8 2c1.8 1.8 2.6 3.8 2.6 6S9.8 12.2 8 14M8 2C6.2 3.8 5.4 5.8 5.4 8S6.2 12.2 8 14")];
+        EYE = [P("M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"), C(8.0, 8.0, 2.0)];
+        EYE_OFF = [P("M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"), C(8.0, 8.0, 2.0), P("M2.5 13.5l11-11")];
     }
 }
 

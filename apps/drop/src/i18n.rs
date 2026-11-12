@@ -138,6 +138,11 @@ pub fn tr(en: &'static str) -> &'static str {
         "now" => "à l'instant",
         "{} min ago" => "il y a {} min",
         "Today" => "Aujourd'hui",
+        "No device yet" => "Aucun appareil",
+        "Scan the code with your phone's camera to connect it." => "Scannez le code avec l'appareil photo du téléphone pour le connecter.",
+        "Nothing yet" => "Rien pour l'instant",
+        "Files, text and links you send or receive show up here." => "Les fichiers, textes et liens envoyés ou reçus apparaissent ici.",
+        "Where files go, what happens to text and links, and the language." => "Où vont les fichiers, ce que deviennent les textes et les liens, et la langue.",
         _ => en,
     }
 }

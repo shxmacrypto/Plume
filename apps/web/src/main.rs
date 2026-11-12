@@ -3774,6 +3774,9 @@ impl App {
                     unsafe {
                         if v["c"] == "dl-open" {
                             ShellExecuteW(None, w!("open"), &HSTRING::from(path), None, None, SW_SHOWNORMAL);
+                        } else if let Some(fex) = defbrowser::folder_app() {
+                            // Plume FEx ouvre les dossiers : il montre le fichier sélectionné dans son dossier
+                            ShellExecuteW(None, w!("open"), &HSTRING::from(fex.as_os_str()), &HSTRING::from(format!("\"{path}\"")), None, SW_SHOWNORMAL);
                         } else {
                             ShellExecuteW(None, w!("open"), w!("explorer.exe"), &HSTRING::from(format!("/select,\"{path}\"")), None, SW_SHOWNORMAL);
                         }

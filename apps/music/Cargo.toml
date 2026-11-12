@@ -17,6 +17,7 @@ test-hook = ["plume-ui/test-hook"]
 [dependencies]
 plume-ui = { path = "../../crates/plume-ui" }
 plume-update = { path = "../../crates/plume-update" }
+plume-defaults = { path = "../../crates/plume-defaults" }
 serde_json = "1"
 symphonia = { version = "0.5.4", default-features = false, features = ["mp3", "aac", "isomp4", "flac", "vorbis", "ogg", "wav", "alac", "pcm", "adpcm"] }
 lofty = "0.22"

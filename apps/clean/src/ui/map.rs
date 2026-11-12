@@ -98,30 +98,36 @@ impl App {
             let y = self.heading(c, x0, body.y + 28.0, w, tr("Scanning…"), &target);
             let files = prog.files.load(Ordering::Relaxed);
             let bytes = prog.bytes.load(Ordering::Relaxed);
-            let r = rect(x0, y + 10.0, w.min(560.0), 120.0);
-            c.fill_round(r, 16.0, p.card);
-            c.text(&human(bytes), rect(r.x + 22.0, r.y + 18.0, r.w - 44.0, 36.0), Font::Hero, p.accent, Align::Left);
-            c.text(&fill(tr("{n} files so far"), &[&count(files)]), rect(r.x + 22.0, r.y + 58.0, r.w - 44.0, 20.0), Font::Body, p.t2, Align::Left);
+            let r = rect(x0, y + 8.0, w.min(560.0), 124.0);
+            self.card(c, r);
+            c.text(&human(bytes), rect(r.x + 24.0, r.y + 20.0, r.w - 48.0, 36.0), Font::Hero, p.t1, Align::Left);
+            c.text(&fill(tr("{n} files so far"), &[&count(files)]), rect(r.x + 24.0, r.y + 60.0, r.w - 48.0, 20.0), Font::Body, p.t2, Align::Left);
             // a moving stripe: busy
             let t = (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() % 1600) as f32 / 1600.0;
-            let track = rect(r.x + 22.0, r.y + 92.0, r.w - 44.0, 6.0);
-            c.fill_round(track, 3.0, p.t1.fade(0.1));
+            let track = rect(r.x + 24.0, r.y + 96.0, r.w - 48.0, 6.0);
+            c.fill_round(track, 3.0, p.fill);
             let sw = track.w * 0.3;
             let sx = track.x + (track.w + sw) * t - sw;
             c.clip(track);
             c.fill_round(rect(sx, track.y, sw, track.h), 3.0, p.accent);
             c.unclip();
-            self.pill(c, x0, r.bottom() + 16.0, tr("Stop"), false, Hit::CancelScan);
+            self.pill(c, x0, r.bottom() + 14.0, tr("Stop"), false, Hit::CancelScan);
             return;
         }
         let Some(t) = self.tree.clone() else {
-            let y = self.heading(c, x0, body.y + 28.0, w, tr("Map"), tr("Scan a drive or a folder to see what fills it."));
-            self.pill(c, x0, y + 4.0, tr("Choose a drive"), true, Hit::GoScan);
+            self.empty_state(
+                c,
+                rect(body.x, body.y, body.w, body.h - 40.0),
+                &super::paint::ic::MAP,
+                tr("No scan yet"),
+                tr("Scan a drive or a folder to see what fills it."),
+                Some((tr("Choose a drive"), Hit::GoScan)),
+            );
             return;
         };
         // the path, clickable piece by piece
         let top = body.y + 18.0;
-        self.icon_btn(c, &icons::UP, rect(x0, top, 34.0, 32.0), Hit::Up);
+        self.icon_btn(c, &icons::UP, rect(x0, top - 1.0, 34.0, 34.0), Hit::Up);
         let mut x = x0 + 44.0;
         let right_tools = 380.0;
         let chain = t.chain(self.cur);
@@ -145,7 +151,7 @@ impl App {
             let r = rect(x - 6.0, top, tw + 12.0, 32.0);
             let hit = Hit::Crumb(id);
             if self.hovered(&hit) {
-                c.fill_round(r, 8.0, p.t1.fade(0.08));
+                c.fill_round(r, 10.0, p.hover);
             }
             let last = start + k + 1 == chain.len();
             c.text(&name, rect(x, top, tw, 32.0), Font::BodyBold, if last { p.t1 } else { p.t2 }, Align::Left);
@@ -187,13 +193,13 @@ impl App {
     fn paint_treemap(&mut self, c: &mut Canvas, area: Rect) {
         let p = self.pal.clone();
         let Some(t) = self.tree.clone() else { return };
-        c.fill_round(area, 16.0, p.card);
+        self.card(c, area);
         let inner = area.inset(8.0);
         let mut kids = t.sorted_children(self.cur, Order::Size, true);
         kids.retain(|&k| t.node(k).size > 0);
         kids.truncate(400);
         if kids.is_empty() {
-            c.text(tr("This folder holds nothing that takes space."), inner, Font::Body, p.t3, Align::Center);
+            self.empty_state(c, inner, &icons::FOLDER, tr("Empty folder"), tr("This folder holds nothing that takes space."), None);
             return;
         }
         let vals: Vec<f64> = kids.iter().map(|&k| t.node(k).size as f64).collect();
@@ -217,7 +223,7 @@ impl App {
             let label_h = 20.0;
             let show_label = b.w > 54.0 && b.h > 30.0;
             if show_label {
-                let ink = if p.dark { Color::hex(0xffffff) } else { Color::hex(0x111114) };
+                let ink = p.t1;
                 let name = t.name(id);
                 let size = human(n.size);
                 let sw = c.text_width(&size, Font::Small) + 8.0;
@@ -249,17 +255,17 @@ impl App {
                     };
                     c.fill_round(sb, 3.0f32.min(sb.w / 3.0), shade.over(col));
                     if sb.w > 70.0 && sb.h > 22.0 {
-                        let ink = if p.dark { Color::hex(0xffffff).fade(0.85) } else { Color::hex(0x111114).fade(0.85) };
+                        let ink = p.t1.fade(0.85);
                         c.text(t.name(sid), rect(sb.x + 6.0, sb.y + 1.0, sb.w - 10.0, 18.0), Font::Small, ink, Align::Left);
                     }
                     if hover_id == Some(sid) || sel == Some(sid) {
-                        c.stroke_round(sb, 3.0, Color::hex(0xffffff), 2.0);
+                        c.stroke_round(sb, 3.0, p.t1, 2.0);
                     }
                     self.hits.add(sb, Hit::Block(sid));
                 }
             }
             if hover_id == Some(id) || sel == Some(id) {
-                c.stroke_round(b, rad, if p.dark { Color::hex(0xffffff) } else { Color::hex(0x111114) }, 2.0);
+                c.stroke_round(b, rad, p.t1, 2.0);
             }
         }
     }
@@ -267,21 +273,25 @@ impl App {
     fn paint_list(&mut self, c: &mut Canvas, r: Rect) {
         let p = self.pal.clone();
         let Some(t) = self.tree.clone() else { return };
-        c.fill_round(r, 16.0, p.card);
-        // contents or biggest files
-        let seg = rect(r.x + 12.0, r.y + 12.0, r.w - 24.0, 32.0);
-        c.fill_round(seg, 16.0, p.t1.fade(0.06));
-        let half = seg.w / 2.0;
+        self.card(c, r);
+        // contents or biggest files: a segmented control across the card
+        let seg = rect(r.x + 14.0, r.y + 14.0, r.w - 28.0, 34.0);
+        c.fill_round(seg, 17.0, p.fill);
+        let half = (seg.w - 6.0) / 2.0;
         for (k, (mode, label)) in [(ListMode::Contents, tr("In this folder")), (ListMode::Files, tr("Biggest files"))].into_iter().enumerate() {
-            let sr = rect(seg.x + k as f32 * half + 3.0, seg.y + 3.0, half - 6.0, seg.h - 6.0);
+            let sr = rect(seg.x + 3.0 + k as f32 * half, seg.y + 3.0, half, seg.h - 6.0);
+            let hit = Hit::Mode(mode);
             if self.mode == mode {
-                c.fill_round(sr, 13.0, if p.dark { Color::hex(0x34343c) } else { Color::hex(0xffffff) });
+                c.fill_round(sr, 14.0, p.fill2.over(p.fill.over(p.card)));
+                c.stroke_round(sr, 14.0, p.ring, 1.0);
+            } else if self.hovered(&hit) {
+                c.fill_round(sr, 14.0, p.hover);
             }
             c.text(label, sr, Font::BodyBold, if self.mode == mode { p.t1 } else { p.t2 }, Align::Center);
-            self.hits.add(sr, Hit::Mode(mode));
+            self.hits.add(sr, hit);
         }
         // column titles
-        let head = rect(r.x + 12.0, seg.bottom() + 8.0, r.w - 24.0, 26.0);
+        let head = rect(r.x + 14.0, seg.bottom() + 8.0, r.w - 28.0, 28.0);
         let arrow = |on: bool, desc: bool| if on { if desc { " ↓" } else { " ↑" } } else { "" };
         let name_label = format!("{}{}", tr("Name"), arrow(self.order == Order::Name, self.desc));
         let size_label = format!("{}{}", tr("Size"), arrow(self.order == Order::Size, self.desc));
@@ -302,7 +312,7 @@ impl App {
         let max = (self.rows.len() as f32 * ROW_H - rows_r.h).max(0.0);
         self.list_scroll = self.list_scroll.min(max);
         if self.rows.is_empty() {
-            c.text(tr("Empty folder"), rows_r, Font::Body, p.t3, Align::Center);
+            self.empty_state(c, rows_r, &icons::FOLDER, tr("Empty folder"), tr("Nothing here."), None);
             return;
         }
         // color of each child as in the map
@@ -325,19 +335,16 @@ impl App {
             let row = rect(rows_r.x, y, rows_r.w, ROW_H - 2.0);
             let hit = Hit::Row(i);
             let hovered = self.hovered(&hit) || matches!(self.hover, Some(Hit::Block(b)) if b == id);
-            if self.sel == Some(id) {
-                c.fill_round(row, 8.0, p.accent.fade(0.18));
+            let selected = self.sel == Some(id);
+            if selected {
+                c.fill_round(row, 10.0, p.accent.fade(0.16));
             } else if hovered {
-                c.fill_round(row, 8.0, p.t1.fade(0.06));
+                c.fill_round(row, 10.0, p.hover);
             }
             if let Some(k) = order_by_size.iter().position(|&x| x == id) {
-                c.fill_round(rect(row.x + 8.0, row.y + 12.0, 8.0, 8.0), 2.5, self.block_color(k));
+                c.fill_round(rect(row.x + 8.0, row.y + 15.0, 8.0, 8.0), 2.5, self.block_color(k));
             }
-            c.icon(
-                if n.is_dir() { &icons::FOLDER } else { &icons::FILE },
-                rect(row.x + 24.0, row.y + 8.0, 16.0, 16.0),
-                if n.is_dir() { p.accent } else { p.t2 },
-            );
+            c.icon(if n.is_dir() { &icons::FOLDER } else { &icons::FILE }, rect(row.x + 24.0, row.y + 11.0, 16.0, 16.0), if selected { p.ink } else { p.t2 });
             let name_w = row.w - 48.0 - 190.0;
             let name = if self.mode == ListMode::Files {
                 t.name(id).to_string()
@@ -350,8 +357,8 @@ impl App {
             // a bar: share of the folder
             let k = n.size as f32 / parent_size as f32;
             let track = rect(row.x + 48.0, row.bottom() - 5.0, name_w, 3.0);
-            c.fill_round(track, 1.5, p.t1.fade(0.06));
-            c.fill_round(rect(track.x, track.y, (name_w * k).max(2.0), 3.0), 1.5, p.accent.fade(0.55));
+            c.fill_round(track, 1.5, p.fill);
+            c.fill_round(rect(track.x, track.y, (name_w * k).max(2.0), 3.0), 1.5, p.accent.fade(0.7));
             c.text(&crate::i18n::ago(n.mtime, now), rect(row.right() - 196.0, row.y, 90.0, row.h), Font::Small, p.t3, Align::Right);
             c.text(&human(n.size), rect(row.right() - 96.0, row.y, 88.0, row.h), Font::BodyBold, p.t2, Align::Right);
             self.hits.add(row.intersect(&rows_r), hit);

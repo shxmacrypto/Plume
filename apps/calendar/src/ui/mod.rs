@@ -7,6 +7,7 @@ mod settings_view;
 mod views;
 
 pub use editor::Editor;
+pub use paint::{LOGO, png};
 
 use crate::{
     date::{DAY, Date, Wall},
@@ -346,7 +347,8 @@ pub fn theme_for(set: &Settings) -> Theme {
         "light" => false,
         _ => crate::system_dark(),
     };
-    Theme::new(dark, Color::parse(if dark { "#818cf8" } else { "#4f46e5" }))
+    // the icon's sky; a deeper sky on white so accent text stays readable
+    Theme::new(dark, Color::parse(if dark { "#0ea5e9" } else { "#0284c7" }))
 }
 
 /// A color written "#rrggbb".

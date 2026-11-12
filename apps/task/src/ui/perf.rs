@@ -40,8 +40,8 @@ impl App {
                 title: tr("Processor"),
                 value: model::percent(s.cpu),
                 sub: s.cpu_name.clone(),
-                color: p.blue,
-                lines: vec![(&h.cpu, p.blue)],
+                color: p.accent,
+                lines: vec![(&h.cpu, p.accent)],
                 max: 100.0,
                 stats: vec![
                     (tr("Logical processors").into(), s.ncpu.to_string()),
@@ -97,17 +97,18 @@ impl App {
         // two cards per row when there is room
         let x0 = page.x + 24.0;
         let w = page.w - 48.0;
-        let colw = if w > 760.0 { (w - 16.0) / 2.0 } else { w };
+        let gap = 14.0;
+        let colw = if w > 760.0 { (w - gap) / 2.0 } else { w };
         let per_row = if colw < w { 2 } else { 1 };
-        let card_h = 236.0;
+        let card_h = 240.0;
         c.clip(area);
-        let mut y = area.y - scroll + 4.0;
+        let mut y = area.y - scroll;
         for (i, card) in cards.iter().enumerate() {
             let col = i % per_row;
             if i > 0 && col == 0 {
-                y += card_h + 16.0;
+                y += card_h + gap;
             }
-            let r = rect(x0 + col as f32 * (colw + 16.0), y, colw, card_h);
+            let r = rect(x0 + col as f32 * (colw + gap), y, colw, card_h);
             if r.bottom() >= area.y && r.y <= area.bottom() {
                 paint_card(c, &p, r, card);
             }
@@ -119,17 +120,18 @@ impl App {
 }
 
 fn paint_card(c: &mut Canvas, p: &super::Pal, r: Rect, k: &Card) {
-    c.fill_round(r, 14.0, p.card);
-    c.stroke_round(r, 14.0, p.line, 1.0);
-    let ir = rect(r.x + 18.0, r.y + 18.0, 30.0, 30.0);
-    c.fill_round(ir, 9.0, k.color.fade(0.16));
-    c.icon(k.icon, ir.centered(16.0, 16.0), k.color);
-    draw::text(c, k.title, rect(ir.right() + 12.0, r.y + 14.0, r.w - 200.0, 22.0), 15.0, 600, p.t1, Align::Left);
-    c.text(&k.sub, rect(ir.right() + 12.0, r.y + 34.0, r.w - 190.0, 18.0), Font::Small, p.t3, Align::Left);
-    draw::text(c, &k.value, rect(r.right() - 170.0, r.y + 14.0, 152.0, 36.0), 22.0, 700, p.t1, Align::Right);
+    c.fill_round(r, 18.0, p.card);
+    c.stroke_round(r, 18.0, p.line, 1.0);
+    let pad = 20.0;
+    let ir = rect(r.x + pad, r.y + pad, 32.0, 32.0);
+    c.fill_round(ir, 10.0, k.color.fade(0.16));
+    c.icon(k.icon, ir.centered(18.0, 18.0), k.color);
+    c.text(k.title, rect(ir.right() + 12.0, r.y + 16.0, r.w - 200.0, 22.0), Font::Title, p.t1, Align::Left);
+    c.text(&k.sub, rect(ir.right() + 12.0, r.y + 38.0, r.w - 196.0, 18.0), Font::Small, p.t3, Align::Left);
+    draw::text(c, &k.value, rect(r.right() - 172.0, r.y + 16.0, 172.0 - pad, 36.0), 22.0, 700, p.t1, Align::Right);
     // the graph, on a faint grid
-    let g = rect(r.x + 18.0, r.y + 62.0, r.w - 36.0, 106.0);
-    c.fill_round(g.inset(-1.0), 8.0, p.t1.fade(0.025));
+    let g = rect(r.x + pad, r.y + 68.0, r.w - 2.0 * pad, 100.0);
+    c.fill_round(g.inset(-1.0), 10.0, p.hover);
     for k in 1..4 {
         c.hline(g.x, g.y + g.h * k as f32 / 4.0, g.w, p.line);
     }
@@ -139,22 +141,22 @@ fn paint_card(c: &mut Canvas, p: &super::Pal, r: Rect, k: &Card) {
     for (vals, col) in &k.lines {
         draw::graph(c, g, vals, HIST, k.max, *col, k.lines.len() == 1);
     }
-    c.text(tr("60 seconds"), rect(g.x, g.bottom() + 2.0, 120.0, 16.0), Font::Small, p.t3, Align::Left);
-    c.text("0", rect(g.right() - 40.0, g.bottom() + 2.0, 40.0, 16.0), Font::Small, p.t3, Align::Right);
+    c.text(tr("60 seconds"), rect(g.x, g.bottom() + 4.0, 120.0, 18.0), Font::Small, p.t3, Align::Left);
+    c.text("0", rect(g.right() - 40.0, g.bottom() + 4.0, 40.0, 18.0), Font::Small, p.t3, Align::Right);
     // the numbers below
     let n = k.stats.len().max(1) as f32;
-    let sw = (r.w - 36.0) / n;
+    let sw = (r.w - 2.0 * pad) / n;
     for (i, (label, value)) in k.stats.iter().enumerate() {
-        let sx = r.x + 18.0 + i as f32 * sw;
+        let sx = r.x + pad + i as f32 * sw;
         let dot = k.lines.len() > 1 && i < k.lines.len();
         let lx = if dot {
-            c.fill_round(rect(sx, r.bottom() - 42.0, 8.0, 8.0), 4.0, k.lines[i].1);
+            c.fill_round(rect(sx, r.bottom() - 46.0, 8.0, 8.0), 4.0, k.lines[i].1);
             sx + 14.0
         } else {
             sx
         };
-        c.text(label, rect(lx, r.bottom() - 48.0, sw - 18.0, 18.0), Font::Small, p.t3, Align::Left);
-        c.text(value, rect(sx, r.bottom() - 30.0, sw - 6.0, 20.0), Font::BodyBold, p.t1, Align::Left);
+        c.text(label, rect(lx, r.bottom() - 52.0, sw - 18.0, 18.0), Font::Small, p.t3, Align::Left);
+        c.text(value, rect(sx, r.bottom() - 34.0, sw - 6.0, 20.0), Font::BodyBold, p.t1, Align::Left);
     }
 }
 

@@ -8,7 +8,7 @@ use crate::{
     tz::{self, Zone},
     ui,
 };
-use plume_ui::{Align, Area, Button, Canvas, Color, Cursor, Cx, Event, Font, Gfx, Handler, Hits, PaintCx, Pt, Theme, Window, rect, window};
+use plume_ui::{Align, Area, Button, Canvas, Color, Cursor, Cx, Event, Font, Gfx, Handler, Hits, PaintCx, Pt, Theme, Window, m, rect, window};
 use std::{any::Any, rc::Rc};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -21,6 +21,7 @@ enum Id {
 
 pub struct Popup {
     win: Window,
+    gfx: Rc<Gfx>,
     main: Window,
     t: Theme,
     items: Vec<Due>,
@@ -56,15 +57,16 @@ pub fn when(d: &Due, now: i64, h24: bool) -> String {
 pub fn open(main: Window, gfx: Rc<Gfx>, t: Theme, d: Due, h24: bool) -> Option<Window> {
     let o = window::Options {
         title: format!("Plume Calendar · {}", d.title),
-        size: (W, ROW + 40.0),
+        size: (W, m::TITLE_H + 8.0 + ROW),
         min: (W, 100.0),
         dark: t.dark,
         background: t.bg,
         activate: false,
         placement: None,
     };
+    let g = gfx.clone();
     let w = window::create(&gfx, o, move |win| {
-        Box::new(Popup { win, main, t, items: vec![d], h24, hits: Hits::default(), hover: None, pressed: None }) as Box<dyn Handler>
+        Box::new(Popup { win, gfx: g, main, t, items: vec![d], h24, hits: Hits::default(), hover: None, pressed: None }) as Box<dyn Handler>
     })
     .ok()?;
     place(w, 1);
@@ -73,7 +75,7 @@ pub fn open(main: Window, gfx: Rc<Gfx>, t: Theme, d: Due, h24: bool) -> Option<W
 
 fn place(w: Window, n: usize) {
     let s = w.scale();
-    let h = 40.0 + ROW * n.min(4) as f32;
+    let h = m::TITLE_H + 8.0 + ROW * n.min(4) as f32;
     sys::place_corner(w.hwnd, (W * s) as i32, (h * s) as i32);
 }
 
@@ -135,19 +137,25 @@ impl Handler for Popup {
     fn paint(&mut self, c: &mut Canvas, cx: &mut PaintCx) {
         let t = self.t.clone();
         self.hits.clear();
-        c.clear(t.solid);
-        c.text("Plume Calendar", rect(16.0, 0.0, cx.w - 60.0, 36.0), Font::SmallBold, t.t3, Align::Left);
-        let close = rect(cx.w - 40.0, 4.0, 32.0, 28.0);
-        if self.hover == Some(Id::Close) {
-            c.fill_round(close, 8.0, t.hover);
+        c.clear(t.bg);
+        // the title bar, as in every Plume window
+        c.gradient_v(rect(0.0, 0.0, cx.w, m::TITLE_H), t.hdr1, t.hdr2);
+        let wic = self.gfx.wic.clone();
+        c.image(1, rect(14.0, (m::TITLE_H - 18.0) / 2.0, 18.0, 18.0), 1.0, || crate::ui::png(&wic, crate::ui::LOGO));
+        c.text("Plume Calendar", rect(40.0, 0.0, cx.w - 100.0, m::TITLE_H), Font::BodyBold, t.t1, Align::Left);
+        let close = rect(cx.w - m::CAPTION_W, 0.0, m::CAPTION_W, m::TITLE_H - 8.0);
+        let hot = self.hover == Some(Id::Close);
+        if hot {
+            c.fill(close, t.close_hover);
         }
-        c.icon(&plume_ui::icons::CLOSE, close.centered(10.0, 10.0), t.t2);
+        c.glyph('\u{E8BB}', close, if hot { Color::hex(0xffffff) } else { t.t1 });
         self.hits.add(close, Id::Close);
         let now = tz::now();
-        let mut y = 36.0;
+        let mut y = m::TITLE_H + 4.0;
         for (i, d) in self.items.clone().iter().enumerate().take(4) {
-            let row = rect(8.0, y, cx.w - 16.0, ROW - 8.0);
-            c.fill_round(row, 12.0, if self.hover == Some(Id::Open(i)) { t.fill2 } else { t.fill });
+            let row = rect(12.0, y, cx.w - 24.0, ROW - 12.0);
+            c.fill_round(row, 16.0, if self.hover == Some(Id::Open(i)) { t.card.mix(t.t1, 0.04) } else { t.card });
+            c.stroke_round(row, 16.0, t.sep, 1.0);
             self.hits.add(row, Id::Open(i));
             c.fill_round(rect(row.x + 12.0, row.y + 14.0, 4.0, 38.0), 2.0, ui::color(&d.color));
             c.text(&d.title, rect(row.x + 26.0, row.y + 10.0, row.w - 40.0, 22.0), Font::Title, t.t1, Align::Left);
@@ -156,17 +164,17 @@ impl Handler for Popup {
                 sub = format!("{sub} · {}", d.location);
             }
             c.text(&sub, rect(row.x + 26.0, row.y + 33.0, row.w - 40.0, 20.0), Font::Body, t.t2, Align::Left);
-            let by = row.bottom() - 42.0;
+            let by = row.bottom() - 46.0;
             for (k, (label, id, accent)) in [(tr("Snooze 5 min"), Id::Snooze(i), false), (tr("Dismiss"), Id::Dismiss(i), true)].into_iter().enumerate() {
-                let bw = (row.w - 36.0) / 2.0;
-                let b = rect(row.x + 12.0 + k as f32 * (bw + 12.0), by, bw, 32.0);
+                let bw = (row.w - 40.0) / 2.0;
+                let b = rect(row.x + 16.0 + k as f32 * (bw + 8.0), by, bw, 32.0);
                 let hot = self.hover == Some(id);
                 let fill = if accent {
                     if hot { t.accent.mix(Color::hex(0xffffff), 0.12) } else { t.accent }
                 } else if hot {
                     t.fill2
                 } else {
-                    t.solid2
+                    t.fill
                 };
                 c.fill_round(b, 16.0, fill);
                 c.text(label, b, Font::BodyBold, if accent { Color::hex(0xffffff) } else { t.t1 }, Align::Center);
@@ -212,7 +220,7 @@ impl Handler for Popup {
     fn area(&self, p: Pt) -> Area {
         match self.hits.at(p) {
             Some(_) => Area::Client,
-            None if p.y < 36.0 => Area::Caption,
+            None if p.y < m::TITLE_H => Area::Caption,
             None => Area::Client,
         }
     }

@@ -109,5 +109,15 @@ fn state(hub: &Hub) -> Value {
         "hwnd": hub.win.hwnd.0 as isize,
         "dark": hub.theme.dark,
         "version": plume_update::VERSION,
+        // per app: null (not installed, or opens no files), "not-registered", "registered" or "default"
+        "defaults": hub.defaults.iter().map(|d| d.map(|s| match s {
+            plume_defaults::State::NotRegistered => "not-registered",
+            plume_defaults::State::Registered => "registered",
+            plume_defaults::State::Default => "default",
+        })).collect::<Vec<_>>(),
+        "explain": hub.explain,
+        "confirm": hub.confirm,
+        "defaulting": hub.defaulting,
+        "settings_link": hub.settings_link,
     })
 }

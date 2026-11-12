@@ -12,10 +12,9 @@ use windows::{
             D2D1_ELLIPSE, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, ID2D1Bitmap, ID2D1DeviceContext, ID2D1RenderTarget,
         },
         DirectWrite::{
-            DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
-            DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS,
-            DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP, IDWriteInlineObject,
-            IDWriteTextFormat,
+            DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
+            DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS, DWRITE_TRIMMING,
+            DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP, IDWriteInlineObject, IDWriteTextFormat,
         },
         Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM,
     },
@@ -214,21 +213,6 @@ fn format(c: &Canvas, size: f32, weight: u32, align: Align, wrap: bool) -> Optio
         }
         FORMATS.with(|m| m.borrow_mut().insert(key, f.clone()));
         Some(f)
-    }
-}
-
-/// One line of text in any size, centered in height, "…" when it does not fit.
-pub fn text(c: &mut Canvas, s: &str, q: Rect, size: f32, weight: u32, color: Color, align: Align) {
-    if s.is_empty() || q.w <= 0.0 {
-        return;
-    }
-    let Some(f) = format(c, size, weight, align, false) else { return };
-    let rt = c.target();
-    let w: Vec<u16> = s.encode_utf16().collect();
-    unsafe {
-        if let Ok(b) = rt.CreateSolidColorBrush(&col(color), None) {
-            rt.DrawText(&w, &f, &rf(q), &b, D2D1_DRAW_TEXT_OPTIONS(2 | 4), DWRITE_MEASURING_MODE_NATURAL);
-        }
     }
 }
 

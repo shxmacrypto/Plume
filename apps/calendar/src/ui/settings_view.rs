@@ -10,10 +10,10 @@ use plume_ui::{Align, Canvas, Font, Rect, icons, rect};
 impl App {
     fn section(&mut self, c: &mut Canvas, x: f32, y: f32, w: f32, title: &str, rows: f32) -> Rect {
         let t = self.t.clone();
-        c.text(title, rect(x + 4.0, y, w, 24.0), Font::SmallBold, t.t3, Align::Left);
-        let card = rect(x, y + 28.0, w, rows);
-        c.fill_round(card, 14.0, t.card);
-        c.stroke_round(card, 14.0, t.ring, 1.0);
+        c.text(title, rect(x + 4.0, y, w, 26.0), Font::Large, t.t1, Align::Left);
+        let card = rect(x, y + 34.0, w, rows);
+        c.fill_round(card, 16.0, t.card);
+        c.stroke_round(card, 16.0, t.sep, 1.0);
         card
     }
 
@@ -22,21 +22,21 @@ impl App {
         let t = self.t.clone();
         match sub {
             Some(s) => {
-                c.text(label, rect(r.x + 18.0, r.y + 10.0, r.w * 0.45, 20.0), Font::Body, t.t1, Align::Left);
-                c.text(s, rect(r.x + 18.0, r.y + 30.0, r.w * 0.5, 18.0), Font::Small, t.t3, Align::Left);
+                c.text(label, rect(r.x + 20.0, r.y + 10.0, r.w * 0.45, 20.0), Font::Body, t.t1, Align::Left);
+                c.text(s, rect(r.x + 20.0, r.y + 30.0, r.w * 0.5, 18.0), Font::Small, t.t3, Align::Left);
             }
-            None => c.text(label, rect(r.x + 18.0, r.y, r.w * 0.45, r.h), Font::Body, t.t1, Align::Left),
+            None => c.text(label, rect(r.x + 20.0, r.y, r.w * 0.45, r.h), Font::Body, t.t1, Align::Left),
         }
     }
 
     fn seg_right(&mut self, c: &mut Canvas, r: Rect, key: &'static str, opts: &[(&'static str, &str)], current: &str) {
         let items: Vec<(String, Id, bool)> = opts.iter().map(|&(v, l)| (l.to_string(), Id::Set(key, v), v == current)).collect();
         let w: f32 = items.iter().map(|(l, _, _)| c.text_width(l, Font::BodyBold) + 26.0).sum::<f32>() + 6.0;
-        self.seg(c, r.right() - 18.0 - w, r.y + (r.h - 32.0) / 2.0, 32.0, &items);
+        self.seg(c, r.right() - 20.0 - w, r.y + (r.h - 32.0) / 2.0, 32.0, &items);
     }
 
     fn switch_right(&mut self, c: &mut Canvas, r: Rect, key: &'static str, on: bool) {
-        self.toggle(c, rect(r.right() - 18.0 - 40.0, r.y, 40.0, r.h), on, Id::Set(key, if on { "off" } else { "on" }));
+        self.toggle(c, rect(r.right() - 20.0 - 48.0, r.y, 48.0, r.h), on, Id::Set(key, if on { "off" } else { "on" }));
     }
 
     pub(super) fn paint_settings(&mut self, c: &mut Canvas, area: Rect) {

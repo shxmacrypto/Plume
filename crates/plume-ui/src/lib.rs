@@ -4,6 +4,7 @@
 pub mod canvas;
 pub mod dialogs;
 pub mod edit;
+pub mod folder;
 pub mod geom;
 pub mod gfx;
 pub mod icons;

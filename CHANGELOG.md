@@ -2,6 +2,53 @@
 
 All notable changes to Plume. Each `## x.y.z` section becomes the release notes when you run `.\release.ps1 x.y.z`.
 
+## 1.2.0
+
+Four new apps join Plume Suite: **Plume Notepad** replaces Windows Notepad and adds sticky pads, **Plume Cut** edits your videos, **Plume Create** retouches photos and designs posts, and **Plume Boost** applies measured performance tweaks you can undo. Plume FEx gets recent folders, categories and mini panels, Plume Media gets pinned folders and a timeline, and Plume Suite can make Plume apps your Windows default apps. Win+E opens Plume FEx again on the latest Windows 11, and Plume Viewer works from an iPhone.
+
+Already on Plume Suite 1.1? Plume Suite and each app show the update: one click installs it. The new apps are then one click away in Plume Suite.
+
+### New apps
+- **Plume Notepad**: tabs that come back after a restart, find and replace with regular expressions, every encoding, huge files in a blink. One switch makes Windows open it instead of Notepad. **Sticky pads** stay on top of every window (Ctrl+Alt+N).
+- **Plume Cut**: a video editor with a real timeline (video, text, overlay, sound and music tracks), cuts, text, transitions, colour and speed, and exports in 9:16, 16:9 or 1:1 with your graphics card. No watermark.
+- **Plume Create**: photo editing and graphic design in one app: layers, crop, adjustments and looks, a one-click background remover, text effects, and templates for stories, posts and thumbnails.
+- **Plume Boost**: Windows performance tweaks that make a measurable difference, each explained (gain, cost, evidence, how to check it), three profiles, live numbers before and after, and one click to undo everything. No fake score, no RAM cleaner, and it never turns off Defender, UAC or Windows Update.
+  - **Graphics card tuning** for NVIDIA, AMD and Intel Arc: clock and memory offsets, voltage (AMD, Arc), power limit and fans, always inside the limits the driver reports. Each change is tried first and goes back by itself after 15 seconds unless you keep it; a stability test checks it; a driver crash or an unclean restart puts the previous settings back. Profiles, apply at sign-in, and an always-on-top monitor.
+  - **Processor settings** Windows offers per power plan: energy performance preference, turbo mode, minimum and maximum state, core parking.
+  - **A copy of your settings with Plume Backup** before every change, and any copy can be restored. Installing Plume Boost installs Plume Backup with it.
+
+### Plume Suite
+- **Set as default**: Plume Media, Music, PDF, Notepad, Cut and Create can become the Windows default app for their files, from their card.
+- **Apps bring what they need**: installing an app that needs another one installs both (Plume Boost and Plume Backup), and removing an app another one uses says so first.
+
+### Plume FEx
+- **Recent folders** under This PC, and **categories** of folders you create, name and colour.
+- **Reorder the sidebar by dragging**: your top folders, categories and the folders inside them.
+- **Ctrl+right-click a folder** opens it in a small panel over the sidebar, to drag files from one folder to another; undo with Ctrl+Z.
+- **Search filters** by date modified and size, and *Sort by* in the View menu.
+- **Going back keeps your place**: the folder you came from stays selected in its parent.
+- **Win+E opens Plume FEx again** on Windows 11 25H2, where Windows stopped asking the registry which explorer to open. When *Open folders and Win+E with Plume FEx* is on, a tiny helper (started with Windows) catches Win+E and opens Plume FEx; the Start menu stays closed.
+- **Removing Plume FEx always gives everything back to Windows' File Explorer**: double-click on folders and drives, Win+E and the right-click entry, even if Plume FEx could not clean up after itself.
+
+### Plume Viewer
+- **Works from an iPhone (Safari)**: the phone's screen stays on while it waits for the PC to accept, so the connection no longer drops while you walk to the PC.
+- A phone that dropped out no longer leaves the PC "already connected": the next try takes its place.
+- From a computer, your own mouse pointer stays visible over the PC's screen.
+
+### Plume Media
+- **Pinned folders** in the sidebar, with a **timeline** per folder (sort, filters, subfolders) and a date rail to jump through the years.
+- **Open in Plume Cut** sends your videos and photos straight to a new video project.
+
+### Plume Clipboard
+- **Passwords, IP addresses, keys and tokens you copy are hidden** in the history, sealed on this PC and removed after a few minutes (each kind can be switched off).
+
+### Plume Convert
+- **Photos to GIF**: one photo becomes a GIF, several photos become an animated GIF (time per photo, loop, size).
+
+### Every app
+- **One look**: the same colors, rounded cards, pill buttons, switches, spacing and dialogs in every Plume app, in light and dark, with each app's accent matching its icon.
+- **"Show in folder" opens Plume FEx**: when Plume FEx opens your folders, a download in Plume Web (and "Show in folder" in Convert, Media, Music, Clean, Drop, Task and Launcher) opens Plume FEx on the folder, the file selected, instead of Windows' File Explorer.
+
 ## 1.1.0 - 2026-11-11
 
 Thirteen new apps join Plume Suite. **Plume Music** plays your music and YouTube Music, with your Spotify and Apple Music playlists. **Plume Viewer** lets you control your PC from your phone. Eleven everyday tools come with them: Drop, Launcher, Passwords, Media, Task, Clean, Backup, Clipboard, PDF, Calendar and Convert.

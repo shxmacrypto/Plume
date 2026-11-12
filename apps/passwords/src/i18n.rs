@@ -206,7 +206,6 @@ fn fr(en: &str) -> Option<&'static str> {
         "Security code" => "Code de sécurité",
         "Security report" => "Rapport de sécurité",
         "Security" => "Sécurité",
-        "Select an item, or add one with +." => "Choisissez un élément, ou ajoutez-en un avec +.",
         "Separated by commas" => "Séparés par des virgules",
         "Settings" => "Réglages",
         "Shortcut" => "Raccourci",
@@ -259,9 +258,10 @@ fn fr(en: &str) -> Option<&'static str> {
         "Wrong master password." => "Mot de passe maître incorrect.",
         "Wrong password for this backup." => "Mot de passe incorrect pour cette sauvegarde.",
         "Your data" => "Vos données",
-        "Your vault is empty. Add a login with +, or import a CSV file in Settings." => {
-            "Votre coffre est vide. Ajoutez un identifiant avec +, ou importez un fichier CSV dans Réglages."
-        }
+        "Your vault is empty" => "Votre coffre est vide",
+        "Add your first login, or import a CSV file in Settings." => "Ajoutez votre premier identifiant, ou importez un fichier CSV dans Réglages.",
+        "Nothing selected" => "Aucun élément choisi",
+        "Choose an item in the list, or add a new one." => "Choisissez un élément dans la liste, ou ajoutez-en un.",
         "Your vault is encrypted and never leaves this PC." => "Votre coffre est chiffré et ne quitte jamais ce PC.",
         "Your vault is sealed again with the new password. Backups keep their old password." => {
             "Votre coffre est rescellé avec le nouveau mot de passe. Les sauvegardes gardent l'ancien."

@@ -50,6 +50,12 @@ pub enum Id {
     CopyTextSwitch,
     OpenLinksSwitch,
     Lang(u8),
+    /// A history row and a device row (hover only).
+    Row(u64),
+    DevRow(usize),
+    /// The buttons of the empty lists.
+    EmptyCopyLink,
+    EmptySendFiles,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -97,10 +103,9 @@ pub fn with_app(h: &mut dyn Handler) -> Option<&mut App> {
     h.as_any().downcast_mut::<App>()
 }
 
-/// Opens Explorer on the file's folder, the file selected.
+/// Opens the file's folder, the file selected (in Plume FEx when it opens folders).
 fn show_in_folder(p: &Path) {
-    use std::os::windows::process::CommandExt;
-    let _ = std::process::Command::new("explorer.exe").raw_arg(format!("/select,\"{}\"", p.display())).spawn();
+    plume_ui::folder::show(p);
 }
 
 /// The address the server listens on: every network (phones), or only this PC in tests.
@@ -368,7 +373,9 @@ impl App {
 
     pub fn act(&mut self, id: Id, cx: &mut Cx) {
         match id {
-            Id::Title => {}
+            Id::Title | Id::Row(_) | Id::DevRow(_) => {}
+            Id::EmptyCopyLink => self.act(Id::CopyLink, cx),
+            Id::EmptySendFiles => self.act(Id::SendFiles, cx),
             Id::Min => cx.after(|w| w.minimize()),
             Id::Max => cx.after(|w| w.toggle_maximize()),
             Id::Close => cx.after(|w| w.close()),
@@ -608,7 +615,7 @@ impl Handler for App {
 
     fn cursor(&self, p: Pt) -> Cursor {
         match self.hits.at(p) {
-            Some(Id::Min | Id::Max | Id::Close | Id::Title) | None => Cursor::Arrow,
+            Some(Id::Min | Id::Max | Id::Close | Id::Title | Id::Row(_) | Id::DevRow(_)) | None => Cursor::Arrow,
             Some(_) => Cursor::Hand,
         }
     }

@@ -33,27 +33,27 @@ impl App {
 
         // what's slowing my PC
         if let Some(s) = self.summary.clone() {
-            let card = rect(x, y, w, 74.0);
-            c.fill_round(card, 14.0, p.card);
-            c.stroke_round(card, 14.0, p.line, 1.0);
+            let card = rect(x, y, w, 80.0);
+            c.fill_round(card, 18.0, p.card);
+            c.stroke_round(card, 18.0, p.line, 1.0);
             let tone = match s.level {
                 0 => p.green,
                 1 => p.orange,
                 _ => p.red,
             };
-            let badge = rect(card.x + 16.0, card.y + 17.0, 40.0, 40.0);
+            let badge = rect(card.x + 20.0, card.y + 20.0, 40.0, 40.0);
             c.fill_round(badge, 20.0, tone.fade(0.16));
             c.icon(if s.level == 0 { &ic::OK } else { &ic::WARN }, badge.centered(20.0, 20.0), tone);
-            let tx = badge.right() + 14.0;
+            let tx = badge.right() + 16.0;
             let show = s.key.is_some() && s.level > 0;
             let bw = if show { self.pill_w(c, tr("Show"), false) } else { 0.0 };
-            let tw = card.right() - tx - bw - 30.0;
-            draw::text(c, &s.title, rect(tx, card.y + 13.0, tw, 24.0), 15.0, 600, p.t1, Align::Left);
-            c.text(&s.detail, rect(tx, card.y + 38.0, tw, 22.0), Font::Body, p.t2, Align::Left);
+            let tw = card.right() - tx - bw - 40.0;
+            c.text(&s.title, rect(tx, card.y + 16.0, tw, 24.0), Font::Title, p.t1, Align::Left);
+            c.text(&s.detail, rect(tx, card.y + 42.0, tw, 20.0), Font::Body, p.t2, Align::Left);
             if show {
-                self.pill(c, rect(card.right() - 16.0 - bw, card.y + 20.0, bw, 34.0), tr("Show"), None, None, true, Hit::SummaryShow);
+                self.pill(c, rect(card.right() - 20.0 - bw, card.y + 22.0, bw, 36.0), tr("Show"), None, None, true, Hit::SummaryShow);
             }
-            y += 74.0 + 16.0;
+            y += 80.0 + 14.0;
         }
 
         // the search and the buttons
@@ -61,7 +61,7 @@ impl App {
         let sw = (w * 0.42).clamp(220.0, 380.0);
         let s = rect(x, y, sw, bar_h);
         let focused = self.edit_for == Some("search");
-        c.fill_round(s, 18.0, p.t1.fade(if focused { 0.1 } else { 0.06 }).over(p.bg));
+        c.fill_round(s, 18.0, if focused { p.fill2 } else { p.fill });
         if focused {
             c.stroke_round(s, 18.0, p.accent.fade(0.7), 1.5);
         }
@@ -79,16 +79,16 @@ impl App {
         let ew = self.pill_w(c, tr("End task"), true);
         let dw = self.pill_w(c, tr("Details"), true);
         let er = rect(x + w - ew, y, ew, bar_h);
-        self.pill(c, er, tr("End task"), Some(&ic::END), Some(p.red), has_sel, Hit::EndTask);
-        self.pill(c, rect(er.x - 10.0 - dw, y, dw, bar_h), tr("Details"), Some(&ic::INFO), None, has_sel, Hit::Details);
+        self.pill(c, er, tr("End task"), Some(&ic::END), Some(p.accent), has_sel, Hit::EndTask);
+        self.pill(c, rect(er.x - 12.0 - dw, y, dw, bar_h), tr("Details"), Some(&ic::INFO), None, has_sel, Hit::Details);
         // how many, next to the search
         let count = fill(tr("{} programs, {} processes"), &[&self.groups.len().to_string(), &self.sys.procs.to_string()]);
-        let cx0 = s.right() + 14.0;
-        let cw = er.x - 10.0 - dw - 14.0 - cx0;
+        let cx0 = s.right() + 16.0;
+        let cw = er.x - 12.0 - dw - 16.0 - cx0;
         if cw > 80.0 {
             c.text(&count, rect(cx0, y, cw, bar_h), Font::Small, p.t3, Align::Left);
         }
-        y += bar_h + 14.0;
+        y += bar_h + 16.0;
 
         // the column headers: total on top, name below
         let head = rect(x, y, w, 46.0);
@@ -97,7 +97,7 @@ impl App {
             let hit = Hit::Header(*col);
             let hot = self.hovered(&hit);
             if hot {
-                c.fill_round(*r, 8.0, p.t1.fade(0.05));
+                c.fill_round(*r, 10.0, p.hover);
             }
             let sorted = self.set.sort == *col;
             let align = if *col == Col::Name { Align::Left } else { Align::Right };
@@ -110,12 +110,10 @@ impl App {
                 _ => None,
             };
             if let Some(v) = total {
-                draw::text(
-                    c,
+                c.text(
                     &model::percent(v),
                     rect(inner.x, r.y + 2.0, inner.w, 22.0),
-                    15.0,
-                    600,
+                    Font::Title,
                     if v >= 60.0 { super::paint::level_color(&p, v) } else { p.t1 },
                     align,
                 );
@@ -132,7 +130,7 @@ impl App {
             if sorted {
                 let arrow = if self.set.desc { &icons::SORT_DOWN } else { &icons::SORT_UP };
                 let ax = if align == Align::Left { inner.x + lw + 4.0 } else { inner.right() - lw - 14.0 };
-                c.icon(arrow, rect(ax, label_y + 4.0, 10.0, 10.0), p.t1);
+                c.icon(arrow, rect(ax, label_y + 4.0, 10.0, 10.0), p.accent);
             }
             self.hits.add(*r, hit);
         }
@@ -154,20 +152,20 @@ impl App {
         let sel_row = self.sel_row();
         for i in first..last {
             let ry = list.y + i as f32 * ROW_H - scroll;
-            let row = rect(x - 4.0, ry, w + 8.0, ROW_H - 2.0);
+            let row = rect(x - 4.0, ry, w + 8.0, ROW_H - 4.0);
             self.paint_row(c, i, row, &cols, sel_row == Some(i));
         }
-        if self.rows.is_empty() {
-            let msg = if self.samples == 0 {
-                tr("Reading the programs…")
-            } else if !self.query.is_empty() {
-                tr("No program matches this search.")
-            } else {
-                tr("The list is paused.")
-            };
-            c.text(msg, rect(list.x, list.y + 30.0, list.w, 24.0), Font::Body, p.t3, Align::Center);
-        }
         c.unclip();
+        if self.rows.is_empty() {
+            if self.samples == 0 {
+                self.empty_state(c, list, &ic::PULSE, tr("Reading the programs…"), tr("It takes a second."), None);
+            } else if !self.query.is_empty() {
+                let line = fill(tr("Nothing here is called \u{201c}{}\u{201d}."), &[&self.query]);
+                self.empty_state(c, list, &icons::SEARCH, tr("No program matches this search"), &line, Some((tr("Clear the search"), Hit::SearchClear)));
+            } else {
+                self.empty_state(c, list, &ic::PULSE, tr("The list is paused"), tr("Refreshing is paused in the settings."), Some((tr("Resume"), Hit::Resume)));
+            }
+        }
         self.scrollbar(c, rect(list.x, list.y, list.w + 8.0, list.h));
     }
 
@@ -191,15 +189,17 @@ impl App {
         let p = self.pal.clone();
         let r = self.rows[i];
         if let Row::Section(label, n) = r {
-            let t = format!("{} ({n})", tr(label));
-            c.text(&t, rect(row.x + 8.0, row.y + 6.0, row.w, row.h - 6.0), Font::SmallBold, p.t3, Align::Left);
+            let t = tr(label);
+            let tw = c.text_width(t, Font::Title);
+            c.text(t, rect(row.x + 8.0, row.y + 8.0, row.w, row.h - 8.0), Font::Title, p.t1, Align::Left);
+            c.text(&n.to_string(), rect(row.x + 16.0 + tw, row.y + 8.0, 80.0, row.h - 8.0), Font::Body, p.t3, Align::Left);
             return;
         }
         let hit = Hit::Row(i);
         if selected {
-            c.fill_round(row, 8.0, p.accent.fade(if p.dark { 0.2 } else { 0.14 }));
+            c.fill_round(row, 10.0, p.accent.fade(0.16));
         } else if self.hovered(&hit) || matches!(&self.hover, Some(Hit::Chevron(j)) if *j == i) {
-            c.fill_round(row, 8.0, p.t1.fade(0.045));
+            c.fill_round(row, 10.0, p.hover);
         }
         self.hits.add(row, hit);
         let (gi, pi) = match r {
@@ -230,7 +230,7 @@ impl App {
                 let cr = rect(tx - 2.0, row.y + (row.h - 24.0) / 2.0, 24.0, 24.0);
                 let chev = Hit::Chevron(i);
                 if self.hovered(&chev) {
-                    c.fill_round(cr, 6.0, p.t1.fade(0.1));
+                    c.fill_round(cr, 8.0, p.fill);
                 }
                 c.icon(if open { &icons::CHEVRON_DOWN } else { &icons::CHEVRON_RIGHT }, cr.centered(14.0, 14.0), p.t2);
                 self.hits.add(cr, chev);
@@ -256,7 +256,14 @@ impl App {
         let name_w = nr.right() - tx - 12.0;
         let font = if pi.is_none() { Font::Body } else { Font::Small };
         let nw = c.text_width(&name, font).min(name_w);
-        c.text(&name, rect(tx, row.y, name_w, row.h), font, if pi.is_none() { p.t1 } else { p.t2 }, Align::Left);
+        let ink = if selected {
+            p.accent
+        } else if pi.is_none() {
+            p.t1
+        } else {
+            p.t2
+        };
+        c.text(&name, rect(tx, row.y, name_w, row.h), font, ink, Align::Left);
         if !sub.is_empty() && nw + 40.0 < name_w {
             c.text(&sub, rect(tx + nw + 6.0, row.y, name_w - nw - 6.0, row.h), Font::Small, p.t3, Align::Left);
         }
@@ -273,7 +280,7 @@ impl App {
         for ((_, q), (h, text)) in cols[1..].iter().zip(cells) {
             let cell = rect(q.x + 3.0, row.y + 1.0, q.w - 6.0, row.h - 2.0);
             if h > 0.03 {
-                c.fill_round(cell, 6.0, p.heat.fade(h));
+                c.fill_round(cell, 8.0, p.heat.fade(h));
             }
             c.text(&text, cell.inset_xy(8.0, 0.0), Font::Body, if h > 0.3 { p.t1 } else { p.t2 }, Align::Right);
         }

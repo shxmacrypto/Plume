@@ -2,7 +2,7 @@
 //! %LOCALAPPDATA%\Plume\Clipboard (PLUME_CLIPBOARD_DIR for tests): `history.json`, or `history.dat` when the history
 //! is encrypted (sealed by Windows for this user, DPAPI), and the pictures in `images\`.
 
-use crate::crypto;
+use crate::{crypto, detect::Secret};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -40,6 +40,25 @@ pub struct Item {
     /// Pinned: its place among the pins (kept forever).
     pub pin: Option<u32>,
     pub count: u32,
+    /// Sensitive (a password, an IP address, a key): shown masked, kept sealed and only for a short time.
+    pub secret: Option<Secret>,
+    /// On disk only: a sensitive item's text, sealed by DPAPI (hex), whatever the encryption setting.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub sealed: String,
+}
+
+/// What a sensitive item shows instead of its text (always the same length: it does not tell the real one).
+pub const MASK: &str = "••••••••••";
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+fn unhex(s: &str) -> Option<Vec<u8>> {
+    if !s.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok()).collect()
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -119,8 +138,12 @@ impl Item {
     }
 
     fn haystack(&self) -> String {
-        let mut s = match self.kind {
-            Kind::Image => format!("image picture {}x{} {}×{}", self.w, self.h, self.w, self.h),
+        let mut s = match (self.kind, self.secret) {
+            // a sensitive item is found by its kind, never by what it hides
+            (_, Some(Secret::Password)) => "password mot de passe".to_string(),
+            (_, Some(Secret::Ip)) => "ip address adresse".to_string(),
+            (_, Some(Secret::Key)) => "key token clé".to_string(),
+            (Kind::Image, None) => format!("image picture {}x{} {}×{}", self.w, self.h, self.w, self.h),
             _ => self.text.clone(),
         };
         s.push('\n');
@@ -147,8 +170,16 @@ impl Item {
         }
     }
 
-    /// One line to show: the text with its spaces and lines folded, or the files' names.
+    /// One line to show: the text with its spaces and lines folded, or the files' names; masked if sensitive.
     pub fn preview(&self, max: usize) -> String {
+        if self.secret.is_some() {
+            return MASK.to_string();
+        }
+        self.preview_real(max)
+    }
+
+    /// The same line, even for a sensitive item (shown while it is revealed).
+    pub fn preview_real(&self, max: usize) -> String {
         let s = match self.kind {
             Kind::Files => {
                 self.files.iter().map(|f| Path::new(f).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or(f.clone())).collect::<Vec<_>>().join(", ")
@@ -225,17 +256,18 @@ impl Store {
         }
     }
 
-    /// Applies the limits: at most `max` items that are not pinned, none older than `days` (0: no limit).
-    /// Returns what was removed (their pictures are to be deleted).
-    pub fn prune(&mut self, max: usize, days: u32, now: u64) -> Vec<Item> {
+    /// Applies the limits: at most `max` items that are not pinned, none older than `days` (0: no limit), and
+    /// sensitive items for `secret_secs` only. Returns what was removed (their pictures are to be deleted).
+    pub fn prune(&mut self, max: usize, days: u32, secret_secs: u64, now: u64) -> Vec<Item> {
         let mut removed = Vec::new();
         let oldest = if days == 0 { 0 } else { now.saturating_sub(days as u64 * 86_400) };
+        let oldest_secret = now.saturating_sub(secret_secs);
         let mut kept = 0usize;
         let mut keep = Vec::with_capacity(self.items.len());
         for it in std::mem::take(&mut self.items) {
             if it.pin.is_some() {
                 keep.push(it);
-            } else if kept < max && it.at >= oldest {
+            } else if kept < max && it.at >= oldest && (it.secret.is_none() || it.at >= oldest_secret) {
                 kept += 1;
                 keep.push(it);
             } else {
@@ -256,6 +288,30 @@ impl Store {
         let (pins, rest): (Vec<Item>, Vec<Item>) = std::mem::take(&mut self.items).into_iter().partition(|i| i.pin.is_some());
         self.items = pins;
         rest
+    }
+
+    /// Removes every sensitive item, pinned or not.
+    pub fn clear_secrets(&mut self) -> Vec<Item> {
+        let (gone, keep): (Vec<Item>, Vec<Item>) = std::mem::take(&mut self.items).into_iter().partition(|i| i.secret.is_some());
+        self.items = keep;
+        gone
+    }
+
+    /// Looks again at every text (the kinds to hide changed). Returns whether anything changed.
+    pub fn reclassify(&mut self, find: impl Fn(&str) -> Option<Secret>) -> bool {
+        let mut changed = false;
+        for it in self.items.iter_mut().filter(|i| matches!(i.kind, Kind::Text | Kind::Link)) {
+            let s = find(&it.text);
+            if s != it.secret {
+                it.secret = s;
+                if s.is_some() {
+                    it.html = None;
+                    it.rtf = None;
+                }
+                changed = true;
+            }
+        }
+        changed
     }
 
     pub fn set_pin(&mut self, id: u64, on: bool) {
@@ -350,12 +406,43 @@ impl Store {
     pub fn load_from(dir: &Path) -> Store {
         let sealed = std::fs::read(dir.join("history.dat")).ok().and_then(|b| crypto::unprotect(&b));
         let plain = || std::fs::read(dir.join("history.json")).ok();
-        sealed.or_else(plain).and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+        let mut st: Store = sealed.or_else(plain).and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        // sensitive items: their text unsealed (another account cannot: they are dropped)
+        st.items.retain_mut(|it| {
+            if it.sealed.is_empty() {
+                return it.secret.is_none() || !it.text.is_empty();
+            }
+            match unhex(&it.sealed).and_then(|b| crypto::unprotect(&b)).and_then(|b| String::from_utf8(b).ok()) {
+                Some(text) => {
+                    it.hash = hash(it.kind, text.as_bytes());
+                    it.text = text;
+                    it.sealed.clear();
+                    true
+                }
+                None => false,
+            }
+        });
+        st
+    }
+
+    /// What goes on disk: sensitive items always sealed (their text by DPAPI, no formatting, no hash of the
+    /// text), whether or not the whole history is encrypted.
+    fn for_disk(&self) -> Option<Store> {
+        let mut items = self.items.clone();
+        for it in items.iter_mut().filter(|i| i.secret.is_some()) {
+            it.sealed = hex(&crypto::protect(it.text.as_bytes())?);
+            it.text.clear();
+            it.html = None;
+            it.rtf = None;
+            it.hash = 0;
+        }
+        Some(Store { items, snippets: self.snippets.clone(), next_id: self.next_id })
     }
 
     pub fn save_to(&self, dir: &Path, encrypt: bool) -> bool {
         let _ = std::fs::create_dir_all(dir);
-        let Ok(json) = serde_json::to_vec(self) else { return false };
+        let Some(disk) = self.for_disk() else { return false };
+        let Ok(json) = serde_json::to_vec(&disk) else { return false };
         let (name, other, bytes) = if encrypt {
             let Some(b) = crypto::protect(&json) else { return false };
             ("history.dat", "history.json", b)
@@ -455,11 +542,11 @@ mod tests {
         let mut s = store_with(&["1", "2", "3", "4", "5"]);
         let oldest = s.items.last().unwrap().id;
         s.set_pin(oldest, true);
-        let removed = s.prune(2, 0, 5000);
+        let removed = s.prune(2, 0, u64::MAX, 5000);
         assert_eq!(removed.len(), 2);
         assert_eq!(s.items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>(), ["5", "4", "1"]);
         // days: all of them are old, only the pin stays
-        let removed = s.prune(100, 1, 1000 + 2 * 86_400);
+        let removed = s.prune(100, 1, u64::MAX, 1000 + 2 * 86_400);
         assert_eq!(removed.len(), 2);
         assert_eq!(s.items.len(), 1);
         assert!(s.items[0].pin.is_some());
@@ -565,6 +652,81 @@ mod tests {
         delete_image(&dir, 7);
         assert!(read_image(&dir, 7, false).is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn secret_item(text: &str, kind: Secret) -> Item {
+        Item { secret: Some(kind), ..Item::text(text, Kind::Text) }
+    }
+
+    #[test]
+    fn secrets_are_masked_and_not_searched() {
+        let mut s = Store::default();
+        s.add(Item { app: "keepass.exe".into(), ..secret_item("x7$Kp!2qLm", Secret::Password) }, 1);
+        s.add(secret_item("192.168.1.20", Secret::Ip), 2);
+        s.add(Item::text("my router is at home", Kind::Text), 3);
+        let pw = s.items.iter().find(|i| i.secret == Some(Secret::Password)).unwrap();
+        assert_eq!(pw.preview(60), MASK);
+        assert_eq!(pw.preview_real(60), "x7$Kp!2qLm");
+        // the content is never found, the kind is
+        assert!(s.search("x7$", Filter::All).is_empty());
+        assert!(s.search("192.168", Filter::All).is_empty());
+        assert_eq!(s.search("password", Filter::All).len(), 1);
+        assert_eq!(s.search("ip address", Filter::All).len(), 1);
+        assert_eq!(s.panel("router").len(), 1);
+        assert!(s.panel("Kp!2").is_empty());
+    }
+
+    #[test]
+    fn secrets_expire_sooner() {
+        let mut s = Store::default();
+        s.add(secret_item("x7$Kp!2qLm", Secret::Password), 1000);
+        s.add(Item::text("plain", Kind::Text), 1000);
+        s.add(secret_item("10.0.0.1", Secret::Ip), 1000);
+        let ip = s.items[0].id;
+        s.set_pin(ip, true);
+        // an hour later, with a one-hour limit: the password goes, the text and the pinned IP stay
+        let removed = s.prune(500, 30, 3600, 1000 + 3601);
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].secret, Some(Secret::Password));
+        assert_eq!(s.items.len(), 2);
+        // "clear sensitive": the pinned one too
+        assert_eq!(s.clear_secrets().len(), 1);
+        assert_eq!(s.items.len(), 1);
+        assert!(s.items[0].secret.is_none());
+    }
+
+    #[test]
+    fn secrets_sealed_on_disk_even_without_encryption() {
+        let dir = std::env::temp_dir().join(format!("plume-clipboard-secret-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut s = Store::default();
+        s.add(Item { html: Some("<b>x</b>".into()), ..secret_item("Tr0ub4dor&3", Secret::Password) }, 5);
+        s.add(Item::text("visible text", Kind::Text), 6);
+        assert!(s.save_to(&dir, false));
+        let raw = std::fs::read_to_string(dir.join("history.json")).unwrap();
+        assert!(!raw.contains("Tr0ub4dor"), "the password is not in the plain file");
+        assert!(!raw.contains("<b>x</b>"), "nor its formatting");
+        assert!(raw.contains("visible text"));
+        let back = Store::load_from(&dir);
+        let pw = back.items.iter().find(|i| i.secret.is_some()).unwrap();
+        assert_eq!(pw.text, "Tr0ub4dor&3");
+        assert_eq!(pw.hash, hash(Kind::Text, b"Tr0ub4dor&3"));
+        assert!(pw.sealed.is_empty());
+        // and the same with the whole history encrypted
+        assert!(s.save_to(&dir, true));
+        assert_eq!(Store::load_from(&dir).items.iter().filter(|i| i.secret.is_some()).count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reclassify_follows_the_settings() {
+        let mut s = Store::default();
+        s.add(Item::text("192.168.1.20", Kind::Text), 1);
+        assert!(s.reclassify(|t| crate::detect::detect(t, crate::detect::Wanted::ALL)));
+        assert_eq!(s.items[0].secret, Some(Secret::Ip));
+        assert!(s.reclassify(|_| None));
+        assert_eq!(s.items[0].secret, None);
+        assert!(!s.reclassify(|_| None));
     }
 
     #[test]

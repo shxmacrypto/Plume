@@ -50,9 +50,9 @@ impl App {
         let p = self.pal.clone();
         let hot = enabled && self.hovered(&hit);
         if active {
-            c.fill_round(r, 8.0, p.accent.fade(if p.dark { 0.22 } else { 0.14 }));
+            c.fill_round(r, r.h / 2.0, p.accent.fade(0.16));
         } else if hot {
-            c.fill_round(r, 8.0, p.t1.fade(0.08));
+            c.fill_round(r, r.h / 2.0, if self.pressed.as_ref() == Some(&hit) { p.fill2 } else { p.hover });
         }
         let ink = if active {
             p.accent
@@ -72,12 +72,14 @@ impl App {
     pub fn pill(&mut self, c: &mut Canvas, r: Rect, label: &str, primary: bool, hit: Hit) {
         let p = self.pal.clone();
         let hot = self.hovered(&hit);
-        let fill = if primary {
-            if hot { p.accent.mix(Color::hex(0xffffff), 0.12) } else { p.accent }
-        } else if hot {
-            p.t1.fade(0.15)
-        } else {
-            p.t1.fade(0.08)
+        let down = hot && self.pressed.as_ref() == Some(&hit);
+        let fill = match (primary, hot, down) {
+            (true, _, true) => p.accent.mix(Color::hex(0x000000), 0.18),
+            (true, true, _) => p.accent.mix(Color::hex(0xffffff), 0.1),
+            (true, ..) => p.accent,
+            (false, _, true) => p.fill2.over(p.card).mix(Color::hex(0x000000), 0.08),
+            (false, true, _) => p.fill2,
+            (false, ..) => p.fill,
         };
         c.fill_round(r, r.h / 2.0, fill);
         c.text(label, r, Font::BodyBold, if primary { p.on_accent } else { p.t1 }, Align::Center);
@@ -125,15 +127,15 @@ impl App {
 
     fn paint_title(&mut self, c: &mut Canvas, w: f32, cx: &PaintCx) {
         let p = self.pal.clone();
+        c.gradient_v(rect(0.0, 0.0, w, TITLE_H), p.hdr1, p.hdr2);
         let wic = self.wic.clone();
-        let px = (20.0 * c.scale()).round() as u32;
-        c.image(0xF00D_0000 + px as u64, rect(12.0, 10.0, 20.0, 20.0), 1.0, || logo(&wic, px));
+        let px = (18.0 * c.scale()).round() as u32;
+        c.image(0xF00D_0000 + px as u64, rect(14.0, (TITLE_H - 18.0) / 2.0, 18.0, 18.0), 1.0, || logo(&wic, px));
         let cap_x = w - 3.0 * m::CAPTION_W;
-        let mut x = 42.0;
+        let name_w = c.text_width("Plume PDF", Font::BodyBold);
+        c.text("Plume PDF", rect(40.0, 0.0, name_w + 4.0, TITLE_H), Font::BodyBold, if cx.active { p.t1 } else { p.t3 }, Align::Left);
+        let mut x = 40.0 + name_w + 18.0;
         let n = self.tabs.len();
-        if n == 0 {
-            c.text("Plume PDF", rect(x, 0.0, 200.0, TITLE_H), Font::BodyBold, p.t2, Align::Left);
-        }
         let avail = cap_x - x - 60.0;
         let tw = if n > 0 { (avail / n as f32).clamp(90.0, 220.0) } else { 0.0 };
         for i in 0..n {
@@ -144,9 +146,9 @@ impl App {
             let active = i == self.cur && !self.settings_open;
             let hit = Hit::Tab(i);
             if active {
-                c.fill_round(rect(r.x, r.y, r.w, r.h + 8.0), 9.0, p.area.mix(p.chrome, 0.35));
+                c.fill_round(rect(r.x, r.y, r.w, r.h + 10.0), 10.0, p.hdr2);
             } else if self.hovered(&hit) {
-                c.fill_round(rect(r.x, r.y + 2.0, r.w, r.h - 6.0), 8.0, p.t1.fade(0.06));
+                c.fill_round(rect(r.x, r.y + 2.0, r.w, r.h - 6.0), 10.0, p.hover);
             }
             self.hits.add(r, hit);
             let t = &self.tabs[i];
@@ -163,7 +165,7 @@ impl App {
             let xr = rect(r.right() - 26.0, r.y + (r.h - 22.0) / 2.0 - 1.0, 22.0, 22.0);
             let xh = Hit::TabClose(i);
             if self.hovered(&xh) {
-                c.fill_round(xr, 6.0, p.t1.fade(0.1));
+                c.fill_round(xr, 11.0, p.hover);
             }
             if dirty && !self.hovered(&xh) {
                 c.fill_round(xr.centered(7.0, 7.0), 3.5, p.accent);
@@ -174,17 +176,22 @@ impl App {
             x += tw;
         }
         if n > 0 {
-            let r = rect(x + 2.0, 8.0, 28.0, 26.0);
+            let r = rect(x + 2.0, 7.0, 28.0, 28.0);
             self.icon_btn(c, &icons::PLUS, r, Hit::NewTab, false, true);
         }
         let glyphs = [(Hit::Min, '\u{E921}'), (Hit::Max, if cx.maximized { '\u{E923}' } else { '\u{E922}' }), (Hit::Close, '\u{E8BB}')];
         for (k, (id, glyph)) in glyphs.into_iter().enumerate() {
-            let r = rect(cap_x + k as f32 * m::CAPTION_W, 0.0, m::CAPTION_W, 32.0);
+            let r = rect(cap_x + k as f32 * m::CAPTION_W, 0.0, m::CAPTION_W, TITLE_H - 8.0);
             let hot = self.hovered(&id) || self.pressed.as_ref() == Some(&id);
             if hot {
-                c.fill(r, if id == Hit::Close { Color::hex(0xc42b1c) } else { p.t1.fade(0.1) });
+                c.fill(r, if id == Hit::Close { p.close_hover } else { p.hover });
             }
-            c.glyph(glyph, r, if id == Hit::Close && hot { Color::hex(0xffffff) } else { p.t2 });
+            let ink = match (id == Hit::Close && hot, cx.active) {
+                (true, _) => Color::hex(0xffffff),
+                (false, true) => p.t1,
+                (false, false) => p.t3,
+            };
+            c.glyph(glyph, r, ink);
             self.hits.add(r, id);
         }
     }
@@ -193,14 +200,14 @@ impl App {
 
     fn paint_bar(&mut self, c: &mut Canvas, r: Rect) {
         let p = self.pal.clone();
-        c.fill(r, p.area.mix(p.chrome, 0.35));
+        c.fill(r, p.hdr2);
         c.hline(r.x, r.bottom() - 0.5, r.w, p.line);
         let editable = self.tab().is_some_and(|t| t.editable());
         let can_undo = self.tab().is_some_and(|t| !t.undo.is_empty());
         let dirty = self.tab().is_some_and(|t| t.dirty);
         let y = r.y + (r.h - 34.0) / 2.0;
-        let mut x = r.x + 10.0;
-        let b = |x: f32| rect(x, y, 36.0, 34.0);
+        let mut x = r.x + 14.0;
+        let b = |x: f32| rect(x, y, 34.0, 34.0);
         self.icon_btn(c, &icons::SIDEBAR, b(x), Hit::Btn("sidebar"), false, true);
         x += 38.0;
         self.icon_btn(c, &icons::FOLDER, b(x), Hit::Btn("open"), false, true);
@@ -239,7 +246,7 @@ impl App {
             for (i, col) in cols.iter().enumerate() {
                 let s = rect(x, r.y + (r.h - 20.0) / 2.0, 20.0, 20.0);
                 c.fill_round(s, 10.0, col3(*col));
-                c.stroke_round(s, 10.0, p.t1.fade(0.28), 1.0);
+                c.stroke_round(s, 10.0, p.t3.fade(0.6), 1.0);
                 if i == cur {
                     c.stroke_round(s.inset(-3.0), 13.0, p.t1, 1.6);
                 }
@@ -256,7 +263,7 @@ impl App {
             Tool::Text => tr("Click or drag to add text"),
             Tool::Sign => tr("Click to place your signature"),
         };
-        let mut rx = r.right() - 10.0;
+        let mut rx = r.right() - 12.0;
         let right: [(&Icon, &'static str, bool); 4] = [
             (&icons::GEAR, "settings", self.settings_open),
             (&icons::MORE, "more", self.menu.as_ref().is_some_and(|m| m.more)),
@@ -279,13 +286,16 @@ impl App {
         c.fill(r, p.side);
         c.vline(r.right() - 0.5, r.y, r.h, p.line);
         // Pages | Outline
-        let seg = rect(r.x + 12.0, r.y + 10.0, r.w - 24.0, 30.0);
-        c.fill_round(seg, 15.0, p.t1.fade(0.06));
+        let seg = rect(r.x + 16.0, r.y + 10.0, r.w - 32.0, 32.0);
+        c.fill_round(seg, 16.0, p.fill);
         for (i, (label, icon)) in [(tr("Pages"), &ic::PAGES), (tr("Outline"), &ic::OUTLINE)].into_iter().enumerate() {
-            let b = rect(seg.x + 2.0 + i as f32 * (seg.w - 4.0) / 2.0, seg.y + 2.0, (seg.w - 4.0) / 2.0, 26.0);
+            let b = rect(seg.x + 3.0 + i as f32 * (seg.w - 6.0) / 2.0, seg.y + 3.0, (seg.w - 6.0) / 2.0, 26.0);
             let active = self.side_tab == i as u8;
             if active {
-                c.fill_round(b, 13.0, p.card);
+                c.fill_round(b, 13.0, p.fill2);
+                c.stroke_round(b, 13.0, p.ring, 1.0);
+            } else if self.hovered(&Hit::SideTab(i as u8)) {
+                c.fill_round(b, 13.0, p.hover);
             }
             let tw = c.text_width(label, Font::SmallBold);
             let ix = b.x + (b.w - tw - 20.0) / 2.0;
@@ -295,7 +305,7 @@ impl App {
         }
         let sel_n = self.tab().map(|t| t.sel.len()).unwrap_or(0);
         let foot = if self.side_tab == 0 && sel_n > 0 { 46.0 } else { 0.0 };
-        let list = rect(r.x, r.y + 50.0, r.w, r.h - 50.0 - foot);
+        let list = rect(r.x, r.y + 52.0, r.w, r.h - 52.0 - foot);
         c.clip(list);
         if self.side_tab == 0 {
             self.paint_thumbs(c, list);
@@ -307,12 +317,12 @@ impl App {
             let f = rect(r.x, r.bottom() - foot, r.w, foot);
             c.hline(f.x, f.y, f.w, p.line);
             let label = if sel_n == 1 { tr("1 page").to_string() } else { fill(tr("{n} pages"), &[&sel_n.to_string()]) };
-            c.text(&label, rect(f.x + 14.0, f.y, 70.0, f.h), Font::Small, p.t2, Align::Left);
+            c.text(&label, rect(f.x + 16.0, f.y, 70.0, f.h), Font::Small, p.t2, Align::Left);
             let editable = self.tab().is_some_and(|t| t.editable());
-            let mut x = f.right() - 8.0;
+            let mut x = f.right() - 12.0;
             for (icon, id) in [(&icons::TRASH, "delete_pages"), (&ic::EXTRACT, "extract"), (&ic::ROT_R, "rotate_r"), (&ic::ROT_L, "rotate_l")] {
                 x -= 32.0;
-                self.icon_btn(c, icon, rect(x, f.y + 7.0, 30.0, 32.0), Hit::Btn(id), false, editable);
+                self.icon_btn(c, icon, rect(x, f.y + 7.0, 32.0, 32.0), Hit::Btn(id), false, editable);
             }
         }
     }
@@ -337,7 +347,7 @@ impl App {
             let tr_ = rect(list.x + (list.w - tw) / 2.0, y + 6.0, tw, th);
             if item.bottom() >= list.y && item.y <= list.bottom() {
                 if i == cur {
-                    c.fill_round(item, 10.0, p.t1.fade(0.06));
+                    c.fill_round(item, 10.0, p.hover);
                 }
                 draw::shadow(c, tr_, 1.0, 0.8);
                 c.fill(tr_, if dark { p.paper_dark } else { Color::hex(0xffffff) });
@@ -379,17 +389,18 @@ impl App {
         let Some(t) = self.tab() else { return };
         let items = t.outline.clone();
         if items.is_empty() {
-            c.text(tr("No bookmarks in this file."), rect(list.x + 16.0, list.y + 6.0, list.w - 32.0, 30.0), Font::Small, p.t3, Align::Left);
+            c.icon(&ic::OUTLINE, rect(list.x + (list.w - 20.0) / 2.0, list.y + 40.0, 20.0, 20.0), p.t3);
+            c.text(tr("No bookmarks in this file."), rect(list.x + 16.0, list.y + 68.0, list.w - 32.0, 24.0), Font::Small, p.t3, Align::Center);
             self.side_h = 0.0;
             return;
         }
         let mut y = list.y + 4.0 - self.side_scroll;
         for (i, it) in items.iter().enumerate() {
-            let row = rect(list.x + 8.0, y, list.w - 16.0, 30.0);
+            let row = rect(list.x + 8.0, y, list.w - 16.0, 40.0);
             if row.bottom() >= list.y && row.y <= list.bottom() {
                 let hit = Hit::Outline(i);
                 if self.hovered(&hit) {
-                    c.fill_round(row, 7.0, p.t1.fade(0.06));
+                    c.fill_round(row, 10.0, p.hover);
                 }
                 let ind = 10.0 + it.level.min(5) as f32 * 14.0;
                 c.text(
@@ -402,7 +413,7 @@ impl App {
                 c.text(&(it.page + 1).to_string(), rect(row.right() - 34.0, row.y, 28.0, row.h), Font::Small, p.t3, Align::Right);
                 self.hits.add(row.intersect(&list), hit);
             }
-            y += 32.0;
+            y += 42.0;
         }
         self.side_h = y + self.side_scroll - list.y + 8.0;
     }
@@ -421,17 +432,20 @@ impl App {
                 return;
             }
             Status::Password { .. } => {
-                let mid = area.centered(380.0, 120.0);
-                draw::text(c, tr("This file is protected"), rect(mid.x, mid.y, mid.w, 30.0), 18.0, 700, p.t1, Align::Center);
-                c.text(tr("It needs a password to open."), rect(mid.x, mid.y + 32.0, mid.w, 22.0), Font::Body, p.t2, Align::Center);
-                self.pill(c, rect(mid.x + (mid.w - 170.0) / 2.0, mid.y + 70.0, 170.0, 36.0), tr("Enter the password"), true, Hit::Btn("password"));
+                let mid = area.centered(380.0, 160.0);
+                c.icon(&ic::LOCK, rect(mid.x + (mid.w - 28.0) / 2.0, mid.y, 28.0, 28.0), p.t2);
+                c.text(tr("This file is protected"), rect(mid.x, mid.y + 40.0, mid.w, 26.0), Font::Large, p.t1, Align::Center);
+                c.text(tr("It needs a password to open."), rect(mid.x, mid.y + 70.0, mid.w, 22.0), Font::Body, p.t3, Align::Center);
+                let bw = c.text_width(tr("Enter the password"), Font::BodyBold) + 40.0;
+                self.pill(c, rect(mid.x + (mid.w - bw) / 2.0, mid.y + 108.0, bw, 36.0), tr("Enter the password"), true, Hit::Btn("password"));
                 return;
             }
             Status::Failed(e) => {
                 let mid = area.centered(460.0, 100.0);
-                draw::text(c, tr("This file could not be opened"), rect(mid.x, mid.y, mid.w, 30.0), 18.0, 700, p.t1, Align::Center);
+                c.icon(&ic::DOC, rect(mid.x + (mid.w - 28.0) / 2.0, mid.y, 28.0, 28.0), p.t2);
+                c.text(tr("This file could not be opened"), rect(mid.x, mid.y + 40.0, mid.w, 26.0), Font::Large, p.t1, Align::Center);
                 let e = e.clone();
-                c.text(&e, rect(mid.x, mid.y + 34.0, mid.w, 22.0), Font::Small, p.t3, Align::Center);
+                c.text(&e, rect(mid.x, mid.y + 70.0, mid.w, 22.0), Font::Body, p.t3, Align::Center);
                 return;
             }
             _ => {}
@@ -490,7 +504,7 @@ impl App {
                 let ty = area.y + (area.h - th) * (sy / (ch - area.h));
                 let bar = rect(area.right() - 9.0, ty + 2.0, 6.0, th - 4.0);
                 let hot = self.hovered(&Hit::VScroll) || matches!(self.drag, Some(Drag::VScroll { .. }));
-                c.fill_round(bar, 3.0, p.t1.fade(if hot { 0.4 } else { 0.22 }));
+                c.fill_round(bar, 3.0, p.t3.fade(if hot { 0.8 } else { 0.45 }));
                 self.hits.add(rect(area.right() - 14.0, ty, 14.0, th), Hit::VScroll);
             }
         }
@@ -686,7 +700,7 @@ impl App {
         x += 34.0;
         let pb = rect(x, r.y + 6.0, 92.0, 28.0);
         let editing = self.edit_for == Some(EditFor::PageBox);
-        c.fill_round(pb, 8.0, p.t1.fade(if editing || self.hovered(&Hit::PageBox) { 0.1 } else { 0.05 }));
+        c.fill_round(pb, 14.0, if editing || self.hovered(&Hit::PageBox) { p.fill2 } else { p.fill });
         if !editing {
             c.text(&format!("{} / {n}", cur + 1), pb, Font::BodyBold, p.t1, Align::Center);
         }
@@ -701,7 +715,7 @@ impl App {
         let zr = rect(x, r.y + 6.0, 56.0, 28.0);
         let zh = Hit::Btn("zoom_100");
         if self.hovered(&zh) {
-            c.fill_round(zr, 8.0, p.t1.fade(0.06));
+            c.fill_round(zr, 14.0, p.hover);
         }
         c.text(&format!("{}%", (zoom * 100.0).round()), zr, Font::Small, p.t1, Align::Center);
         self.hits.add(zr, zh);
@@ -718,16 +732,16 @@ impl App {
         let p = self.pal.clone();
         let w = 388.0f32.min(area.w - 24.0);
         let r = rect(area.right() - w - 16.0, area.y + 12.0, w, 44.0);
-        draw::shadow(c, r, 12.0, if p.dark { 2.0 } else { 1.0 });
-        c.fill_round(r, 12.0, p.card);
-        c.stroke_round(r, 12.0, p.line, 1.0);
+        draw::shadow(c, r, 16.0, if p.dark { 2.0 } else { 1.0 });
+        c.fill_round(r, 16.0, p.card);
+        c.stroke_round(r, 16.0, p.line, 1.0);
         let field = rect(r.x + 6.0, r.y + 6.0, w - 184.0, 32.0);
         let focused = self.edit_for == Some(EditFor::Search);
-        c.fill_round(field, 8.0, p.t1.fade(0.06));
+        c.fill_round(field, 16.0, p.fill);
         if focused {
-            c.stroke_round(field, 8.0, p.accent.fade(0.7), 1.5);
+            c.stroke_round(field, 16.0, p.accent.fade(0.7), 1.5);
         }
-        c.icon(&icons::SEARCH, rect(field.x + 9.0, field.y + 9.0, 14.0, 14.0), p.t3);
+        c.icon(&icons::SEARCH, rect(field.x + 11.0, field.y + 9.0, 14.0, 14.0), p.t2);
         if !focused {
             let (s, ink) = if self.query.is_empty() { (tr("Find in the document"), p.t3) } else { (self.query.as_str(), p.t1) };
             let s = s.to_string();
@@ -773,30 +787,30 @@ impl App {
         let px = (72.0 * c.scale()).round() as u32;
         c.image(0xF00D_1000 + px as u64, rect(x + (w - 72.0) / 2.0, y, 72.0, 72.0), 1.0, || logo(&wic, px));
         y += 84.0;
-        draw::text(c, "Plume PDF", rect(x, y, w, 36.0), 26.0, 700, p.t1, Align::Center);
+        c.text("Plume PDF", rect(x, y, w, 36.0), Font::Hero, p.t1, Align::Center);
         y += 38.0;
-        c.text(tr("Read, sign, annotate and merge PDF files."), rect(x, y, w, 22.0), Font::Body, p.t2, Align::Center);
+        c.text(tr("Read, sign, annotate and merge PDF files."), rect(x, y, w, 22.0), Font::Body, p.t3, Align::Center);
         y += 40.0;
         let (b1, b2) = (tr("Open a PDF"), tr("Merge PDFs…"));
-        let w1 = c.text_width(b1, Font::BodyBold) + 44.0;
-        let w2 = c.text_width(b2, Font::BodyBold) + 44.0;
-        let bx = x + (w - w1 - w2 - 10.0) / 2.0;
-        self.pill(c, rect(bx, y, w1, 40.0), b1, true, Hit::Btn("open"));
-        self.pill(c, rect(bx + w1 + 10.0, y, w2, 40.0), b2, false, Hit::Btn("merge"));
-        y += 56.0;
+        let w1 = c.text_width(b1, Font::BodyBold) + 40.0;
+        let w2 = c.text_width(b2, Font::BodyBold) + 40.0;
+        let bx = x + (w - w1 - w2 - 12.0) / 2.0;
+        self.pill(c, rect(bx, y, w1, 36.0), b1, true, Hit::Btn("open"));
+        self.pill(c, rect(bx + w1 + 12.0, y, w2, 36.0), b2, false, Hit::Btn("merge"));
+        y += 52.0;
         c.text(tr("Or drop PDF files on this window."), rect(x, y, w, 20.0), Font::Small, p.t3, Align::Center);
         y += 36.0;
         if !recent.is_empty() {
-            c.text(tr("Recent"), rect(x + 4.0, y, w, 24.0), Font::SmallBold, p.t3, Align::Left);
-            y += 30.0;
+            c.text(tr("Recent"), rect(x + 4.0, y, w, 24.0), Font::Title, p.t1, Align::Left);
+            y += 32.0;
             let card = rect(x, y, w, recent.len() as f32 * 52.0 + 8.0);
-            c.fill_round(card, 14.0, p.card);
-            c.stroke_round(card, 14.0, p.line, 1.0);
+            c.fill_round(card, 18.0, p.card);
+            c.stroke_round(card, 18.0, p.line, 1.0);
             for (i, path) in recent.iter().enumerate() {
                 let row = rect(card.x + 4.0, card.y + 4.0 + i as f32 * 52.0, card.w - 8.0, 52.0);
                 let hit = Hit::Recent(i);
                 if self.hovered(&hit) {
-                    c.fill_round(row, 10.0, p.t1.fade(0.05));
+                    c.fill_round(row, 10.0, p.hover);
                 }
                 c.icon(&ic::DOC, rect(row.x + 14.0, row.y + 16.0, 20.0, 20.0), p.accent);
                 let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -821,18 +835,18 @@ impl App {
         let Some(menu) = &self.menu else { return };
         let items = menu.items.clone();
         let mw = items.iter().map(|(l, _)| c.text_width(l, Font::Body)).fold(160.0, f32::max) + 36.0;
-        let mh = items.len() as f32 * 34.0 + 10.0;
+        let mh = items.len() as f32 * 38.0 + 12.0;
         let x = menu.x.clamp(6.0, (w - mw - 6.0).max(6.0));
         let y = menu.y.clamp(TITLE_H, (h - mh - 6.0).max(TITLE_H));
         let r = rect(x, y, mw, mh);
-        draw::shadow(c, r, 12.0, if p.dark { 2.5 } else { 1.2 });
-        c.fill_round(r, 12.0, p.card);
-        c.stroke_round(r, 12.0, p.line, 1.0);
+        draw::shadow(c, r, 16.0, if p.dark { 2.5 } else { 1.2 });
+        c.fill_round(r, 16.0, p.card.over(p.chrome));
+        c.stroke_round(r, 16.0, p.line, 1.0);
         for (i, (label, _)) in items.iter().enumerate() {
-            let row = rect(r.x + 5.0, r.y + 5.0 + i as f32 * 34.0, r.w - 10.0, 34.0);
+            let row = rect(r.x + 6.0, r.y + 6.0 + i as f32 * 38.0, r.w - 12.0, 38.0);
             let hit = Hit::Menu(i);
             if self.hovered(&hit) {
-                c.fill_round(row, 8.0, p.accent.fade(0.16));
+                c.fill_round(row, 10.0, p.hover);
             }
             c.text(label, rect(row.x + 12.0, row.y, row.w - 20.0, row.h), Font::Body, p.t1, Align::Left);
             self.hits.add(row, hit);
@@ -889,13 +903,13 @@ impl App {
         };
         let mw = if matches!(m, Modal::Signature { .. }) { 520.0 } else { 460.0f32 };
         let body_h = c.text_height(&body, mw - 48.0, Font::Body);
-        let mh = 24.0 + 30.0 + 8.0 + body_h + 16.0 + if field_h > 0.0 { field_h + 16.0 } else { 0.0 } + 40.0 + 24.0;
+        let mh = 24.0 + 30.0 + 8.0 + body_h + 16.0 + if field_h > 0.0 { field_h + 16.0 } else { 0.0 } + 36.0 + 24.0;
         let r = rect((w - mw) / 2.0, ((h - mh) / 2.0).max(TITLE_H), mw, mh);
-        draw::shadow(c, r, 16.0, if p.dark { 3.0 } else { 1.5 });
-        c.fill_round(r, 16.0, p.card);
-        c.stroke_round(r, 16.0, p.line, 1.0);
+        draw::shadow(c, r, 20.0, if p.dark { 3.0 } else { 1.5 });
+        c.fill_round(r, 20.0, p.card.over(p.chrome));
+        c.stroke_round(r, 20.0, p.line, 1.0);
         let mut y = r.y + 24.0;
-        draw::text(c, &title, rect(r.x + 24.0, y, r.w - 48.0, 30.0), 18.0, 700, p.t1, Align::Left);
+        c.text(&title, rect(r.x + 24.0, y, r.w - 48.0, 30.0), Font::Large, p.t1, Align::Left);
         y += 38.0;
         let wrong = matches!(m, Modal::Password { wrong: true });
         c.text_block(&body, rect(r.x + 24.0, y, r.w - 48.0, body_h), Font::Body, if wrong { p.accent } else { p.t2 });
@@ -904,8 +918,8 @@ impl App {
         if field_h > 0.0 {
             let f = rect(r.x + 24.0, y, r.w - 48.0, field_h);
             if let Modal::Signature { strokes, .. } = &m {
-                c.fill_round(f, 10.0, Color::hex(0xffffff));
-                c.stroke_round(f, 10.0, p.line, 1.0);
+                c.fill_round(f, 14.0, Color::hex(0xffffff));
+                c.stroke_round(f, 14.0, p.line, 1.0);
                 c.hline(f.x + 24.0, f.bottom() - 40.0, f.w - 48.0, Color::hexa(0x000000, 0.18));
                 if strokes.iter().all(|s| s.is_empty()) {
                     c.text(
@@ -924,8 +938,8 @@ impl App {
                     *pad = f;
                 }
             } else {
-                c.fill_round(f, 10.0, p.t1.fade(0.07).over(p.card));
-                c.stroke_round(f, 10.0, p.accent.fade(0.6), 1.5);
+                c.fill_round(f, 12.0, p.fill.over(p.card.over(p.chrome)));
+                c.stroke_round(f, 12.0, p.accent.fade(0.6), 1.5);
                 self.hits.add(f, Hit::ModalField);
                 field = Some(f);
             }
@@ -935,12 +949,12 @@ impl App {
         let ow = c.text_width(&ok, Font::BodyBold) + 36.0;
         let cw = c.text_width(tr("Cancel"), Font::BodyBold) + 36.0;
         let mut bx = r.right() - 24.0 - ow;
-        self.pill(c, rect(bx, y, ow, 38.0), &ok, true, Hit::ModalOk);
+        self.pill(c, rect(bx, y, ow, 36.0), &ok, true, Hit::ModalOk);
         bx -= cw + 8.0;
-        self.pill(c, rect(bx, y, cw, 38.0), tr("Cancel"), false, Hit::ModalCancel);
+        self.pill(c, rect(bx, y, cw, 36.0), tr("Cancel"), false, Hit::ModalCancel);
         if let Some(a) = alt {
             let aw = c.text_width(&a, Font::BodyBold) + 36.0;
-            self.pill(c, rect(r.x + 24.0, y, aw, 38.0), &a, false, Hit::ModalAlt);
+            self.pill(c, rect(r.x + 24.0, y, aw, 36.0), &a, false, Hit::ModalAlt);
         }
         field
     }
@@ -950,10 +964,11 @@ impl App {
         let Some((text, _)) = &self.toast else { return };
         let text = text.clone();
         let tw = (c.text_width(&text, Font::Body) + 40.0).min(w - 40.0);
-        let r = rect((w - tw) / 2.0, h - 112.0, tw, 40.0);
-        draw::shadow(c, r, 20.0, 2.0);
-        c.fill_round(r, 20.0, if p.dark { Color::hex(0x3a3a3e) } else { Color::hex(0x1f1f23) });
-        c.text(&text, r.inset_xy(16.0, 0.0), Font::Body, Color::hex(0xffffff), Align::Center);
+        let r = rect((w - tw) / 2.0, h - 112.0, tw, 38.0);
+        draw::shadow(c, r, 19.0, 1.0);
+        c.fill_round(r, 19.0, p.solid2);
+        c.stroke_round(r, 19.0, p.ring, 1.0);
+        c.text(&text, r.inset_xy(16.0, 0.0), Font::Body, p.t1, Align::Center);
     }
 
     /// The window's single text field: in search, the page box, a dialog or a form field.
@@ -964,13 +979,13 @@ impl App {
             Some(EditFor::Modal) => modal_field.map(|r| {
                 let multi = matches!(self.modal, Some(Modal::NoteText { .. } | Modal::TextBox { .. }));
                 let pw = matches!(self.modal, Some(Modal::Password { .. }));
-                (r.inset_xy(12.0, if multi { 8.0 } else { 10.0 }), self.modal_text.clone(), p.t1.fade(0.07).over(p.card), pw, multi, 14.0)
+                (r.inset_xy(12.0, if multi { 8.0 } else { 10.0 }), self.modal_text.clone(), p.fill.over(p.card.over(p.chrome)), pw, multi, 14.0)
             }),
             Some(EditFor::Search) if self.search_open && self.modal.is_none() && !self.tabs.is_empty() && !self.settings_open => {
-                self.edit_rect.map(|r| (r, self.query.clone(), p.t1.fade(0.06).over(p.card), false, false, 13.0))
+                self.edit_rect.map(|r| (r, self.query.clone(), p.fill.over(p.card.over(p.area)), false, false, 13.0))
             }
             Some(EditFor::PageBox) if self.modal.is_none() => {
-                Some((self.page_box.inset_xy(10.0, 5.0), self.page_box_text.clone(), p.t1.fade(0.1).over(p.card), false, false, 13.0))
+                Some((self.page_box.inset_xy(10.0, 5.0), self.page_box_text.clone(), p.fill2.over(p.card.over(p.area)), false, false, 13.0))
             }
             Some(EditFor::Field(i)) if self.modal.is_none() => {
                 let t = self.tab();

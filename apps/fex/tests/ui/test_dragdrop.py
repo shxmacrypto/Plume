@@ -11,6 +11,9 @@ try:
     x.click("Row(4)"); x.click("Row(5)", ctrl=True)
     p = x.mouse("down", "Row(4)")
     x.cmd("mouse", type="move", x=p["x"] + 30, y=p["y"] + 12)
+    check("a drag stays inside the window while the pointer does", x.state()["drag"] == "Files" and x.cmd("last_drag") == [], x.state()["drag"])
+    # out of the window: Windows takes over the drag
+    x.cmd("mouse", type="move", x=-40, y=p["y"] + 12)
     dragged = x.cmd("last_drag")
     check("dragging a selected file drags the whole selection", [os.path.basename(q) for q in dragged] == ["a1.txt", "a2.txt"], dragged)
     x.cmd("mouse", type="up", x=p["x"] + 30, y=p["y"] + 12)
@@ -19,6 +22,7 @@ try:
     # dragging an unselected file drags it alone
     p = x.mouse("down", "Row(8)")
     x.cmd("mouse", type="move", x=p["x"] + 30, y=p["y"] + 12)
+    x.cmd("mouse", type="move", x=-40, y=p["y"] + 12)
     dragged = x.cmd("last_drag")
     x.cmd("mouse", type="up", x=p["x"] + 30, y=p["y"] + 12)
     check("dragging an unselected file drags it alone", [os.path.basename(q) for q in dragged] == ["notes.md"], dragged)

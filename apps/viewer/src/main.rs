@@ -68,7 +68,7 @@ fn theme() -> Theme {
         (Some("light"), _) | (None, Some("light")) => false,
         _ => system_dark(),
     };
-    Theme::new(dark, Color::parse(if dark { "#2dd4bf" } else { "#0d9488" }))
+    Theme::new(dark, Color::parse(if dark { "#14b8a6" } else { "#0d9488" }))
 }
 
 fn main() {

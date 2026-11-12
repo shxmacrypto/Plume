@@ -32,7 +32,7 @@ impl App {
     fn toggle(&mut self, c: &mut Canvas, r: Rect, on: bool, name: &'static str) {
         let p = self.pal.clone();
         let sw = rect(r.right() - 48.0, r.y + (r.h - 26.0) / 2.0, 48.0, 26.0);
-        c.fill_round(sw, 13.0, if on { p.accent } else { p.t1.fade(0.22) });
+        c.fill_round(sw, 13.0, if on { p.accent } else { p.fill2 });
         let k = if on { sw.right() - 23.0 } else { sw.x + 3.0 };
         c.fill_round(rect(k, sw.y + 3.0, 20.0, 20.0), 10.0, Color::hex(0xffffff));
         self.hits.add(r, Hit::Toggle(name));
@@ -45,17 +45,17 @@ impl App {
         let total: f32 = widths.iter().sum::<f32>() + 8.0;
         let mut x = r.right() - total;
         let bg = rect(x - 4.0, r.y + (r.h - 34.0) / 2.0, total, 34.0);
-        c.fill_round(bg, 17.0, p.t1.fade(0.07));
-        x += 0.0;
+        c.fill_round(bg, 17.0, p.fill);
         for (i, (l, w)) in labels.iter().zip(widths).enumerate() {
             let b = rect(x, bg.y + 3.0, w, 28.0);
             let hit = Hit::Choice(name, i);
             if i == cur {
-                c.fill_round(b, 14.0, p.accent);
+                c.fill_round(b, 14.0, if p.dark { p.solid2 } else { p.solid });
+                c.stroke_round(b, 14.0, p.ring, 1.0);
             } else if self.hovered(&hit) {
                 c.fill_round(b, 14.0, p.t1.fade(0.08));
             }
-            c.text(l, b, Font::Small, if i == cur { p.on_accent } else { p.t1 }, Align::Center);
+            c.text(l, b, if i == cur { Font::SmallBold } else { Font::Small }, if i == cur { p.t1 } else { p.t2 }, Align::Center);
             self.hits.add(b, hit);
             x += w;
         }
@@ -201,7 +201,7 @@ impl App {
             let (top, h) = if ky < zero { (ky, zero - ky) } else { (zero, ky - zero) };
             let col = if self.set.eq_on { p.accent } else { p.t3 };
             c.fill_round(rect(cxm - 2.0, top, 4.0, h.max(1.0)), 2.0, col);
-            c.fill_round(rect(cxm - 8.0, ky - 8.0, 16.0, 16.0), 8.0, if self.set.eq_on { Color::hex(0xffffff) } else { p.t2 });
+            c.fill_round(rect(cxm - 8.0, ky - 8.0, 16.0, 16.0), 8.0, if self.set.eq_on { Color::hex(0xffffff) } else { p.t2.over(p.bg) });
             self.hits.add(rect(cxm - col_w / 2.0, y - 8.0, col_w, bh + 16.0), Hit::EqBand(i));
             let label = if i == 10 {
                 tr("Preamp").to_string()

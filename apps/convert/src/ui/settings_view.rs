@@ -10,8 +10,8 @@ use plume_ui::{Align, Canvas, Rect, rect};
 impl App {
     fn group(&mut self, c: &mut Canvas, x: f32, y: f32, w: f32, title: &str) -> f32 {
         let p = self.pal.clone();
-        draw::text(c, title, rect(x, y, w, 28.0), 17.0, 700, p.t1, Align::Left);
-        y + 38.0
+        draw::text(c, title, rect(x, y, w, 30.0), 17.0, 600, p.t1, Align::Left);
+        y + 40.0
     }
 
     /// A row: label (and a line under it) on the left; returns the row's rect for the control on the right.
@@ -21,21 +21,19 @@ impl App {
         let r = rect(x, y, w, h);
         let lw = w * 0.5;
         if sub.is_empty() {
-            draw::text(c, label, rect(x, y, lw, h), 13.5, 400, p.t1, Align::Left);
+            draw::text(c, label, rect(x, y, lw, h), 13.0, 400, p.t1, Align::Left);
         } else {
-            draw::text(c, label, rect(x, y + 9.0, lw, 22.0), 13.5, 400, p.t1, Align::Left);
+            draw::text(c, label, rect(x, y + 9.0, lw, 22.0), 13.0, 400, p.t1, Align::Left);
             draw::text(c, sub, rect(x, y + 32.0, w * 0.62, 20.0), 12.0, 400, p.t3, Align::Left);
         }
         c.hline(x, y + h, w, p.line);
         r
     }
 
-    /// Chips on the right of a row.
+    /// A segmented control on the right of a row.
     fn row_chips(&mut self, c: &mut Canvas, r: Rect, key: &'static str) {
-        let (labels, _) = self.chips_of(key);
-        let total: f32 = labels.iter().map(|l| draw::text_width(c, l, 12.5, 600) + 30.0).sum::<f32>();
-        let x = r.right() - total;
-        self.chip_row(c, x, r.y + (r.h - 30.0) / 2.0, total + 1.0, "", key);
+        let w = self.segmented_width(c, key);
+        self.segmented(c, r.right() - w, r.y + (r.h - 34.0) / 2.0, None, key);
     }
 
     pub fn paint_settings(&mut self, c: &mut Canvas, page: Rect) {
@@ -45,7 +43,7 @@ impl App {
         let x = page.x + (page.w - w) / 2.0;
         let top = page.y + 20.0 - self.left_scroll;
         let mut y = top;
-        draw::text(c, tr("Settings"), rect(x, y, w, 44.0), 28.0, 800, p.t1, Align::Left);
+        draw::text(c, tr("Settings"), rect(x, y, w, 44.0), 24.0, 700, p.t1, Align::Left);
         y += 64.0;
 
         y = self.group(c, x, y, w, tr("Appearance"));

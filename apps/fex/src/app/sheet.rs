@@ -65,26 +65,27 @@ impl App {
         let (typed, secret) = (sheet.kind.has_field(), sheet.kind.is_secret());
         let cw = 420.0f32.min(w - 32.0).max(260.0);
         let ch = match (lock, typed) {
-            (true, _) => 258.0,
-            (false, true) => 198.0,
-            (false, false) => 164.0,
+            (true, _) => 280.0,
+            (false, true) => 212.0,
+            (false, false) => 180.0,
         };
         let card = rect(((w - cw) / 2.0).round(), (((h - ch) * 0.36).round()).max(m::TITLE_H + 8.0), cw, ch);
-        let pad = 22.0;
-        let mut y = card.y + 66.0;
+        let pad = 24.0;
+        let mut y = card.y + 76.0;
+        // les trois formats : les segments d'un contrôle segmenté (piste de 32 px, segments de 26 px)
         let (mut zip, mut seven, mut rar) = (Rect::default(), Rect::default(), Rect::default());
         if lock {
-            zip = rect(card.x + pad, y, 62.0, 28.0);
-            seven = rect(zip.right() + 8.0, y, 62.0, 28.0);
-            rar = rect(seven.right() + 8.0, y, 62.0, 28.0);
-            y += 60.0;
+            zip = rect(card.x + pad + 3.0, y + 3.0, 64.0, 26.0);
+            seven = rect(zip.right(), y + 3.0, 64.0, 26.0);
+            rar = rect(seven.right(), y + 3.0, 64.0, 26.0);
+            y += 68.0;
         }
         let field = if typed { rect(card.x + pad, y, cw - 2.0 * pad, 36.0) } else { Rect::default() };
         let reveal = if secret { rect(field.right() - 82.0, field.y + 4.0, 78.0, 28.0) } else { Rect::default() };
         let text = rect(field.x + 12.0, field.y, (field.w - 12.0 - if secret { 88.0 } else { 12.0 }).max(20.0), field.h);
-        let by = card.bottom() - 22.0 - 34.0;
-        let ok = rect(card.right() - pad - 112.0, by, 112.0, 34.0);
-        let cancel = rect(ok.x - 10.0 - 100.0, by, 100.0, 34.0);
+        let by = card.bottom() - 24.0 - 36.0;
+        let ok = rect(card.right() - pad - 112.0, by, 112.0, 36.0);
+        let cancel = rect(ok.x - 12.0 - 100.0, by, 100.0, 36.0);
         Some(SheetLay { card, zip, seven, rar, field, text, reveal, ok, cancel })
     }
 
@@ -213,11 +214,11 @@ impl App {
         let dim = rect(0.0, m::TITLE_H, self.lay.w, (self.lay.status.bottom() - m::TITLE_H).max(0.0));
         c.fill(dim, Color::hexa(0x000000, if t.dark { 0.5 } else { 0.28 }));
         self.hits.add(dim, Id::SheetDim);
-        c.fill_round(l.card, 14.0, t.solid);
-        c.stroke_round(l.card, 14.0, t.ring, 1.0);
+        c.fill_round(l.card, 20.0, t.solid);
+        c.stroke_round(l.card, 20.0, t.ring, 1.0);
         self.hits.add(l.card, Id::SheetCard);
 
-        let pad = 22.0;
+        let pad = 24.0;
         let many = |n: usize| s.count(n as u64, s.item);
         let (title, subtitle, action) = match &sheet.kind {
             SheetKind::Lock { paths, .. } => {
@@ -239,28 +240,29 @@ impl App {
             }
         };
         let inner = l.card.w - 2.0 * pad;
-        c.text(&title, rect(l.card.x + pad, l.card.y + 16.0, inner, 24.0), Font::Title, t.t1, Align::Left);
-        c.text(&subtitle, rect(l.card.x + pad, l.card.y + 40.0, inner, 18.0), Font::Small, t.t3, Align::Left);
+        c.text(&title, rect(l.card.x + pad, l.card.y + 20.0, inner, 24.0), Font::Large, t.t1, Align::Left);
+        c.text(&subtitle, rect(l.card.x + pad, l.card.y + 46.0, inner, 18.0), Font::Small, t.t3, Align::Left);
 
         if let SheetKind::Lock { format, rar, .. } = &sheet.kind {
+            let track = rect(l.zip.x - 3.0, l.zip.y - 3.0, l.rar.right() - l.zip.x + 6.0, 32.0);
+            c.fill_round(track, 16.0, t.fill);
             for (id, r, label, on, enabled) in [
                 (Id::SheetZip, l.zip, "ZIP", *format == Format::Zip, true),
                 (Id::Sheet7z, l.seven, "7z", *format == Format::SevenZ, true),
                 (Id::SheetRar, l.rar, "RAR", *format == Format::Rar, *rar),
             ] {
                 if on {
-                    c.fill_round(r, 14.0, t.accent.fade(if t.dark { 0.32 } else { 0.18 }));
+                    c.fill_round(r, 13.0, if t.dark { t.solid2 } else { t.solid });
+                    c.stroke_round(r, 13.0, t.ring, 1.0);
                 } else if enabled && self.hover == Some(id) {
-                    c.fill_round(r, 14.0, t.fill);
-                } else {
-                    c.stroke_round(r, 14.0, t.sep, 1.0);
+                    c.fill_round(r, 13.0, t.hover);
                 }
                 let ink = match (on, enabled) {
                     (true, _) => t.t1,
                     (false, true) => t.t2,
                     (false, false) => t.t4,
                 };
-                c.text(label, r, Font::SmallBold, ink, Align::Center);
+                c.text(label, r, if on { Font::BodyBold } else { Font::Body }, ink, Align::Center);
                 if enabled {
                     self.hits.add(r, id);
                 }
@@ -271,7 +273,7 @@ impl App {
                 (Format::Zip, true) => s.pw_note_zip,
                 (Format::Zip, false) => s.pw_note_no_rar,
             };
-            c.text(note, rect(l.card.x + pad, l.zip.bottom() + 6.0, inner, 18.0), Font::Small, t.t3, Align::Left);
+            c.text(note, rect(l.card.x + pad, l.zip.bottom() + 11.0, inner, 18.0), Font::Small, t.t3, Align::Left);
         }
 
         if sheet.kind.has_field() {
@@ -281,7 +283,7 @@ impl App {
             if sheet.kind.is_secret() {
                 let label = if sheet.reveal { s.pw_hide } else { s.pw_show };
                 if self.hover == Some(Id::SheetReveal) {
-                    c.fill_round(l.reveal, 8.0, t.fill2);
+                    c.fill_round(l.reveal, l.reveal.h / 2.0, t.fill2);
                 }
                 c.text(label, l.reveal, Font::Small, if self.hover == Some(Id::SheetReveal) { t.t1 } else { t.t3 }, Align::Center);
                 self.hits.add(l.reveal, Id::SheetReveal);
@@ -291,7 +293,7 @@ impl App {
             }
         } else {
             // pas de champ : une ligne dit ce qui va se passer
-            c.text(s.sftp_delete_text, rect(l.card.x + pad, l.card.y + 68.0, inner, 20.0), Font::Small, t.t2, Align::Left);
+            c.text(s.sftp_delete_text, rect(l.card.x + pad, l.card.y + 76.0, inner, 20.0), Font::Body, t.t2, Align::Left);
         }
 
         // le bouton d'une suppression est rouge : elle ne se rattrape pas
@@ -307,7 +309,7 @@ impl App {
                 (false, true, _) => t.fill2,
                 (false, false, _) => t.fill,
             };
-            c.fill_round(r, 9.0, bg);
+            c.fill_round(r, r.h / 2.0, bg);
             c.text(label, r, Font::BodyBold, if primary { Color::hex(0xffffff) } else { t.t1 }, Align::Center);
             self.hits.add(r, id);
         }

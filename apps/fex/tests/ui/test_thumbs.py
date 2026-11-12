@@ -64,7 +64,8 @@ try:
     labels = x.cmd("menu_last")
     s = x.wait(lambda s: s["thumbs"] and s["icon_size"] == 2, what="medium from the View button")
     check("the View button offers the sizes and Details, like Explorer",
-          [l.replace(" [x]", "") for l in labels] == ["Extra large icons", "Large icons", "Medium icons", "Small icons", "Details"] and "Details [x]" in labels, labels)
+          [l.replace(" [x]", "") for l in labels[:5]] == ["Extra large icons", "Large icons", "Medium icons", "Small icons", "Details"] and "Details [x]" in labels
+          and "Sort by > Date modified" in labels and all(l.startswith("Sort by > ") for l in labels[5:]), labels)
     x.close()
     x = Fex(d, port=47827, fresh=False)
     s = x.wait()

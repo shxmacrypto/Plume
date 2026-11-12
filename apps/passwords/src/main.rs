@@ -59,7 +59,7 @@ fn system_dark() -> bool {
 }
 
 /// The theme: this app's setting, else the suite's (PLUME_SUITE_THEME, Plume Web's), else Windows'. The accent is
-/// Plume Passwords' green.
+/// Plume Passwords' slate, the colour of its icon (a deeper slate on light backgrounds, to stay readable).
 pub fn theme(set: &Settings) -> Theme {
     let suite = std::env::var("PLUME_SUITE_THEME").ok().or_else(|| {
         std::env::var_os("LOCALAPPDATA")
@@ -74,7 +74,7 @@ pub fn theme(set: &Settings) -> Theme {
         (_, Some("light")) => false,
         _ => system_dark(),
     };
-    Theme::new(dark, Some(if dark { Color::hex(0x22a75f) } else { Color::hex(0x15803d) }))
+    Theme::new(dark, Some(if dark { Color::hex(0x94a3b8) } else { Color::hex(0x64748b) }))
 }
 
 fn main() {

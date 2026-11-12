@@ -472,36 +472,36 @@ impl App {
                 let (cw, ch) = (460.0f32.min(w - 32.0).max(280.0), 474.0);
                 let card = rect(((w - cw) / 2.0).round(), ((h - ch) * 0.4).round().max(m::TITLE_H + 6.0), cw, ch);
                 let fields: Vec<Rect> = (0..5).map(|i| rect(card.x + pad, card.y + 78.0 + i as f32 * 62.0 + 18.0, cw - 2.0 * pad, 34.0)).collect();
-                let by = card.bottom() - 22.0 - 34.0;
-                let ok = rect(card.right() - pad - 120.0, by, 120.0, 34.0);
+                let by = card.bottom() - 24.0 - 36.0;
+                let ok = rect(card.right() - pad - 120.0, by, 120.0, 36.0);
                 let extra = rect(fields[2].right() - 82.0, fields[2].y + 4.0, 78.0, 26.0);
-                SheetLay { card, fields, ok, cancel: rect(ok.x - 10.0 - 100.0, by, 100.0, 34.0), extra }
+                SheetLay { card, fields, ok, cancel: rect(ok.x - 12.0 - 100.0, by, 100.0, 36.0), extra }
             }
             Sheet::Compose(_) => {
                 let (cw, ch) = ((w - 64.0).clamp(320.0, 780.0), (h - m::TITLE_H - 28.0).clamp(300.0, 640.0));
                 let card = rect(((w - cw) / 2.0).round(), (m::TITLE_H + ((h - m::TITLE_H - ch) / 2.0)).round().max(m::TITLE_H + 4.0), cw, ch);
                 let label = 74.0;
                 let mut fields: Vec<Rect> = (0..3).map(|i| rect(card.x + pad + label, card.y + 58.0 + i as f32 * 40.0, cw - 2.0 * pad - label, 32.0)).collect();
-                let by = card.bottom() - 20.0 - 34.0;
+                let by = card.bottom() - 24.0 - 36.0;
                 let top = card.y + 58.0 + 3.0 * 40.0 + 6.0;
                 fields.push(rect(card.x + pad, top, cw - 2.0 * pad, (by - 30.0 - top).max(60.0)));
-                let ok = rect(card.right() - pad - 120.0, by, 120.0, 34.0);
-                SheetLay { card, fields, ok, cancel: rect(ok.x - 10.0 - 100.0, by, 100.0, 34.0), extra: rect(card.x + pad, by, 168.0, 34.0) }
+                let ok = rect(card.right() - pad - 120.0, by, 120.0, 36.0);
+                SheetLay { card, fields, ok, cancel: rect(ok.x - 12.0 - 100.0, by, 100.0, 36.0), extra: rect(card.x + pad, by, 168.0, 36.0) }
             }
             Sheet::Signature { .. } => {
                 let (cw, ch) = (520.0f32.min(w - 32.0).max(280.0), 330.0);
                 let card = rect(((w - cw) / 2.0).round(), ((h - ch) * 0.4).round().max(m::TITLE_H + 6.0), cw, ch);
-                let by = card.bottom() - 22.0 - 34.0;
+                let by = card.bottom() - 24.0 - 36.0;
                 let field = rect(card.x + pad, card.y + 70.0, cw - 2.0 * pad, (by - 34.0 - card.y - 70.0).max(60.0));
-                let ok = rect(card.right() - pad - 120.0, by, 120.0, 34.0);
-                SheetLay { card, fields: vec![field], ok, cancel: rect(ok.x - 10.0 - 100.0, by, 100.0, 34.0), extra: Rect::default() }
+                let ok = rect(card.right() - pad - 120.0, by, 120.0, 36.0);
+                SheetLay { card, fields: vec![field], ok, cancel: rect(ok.x - 12.0 - 100.0, by, 100.0, 36.0), extra: Rect::default() }
             }
             Sheet::Confirm { .. } => {
                 let (cw, ch) = (430.0f32.min(w - 32.0).max(260.0), 168.0);
                 let card = rect(((w - cw) / 2.0).round(), ((h - ch) * 0.38).round().max(TOP), cw, ch);
-                let by = card.bottom() - 22.0 - 34.0;
-                let ok = rect(card.right() - pad - 120.0, by, 120.0, 34.0);
-                SheetLay { card, fields: vec![], ok, cancel: rect(ok.x - 10.0 - 100.0, by, 100.0, 34.0), extra: Rect::default() }
+                let by = card.bottom() - 24.0 - 36.0;
+                let ok = rect(card.right() - pad - 120.0, by, 120.0, 36.0);
+                SheetLay { card, fields: vec![], ok, cancel: rect(ok.x - 12.0 - 100.0, by, 100.0, 36.0), extra: Rect::default() }
             }
         })
     }
@@ -852,8 +852,8 @@ impl App {
         let dim = rect(0.0, m::TITLE_H, self.lay.w, (self.lay.h - m::TITLE_H).max(0.0));
         c.fill(dim, Color::hexa(0x000000, if t.dark { 0.5 } else { 0.28 }));
         self.hits.add(dim, Id::SheetDim);
-        c.fill_round(l.card, 14.0, t.solid);
-        c.stroke_round(l.card, 14.0, t.ring, 1.0);
+        c.fill_round(l.card, 20.0, t.solid);
+        c.stroke_round(l.card, 20.0, t.ring, 1.0);
         self.hits.add(l.card, Id::SheetCard);
         let (pad, inner) = (24.0, l.card.w - 48.0);
         let active = match self.edit {
@@ -875,13 +875,13 @@ impl App {
             Sheet::Account(f) => {
                 c.text(
                     if f.editing.is_some() { s.account_edit_title } else { s.account_title },
-                    rect(l.card.x + pad, l.card.y + 16.0, inner, 24.0),
-                    Font::Title,
+                    rect(l.card.x + pad, l.card.y + 20.0, inner, 24.0),
+                    Font::Large,
                     t.t1,
                     Align::Left,
                 );
                 let microsoft = App::microsoft_form(f);
-                c.text(if microsoft { s.ms_hint } else { s.account_hint }, rect(l.card.x + pad, l.card.y + 42.0, inner, 18.0), Font::Small, t.t3, Align::Left);
+                c.text(if microsoft { s.ms_hint } else { s.account_hint }, rect(l.card.x + pad, l.card.y + 46.0, inner, 18.0), Font::Small, t.t3, Align::Left);
                 for (i, label) in [s.f_name, s.f_email, if microsoft { s.f_microsoft } else { s.f_password }, s.f_imap, s.f_smtp].into_iter().enumerate() {
                     c.text(label, rect(l.fields[i].x + 2.0, l.fields[i].y - 19.0, inner, 16.0), Font::Small, t.t3, Align::Left);
                     if !(microsoft && i == 2) {
@@ -914,7 +914,7 @@ impl App {
                 } else {
                     let hot = self.hover == Some(Id::SheetReveal);
                     if hot {
-                        c.fill_round(l.extra, 8.0, t.fill2);
+                        c.fill_round(l.extra, l.extra.h / 2.0, t.fill2);
                     }
                     c.text(if f.reveal { s.hide } else { s.show }, l.extra, Font::Small, if hot { t.t1 } else { t.t3 }, Align::Center);
                     self.hits.add(l.extra, Id::SheetReveal);
@@ -922,9 +922,9 @@ impl App {
                 (s.save, f.error.clone(), false, false)
             }
             Sheet::Signature { account, text } => {
-                c.text(s.signature_title, rect(l.card.x + pad, l.card.y + 16.0, inner, 24.0), Font::Title, t.t1, Align::Left);
+                c.text(s.signature_title, rect(l.card.x + pad, l.card.y + 20.0, inner, 24.0), Font::Large, t.t1, Align::Left);
                 let email = self.boxes.get(*account).map(|mb| mb.account.email.clone()).unwrap_or_default();
-                c.text(&s.fill(s.signature_hint, &[&email]), rect(l.card.x + pad, l.card.y + 42.0, inner, 18.0), Font::Small, t.t3, Align::Left);
+                c.text(&s.fill(s.signature_hint, &[&email]), rect(l.card.x + pad, l.card.y + 46.0, inner, 18.0), Font::Small, t.t3, Align::Left);
                 let body = l.fields[0];
                 c.fill_round(body, m::FIELD_R, t.fill);
                 if active == Some(0) {
@@ -945,9 +945,9 @@ impl App {
                 } else {
                     s.write_title
                 };
-                c.text(title, rect(l.card.x + pad, l.card.y + 16.0, inner, 24.0), Font::Title, t.t1, Align::Left);
+                c.text(title, rect(l.card.x + pad, l.card.y + 20.0, inner, 24.0), Font::Large, t.t1, Align::Left);
                 if let Some(mb) = self.boxes.get(f.account) {
-                    c.text(&mb.account.email, rect(l.card.x + pad, l.card.y + 16.0, inner, 24.0), Font::Small, t.t3, Align::Right);
+                    c.text(&mb.account.email, rect(l.card.x + pad, l.card.y + 20.0, inner, 24.0), Font::Small, t.t3, Align::Right);
                 }
                 for (i, label) in [s.to, s.cc, s.subject].into_iter().enumerate() {
                     c.text(label, rect(l.card.x + pad, l.fields[i].y, 70.0, l.fields[i].h), Font::Small, t.t3, Align::Left);
@@ -966,16 +966,16 @@ impl App {
                 self.hits.add(body, Id::Field(3));
                 // joindre des fichiers, et ceux qui le sont déjà (un clic les retire)
                 let hot = self.hover == Some(Id::Attach);
-                c.fill_round(l.extra, 9.0, if hot { t.fill2 } else { t.fill });
-                c.text(s.attach, l.extra, Font::Body, t.t1, Align::Center);
+                c.fill_round(l.extra, l.extra.h / 2.0, if hot { t.fill2 } else { t.fill });
+                c.text(s.attach, l.extra, Font::BodyBold, t.t1, Align::Center);
                 self.hits.add(l.extra, Id::Attach);
                 // garder en brouillon, sans fermer
                 let label = s.save_draft;
-                let dw = c.text_width(label, Font::Body) + 28.0;
+                let dw = c.text_width(label, Font::BodyBold) + 32.0;
                 let draft = rect(l.cancel.x - 10.0 - dw, l.extra.y, dw, l.extra.h);
                 let hot = self.hover == Some(Id::SaveDraft);
-                c.fill_round(draft, 9.0, if hot { t.fill2 } else { t.fill });
-                c.text(label, draft, Font::Body, if f.saving || f.sending { t.t3 } else { t.t1 }, Align::Center);
+                c.fill_round(draft, draft.h / 2.0, if hot { t.fill2 } else { t.fill });
+                c.text(label, draft, Font::BodyBold, if f.saving || f.sending { t.t3 } else { t.t1 }, Align::Center);
                 self.hits.add(draft, Id::SaveDraft);
                 let mut x = l.extra.right() + 10.0;
                 for (i, (name, data)) in f.files.iter().enumerate() {
@@ -984,7 +984,7 @@ impl App {
                     if x + w > draft.x - 10.0 {
                         break;
                     }
-                    let r = rect(x, l.extra.y + 4.0, w, 26.0);
+                    let r = rect(x, l.extra.y + 5.0, w, 26.0);
                     c.fill_round(r, 13.0, if self.hover == Some(Id::Chip(i)) { t.fill2 } else { t.fill });
                     c.text(&label, r.inset_xy(10.0, 0.0), Font::Small, t.t2, Align::Left);
                     self.hits.add(r, Id::Chip(i));
@@ -993,8 +993,8 @@ impl App {
                 (s.send, f.error.clone(), false, f.sending || f.saving)
             }
             Sheet::Confirm { title, text, action, .. } => {
-                c.text(title, rect(l.card.x + pad, l.card.y + 16.0, inner, 24.0), Font::Title, t.t1, Align::Left);
-                c.text_block(text, rect(l.card.x + pad, l.card.y + 48.0, inner, 44.0), Font::Small, t.t2);
+                c.text(title, rect(l.card.x + pad, l.card.y + 20.0, inner, 24.0), Font::Large, t.t1, Align::Left);
+                c.text_block(text, rect(l.card.x + pad, l.card.y + 52.0, inner, 44.0), Font::Body, t.t2);
                 (action.as_str(), None, true, false)
             }
         };
@@ -1013,7 +1013,7 @@ impl App {
                 (false, true, _) => t.fill2,
                 (false, false, _) => t.fill,
             };
-            c.fill_round(r, 9.0, bg);
+            c.fill_round(r, r.h / 2.0, bg);
             c.text(label, r, Font::BodyBold, if primary { Color::hex(0xffffff) } else { t.t1 }, Align::Center);
             self.hits.add(r, id);
         }

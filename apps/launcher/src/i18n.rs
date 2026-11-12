@@ -113,6 +113,7 @@ fn fr(en: &'static str) -> &'static str {
         "Web" => "Web",
         "When nothing else matches, search the web" => "Quand rien d'autre ne correspond, chercher sur le web",
         "Windows settings" => "Paramètres Windows",
+        "What the search box looks in, and how it opens" => "Ce que la recherche parcourt, et comment elle s'ouvre",
         "updated just now" => "mis à jour à l'instant",
         "updated {n} h ago" => "mis à jour il y a {n} h",
         "updated {n} min ago" => "mis à jour il y a {n} min",

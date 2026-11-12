@@ -478,7 +478,7 @@ pub fn show_in_folder(path: &str) {
     }
     #[cfg(not(feature = "test-hook"))]
     {
-        let _ = std::process::Command::new("explorer.exe").arg(format!("/select,\"{path}\"")).spawn();
+        plume_ui::folder::show(std::path::Path::new(path));
     }
 }
 

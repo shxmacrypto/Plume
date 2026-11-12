@@ -66,9 +66,13 @@ check("--install fex", setup("--install", "fex", exe=CACHED) == 0 and there("plu
 check("--install web brings the browser and its WebView2 loader", setup("--install", "web", exe=CACHED) == 0 and there("plume.exe", "WebView2Loader.dll"), files())
 check("--install viewer", setup("--install", "viewer", exe=CACHED) == 0 and there("plume-viewer.exe"), files())
 check("--install music", setup("--install", "music", exe=CACHED) == 0 and there("plume-music.exe"), files())
-NEW = ['drop', 'launcher', 'passwords', 'media', 'task', 'clean', 'backup', 'clipboard', 'pdf', 'calendar', 'convert']
+NEW = ['drop', 'launcher', 'passwords', 'media', 'task', 'clean', 'backup', 'clipboard', 'pdf', 'calendar', 'convert', 'notepad', 'cut', 'create', 'boost']
 for key in NEW:
     check("--install " + key, setup("--install", key, exe=CACHED) == 0 and there("plume-%s.exe" % key), files())
+# an app installs what it needs: Plume Boost keeps a copy of its settings with Plume Backup
+check("--uninstall backup and boost", setup("--uninstall", "backup", exe=CACHED) == 0 and setup("--uninstall", "boost", exe=CACHED) == 0
+      and not there("plume-backup.exe") and not there("plume-boost.exe"), files())
+check("--install boost brings Plume Backup with it", setup("--install", "boost", exe=CACHED) == 0 and there("plume-boost.exe", "plume-backup.exe"), files())
 check("an unknown app is refused", setup("--uninstall", "nope", exe=CACHED) != 0)
 
 # ── 3. an update rewrites every installed app, and only those
@@ -123,8 +127,20 @@ class Ui:
         self.p.wait(10)
 
 
-UENV = dict(ENV, PLUME_SUITE_TEST_PORT=str(PORT_UI), PLUME_SUITE_NOACTIVATE="1")
-COUNT = 16
+# "Set as default" writes under this test key of HKCU (never the real classes), and the window then only notes the
+# Windows Settings link instead of opening it
+DEFROOT = r"Software\PlumeSuiteDefaultsTest"
+subprocess.run(["reg", "delete", "HKCU\\" + DEFROOT, "/f"], capture_output=True)
+UENV = dict(ENV, PLUME_SUITE_TEST_PORT=str(PORT_UI), PLUME_SUITE_NOACTIVATE="1", PLUME_DEFAULTS_ROOT=DEFROOT)
+
+
+def reg_value(key, name):
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, DEFROOT + "\\" + key) as k:
+            return winreg.QueryValueEx(k, name)[0]
+    except OSError:
+        return None
+COUNT = 20
 NONE = [False] * COUNT
 FEX_ONLY = [False, True] + [False] * (COUNT - 2)
 ui = Ui(UENV)
@@ -154,6 +170,44 @@ try:
     ui.cmd(cmd="click", id="Install(8)")
     s = ui.wait(lambda s: s["busy"] is None and s["installed"][8], "Media installed")
     check("Install on a card further down installs that app (Plume Media)", there("plume-media.exe"), files())
+    # ── 5b. Set as default (Plume Media): the app registers its types, Windows' page would open
+    check("Plume Media can open files: its card knows it is not offered to Windows yet", s["defaults"][8] == "not-registered", s["defaults"])
+    check("apps that open no files have no default state", s["defaults"][5] is None and s["defaults"][1] is None, s["defaults"])
+    time.sleep(0.4)
+    check("the card shows Set as default", "SetDefault(8)" in [h["id"] for h in ui.cmd(cmd="hits")])
+    ui.shot("suite-default-pill.png")
+    ui.cmd(cmd="click", id="SetDefault(8)")
+    s = ui.cmd(cmd="state")
+    check("the first time, it explains what Windows will ask", s["explain"] == 8 and s["settings_link"] is None, s)
+    time.sleep(0.4)
+    ui.shot("suite-default-explain.png")
+    ui.cmd(cmd="click", id="DialogOk")
+    s = ui.wait(lambda s: s["defaulting"] is None and s["settings_link"], "Plume Media registered")
+    check("Continue registers Plume Media and goes to its Default apps page",
+          s["settings_link"] == "ms-settings:defaultapps?registeredAppUser=Plume%20Media" and s["explain"] is None, s)
+    check("it says what to click in Windows", s["toast"] and "Set default" in s["toast"], s["toast"])
+    check("Plume Media is listed for Default apps (test key)", reg_value(r"Software\RegisteredApplications", "Plume Media") == r"Software\Plume\Media\Capabilities")
+    check("its capabilities claim photos and videos",
+          reg_value(r"Software\Plume\Media\Capabilities\FileAssociations", ".jpg") == "PlumeMedia.Photo"
+          and reg_value(r"Software\Plume\Media\Capabilities\FileAssociations", ".mp4") == "PlumeMedia.Video")
+    check("the open command is the installed Plume Media",
+          (reg_value(r"Software\Classes\PlumeMedia.Photo\shell\open\command", "") or "").lower() == ('"%s" "%%1"' % os.path.join(DIR, "plume-media.exe")).lower())
+    check("the card now says registered, not default yet", s["defaults"][8] == "registered", s["defaults"])
+    check("the explanation is remembered", os.path.isfile(os.path.join(LOCAL, "Plume", "Suite", "defaults-explained")))
+    # what Windows writes once the user clicks Set default (only ever under the test key)
+    for ext, pid in [("jpg", "Photo"), ("jpeg", "Photo"), ("png", "Photo"), ("gif", "Photo"), ("webp", "Photo"), ("mp4", "Video"), ("mov", "Video"), ("mkv", "Video")]:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, DEFROOT + r"\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.%s\UserChoice" % ext) as k:
+            winreg.SetValueEx(k, "ProgId", 0, winreg.REG_SZ, "PlumeMedia." + pid)
+    s = ui.cmd(cmd="refresh")
+    check("once Windows opens them with it, the card says Default", s["defaults"][8] == "default", s["defaults"])
+    time.sleep(0.4)
+    ui.shot("suite-default-done.png")
+    code = subprocess.run([os.path.join(DIR, "plume-media.exe"), "--unregister-defaults"], env=UENV, timeout=30).returncode
+    check("--unregister-defaults (what removal runs) takes everything back",
+          code == 0 and reg_value(r"Software\RegisteredApplications", "Plume Media") is None
+          and reg_value(r"Software\Classes\PlumeMedia.Photo", "") is None
+          and reg_value(r"Software\Plume\Media\Capabilities", "ApplicationName") is None, code)
+    subprocess.run(["reg", "delete", "HKCU\\" + DEFROOT, "/f"], capture_output=True)
     setup("--uninstall", "media", exe=CACHED)
     ui.cmd(cmd="reveal", app=0)
     ui.cmd(cmd="refresh")

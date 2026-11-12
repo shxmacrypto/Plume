@@ -172,16 +172,18 @@ pub fn icon_worker(sender: Sender) -> mpsc::Sender<IconJob> {
     tx
 }
 
-/// Les lieux de la barre latérale (dossiers personnels, lecteurs), lus hors du fil de l'interface.
-pub fn spawn_places(sender: Sender, pinned: Vec<PathBuf>) {
+/// Les lieux de la barre latérale (dossiers personnels, lecteurs), lus hors du fil de l'interface. `check` : les
+/// dossiers retenus (récents, catégories) dont on veut savoir s'ils existent encore (un lecteur peut faire attendre).
+pub fn spawn_places(sender: Sender, pinned: Vec<PathBuf>, check: Vec<PathBuf>) {
     std::thread::spawn(move || {
         com_init();
         let mut personal = places::personal();
         personal.extend(pinned.iter().filter(|p| p.is_dir()).filter_map(|p| places::place_of(p)));
         let drives = places::drives();
+        let gone: Vec<PathBuf> = check.into_iter().filter(|p| !p.is_dir()).collect();
         sender.send(move |h, cx| {
             if let Some(app) = h.as_any().downcast_mut::<App>() {
-                app.on_places(personal, drives, cx);
+                app.on_places(personal, drives, gone, cx);
             }
         });
     });

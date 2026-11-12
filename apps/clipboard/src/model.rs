@@ -2,6 +2,7 @@
 
 use crate::{
     clip::{self, Put},
+    detect,
     hotkey::{self, Hotkey},
     image, input,
     settings::Settings,
@@ -16,6 +17,7 @@ pub const SAVE: usize = 1;
 pub const PRUNE: usize = 2;
 pub const RETRY: usize = 3;
 pub const TOAST: usize = 4;
+pub const REVEAL: usize = 5;
 
 pub fn system_dark() -> bool {
     use windows::{
@@ -40,6 +42,9 @@ pub fn system_dark() -> bool {
     read.is_ok() && data == 0
 }
 
+/// Plume Clipboard's accent: the fuchsia of its icon.
+pub const ACCENT: u32 = 0xc026d3;
+
 /// Plume Clipboard's colours: Plume's theme with its fuchsia accent.
 pub fn theme_for(set: &Settings) -> Theme {
     let dark = match set.theme.as_str() {
@@ -47,7 +52,7 @@ pub fn theme_for(set: &Settings) -> Theme {
         "light" => false,
         _ => system_dark(),
     };
-    Theme::new(dark, Some(if dark { Color::hex(0xe879f9) } else { Color::hex(0xa21caf) }))
+    Theme::new(dark, Some(Color::hex(ACCENT)))
 }
 
 pub struct Model {
@@ -75,7 +80,7 @@ impl Model {
         let dir = store::dir();
         let set = Settings::load(&dir);
         let mut store = Store::load_from(&dir);
-        let removed = store.prune(set.max_items as usize, set.days, store::now());
+        let removed = store.prune(set.max_items as usize, set.days, set.secret_secs(), store::now());
         for it in &removed {
             store::delete_image(&dir, it.id);
         }
@@ -154,21 +159,56 @@ impl Model {
         }
     }
 
-    fn added(&mut self, id: u64, fresh: bool, what: &str) {
-        let removed = self.store.prune(self.set.max_items as usize, self.set.days, store::now());
+    /// Applies the limits now (items, days, sensitive items' short life). Returns whether anything went.
+    pub fn prune_now(&mut self) -> bool {
+        let removed = self.store.prune(self.set.max_items as usize, self.set.days, self.set.secret_secs(), store::now());
         for it in &removed {
             store::delete_image(&self.dir, it.id);
         }
+        !removed.is_empty()
+    }
+
+    fn added(&mut self, id: u64, fresh: bool, what: &str) {
+        self.prune_now();
         self.note(format!("{} {what} #{id}", if fresh { "added" } else { "moved up" }));
         self.changed();
     }
 
-    pub fn add_text(&mut self, text: String, html: Option<String>, rtf: Option<String>, app: &str) -> u64 {
+    /// Keeps a copied text. A sensitive one (password, IP address, key) is marked, loses its formatting, or is
+    /// not kept at all if the settings say so (None).
+    pub fn add_text(&mut self, text: String, html: Option<String>, rtf: Option<String>, app: &str) -> Option<u64> {
+        let secret = detect::detect(&text, self.set.wanted());
+        if secret.is_some() && self.set.never_keep_secrets {
+            self.note("skipped: sensitive");
+            return None;
+        }
         let kind = clip::kind_of_text(&text);
-        let it = Item { html, rtf, app: app.to_string(), ..Item::text(&text, kind) };
+        let (html, rtf) = if secret.is_some() { (None, None) } else { (html, rtf) };
+        let it = Item { html, rtf, secret, app: app.to_string(), ..Item::text(&text, kind) };
         let (id, fresh) = self.store.add(it, store::now());
-        self.added(id, fresh, if kind == Kind::Link { "link" } else { "text" });
-        id
+        let what = match secret {
+            Some(s) => format!("sensitive {s:?}").to_lowercase(),
+            None if kind == Kind::Link => "link".into(),
+            None => "text".into(),
+        };
+        self.added(id, fresh, &what);
+        Some(id)
+    }
+
+    /// Removes every sensitive item ("Clear sensitive items").
+    pub fn clear_secrets(&mut self) -> usize {
+        let n = self.store.clear_secrets().len();
+        self.note(format!("cleared {n} sensitive"));
+        self.changed();
+        n
+    }
+
+    /// The kinds to hide changed: every text is looked at again.
+    pub fn reclassify(&mut self) {
+        let want = self.set.wanted();
+        if self.store.reclassify(|t| detect::detect(t, want)) {
+            self.changed();
+        }
     }
 
     pub fn add_files(&mut self, files: Vec<String>, app: &str) -> u64 {
@@ -244,7 +284,11 @@ impl Model {
     /// The write itself; `real`: always on the clipboard even in a test, marked private (the round trip of the
     /// test socket: Windows' clipboard history does not keep it).
     pub fn put_item(&mut self, it: &Item, plain: bool, real: bool) -> bool {
-        let what = format!("#{} {:?}{} {}", it.id, it.kind, if plain { " plain" } else { "" }, it.preview(40));
+        // the test log never shows a sensitive value: its fingerprint proves which value went
+        let mut what = format!("#{} {:?}{} {}", it.id, it.kind, if plain { " plain" } else { "" }, it.preview(40));
+        if matches!(it.kind, Kind::Text | Kind::Link) {
+            what.push_str(&format!(" [fnv {:016x}]", store::hash(it.kind, it.text.as_bytes())));
+        }
         let png;
         let dib;
         let files_text;

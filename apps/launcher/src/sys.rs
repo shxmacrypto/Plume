@@ -61,6 +61,13 @@ fn note(s: String) {
     ACTIONS.lock().unwrap().push(s);
 }
 
+/// Writes down why the box went away (tests only).
+pub fn test_note(s: &str) {
+    if test_mode() {
+        note(s.to_string());
+    }
+}
+
 // ───────────────────────── opening ─────────────────────────
 
 /// Opens a file, a shortcut, an app of the Apps folder, a settings page or a web address.
@@ -77,6 +84,11 @@ pub fn open(target: &str) -> bool {
 pub fn reveal(path: &Path) -> bool {
     if test_mode() {
         note(format!("reveal {}", path.display()));
+        return true;
+    }
+    // Plume FEx when it opens folders, otherwise the Windows shell
+    if plume_ui::folder::fex().is_some() {
+        plume_ui::folder::show(path);
         return true;
     }
     unsafe {

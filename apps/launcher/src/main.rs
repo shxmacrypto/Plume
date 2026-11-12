@@ -164,6 +164,7 @@ fn main() {
                     .with(|h, cx| {
                         ui::with_app(h).map(|app| {
                             app.quitting || {
+                                sys::test_note("hide: WM_CLOSE");
                                 app.hide(cx);
                                 false
                             }

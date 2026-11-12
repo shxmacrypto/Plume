@@ -36,11 +36,12 @@ pub const LINK: Icon = Icon {
     vb: 16.0,
     parts: &[Part::P("M6.8 9.2a2.6 2.6 0 0 0 3.7 0l2-2a2.6 2.6 0 0 0-3.7-3.7l-.8.8"), Part::P("M9.2 6.8a2.6 2.6 0 0 0-3.7 0l-2 2a2.6 2.6 0 0 0 3.7 3.7l.8-.8")],
 };
+pub const CALENDAR: Icon = Icon { name: "CALENDAR", vb: 16.0, parts: &[Part::R(2.5, 3.5, 11.0, 10.0, 2.0), Part::P("M2.5 6.8h11M5.5 2v3M10.5 2v3")] };
 pub const NOTE: Icon = Icon { name: "NOTE", vb: 16.0, parts: &[Part::P("M3 4h10M3 8h10M3 12h6")] };
 
-const LOGO: &[u8] = include_bytes!("../../../../assets/brand/plume-calendar-256.png");
+pub const LOGO: &[u8] = include_bytes!("../../../../assets/brand/plume-calendar-256.png");
 
-fn png(wic: &IWICImagingFactory, bytes: &'static [u8]) -> Option<IWICBitmapSource> {
+pub fn png(wic: &IWICImagingFactory, bytes: &'static [u8]) -> Option<IWICBitmapSource> {
     unsafe {
         let stream = wic.CreateStream().ok()?;
         stream.InitializeFromMemory(bytes).ok()?;
@@ -112,17 +113,14 @@ impl App {
     pub(super) fn chip(&mut self, c: &mut Canvas, r: Rect, label: &str, on: bool, id: Id) {
         let t = self.t.clone();
         let fill = if on {
-            t.accent.fade(if t.dark { 0.32 } else { 0.18 })
+            t.accent.fade(0.16)
         } else if self.hot(&id) {
             t.fill2
         } else {
             t.fill
         };
         c.fill_round(r, r.h / 2.0, fill);
-        if on {
-            c.stroke_round(r, r.h / 2.0, t.accent.fade(0.7), 1.0);
-        }
-        c.text(label, r.inset_xy(8.0, 0.0), if on { Font::SmallBold } else { Font::Small }, if on { t.t1 } else { t.t2 }, Align::Center);
+        c.text(label, r.inset_xy(8.0, 0.0), if on { Font::SmallBold } else { Font::Small }, if on { t.accent } else { t.t2 }, Align::Center);
         self.hits.add(r, id);
     }
 
@@ -137,7 +135,7 @@ impl App {
         for ((label, id, on), w) in opts.iter().zip(widths) {
             let b = rect(xx, y + 3.0, w, h - 6.0);
             if *on {
-                c.fill_round(b, b.h / 2.0, if t.dark { t.solid2 } else { t.solid });
+                c.fill_round(b, b.h / 2.0, t.fill2);
                 c.stroke_round(b, b.h / 2.0, t.ring, 1.0);
             } else if self.hot(id) {
                 c.fill_round(b, b.h / 2.0, t.hover);
@@ -151,17 +149,17 @@ impl App {
 
     pub(super) fn toggle(&mut self, c: &mut Canvas, r: Rect, on: bool, id: Id) {
         let t = self.t.clone();
-        let tr_ = rect(r.x, r.y + (r.h - 22.0) / 2.0, 38.0, 22.0);
-        c.fill_round(tr_, 11.0, if on { t.accent } else { t.fill2 });
-        let k = if on { tr_.x + 18.0 } else { tr_.x + 2.0 };
-        c.fill_round(rect(k, tr_.y + 2.0, 18.0, 18.0), 9.0, Color::hex(0xffffff));
+        let tr_ = rect(r.x, r.y + (r.h - 26.0) / 2.0, 48.0, 26.0);
+        c.fill_round(tr_, 13.0, if on { t.accent } else { t.fill2 });
+        let k = if on { tr_.right() - 23.0 } else { tr_.x + 3.0 };
+        c.fill_round(rect(k, tr_.y + 3.0, 20.0, 20.0), 10.0, Color::hex(0xffffff));
         self.hits.add(r, id);
     }
 
     pub(super) fn toggle_row(&mut self, c: &mut Canvas, r: Rect, label: &str, on: bool, id: Id) {
         let t = self.t.clone();
-        self.toggle(c, rect(r.x, r.y, 40.0, r.h), on, id.clone());
-        c.text(label, rect(r.x + 48.0, r.y, r.w - 48.0, r.h), Font::Body, t.t1, Align::Left);
+        self.toggle(c, rect(r.x, r.y, 48.0, r.h), on, id.clone());
+        c.text(label, rect(r.x + 58.0, r.y, r.w - 58.0, r.h), Font::Body, t.t1, Align::Left);
         self.hits.add(r, id);
     }
 
@@ -219,11 +217,17 @@ impl App {
         self.hits.add(r, id);
     }
 
+    /// A dialog's card (radius 20).
     pub(super) fn card(&mut self, c: &mut Canvas, r: Rect) {
+        self.card_r(c, r, 20.0);
+    }
+
+    /// A raised card (details, menus, reminders): opaque, so fields drawn on it match the native field.
+    pub(super) fn card_r(&mut self, c: &mut Canvas, r: Rect, radius: f32) {
         let t = self.t.clone();
-        c.fill_round(r.offset(0.0, 6.0).inset(-2.0), 18.0, Color::hexa(0x000000, if t.dark { 0.35 } else { 0.10 }));
-        c.fill_round(r, 16.0, t.solid);
-        c.stroke_round(r, 16.0, t.ring, 1.0);
+        c.fill_round(r.offset(0.0, 6.0).inset(-2.0), radius + 2.0, Color::hexa(0x000000, if t.dark { 0.35 } else { 0.10 }));
+        c.fill_round(r, radius, t.solid);
+        c.stroke_round(r, radius, t.sep, 1.0);
     }
 
     /// The veil under a modal; a light one (menus, details) closes on click.
@@ -280,8 +284,8 @@ impl App {
         c.gradient_v(rect(0.0, 0.0, cx.w, m::TITLE_H), t.hdr1, t.hdr2);
         c.hline(0.0, m::TITLE_H - 1.0, cx.w, t.sep);
         let wic = self.gfx.wic.clone();
-        c.image(1, rect(14.0, (m::TITLE_H - 20.0) / 2.0, 20.0, 20.0), 1.0, || png(&wic, LOGO));
-        c.text("Plume Calendar", rect(42.0, 0.0, 160.0, m::TITLE_H), Font::BodyBold, if cx.active { t.t1 } else { t.t3 }, Align::Left);
+        c.image(1, rect(14.0, (m::TITLE_H - 18.0) / 2.0, 18.0, 18.0), 1.0, || png(&wic, LOGO));
+        c.text("Plume Calendar", rect(40.0, 0.0, 160.0, m::TITLE_H), Font::BodyBold, if cx.active { t.t1 } else { t.t3 }, Align::Left);
         // the quick-add box
         let cap_x = cx.w - 3.0 * m::CAPTION_W;
         let qw = (cap_x - 220.0 - 24.0).clamp(160.0, 520.0);
@@ -337,7 +341,7 @@ impl App {
     fn paint_toolbar(&mut self, c: &mut Canvas, r: Rect) {
         let t = self.t.clone();
         let y = r.y + (r.h - 32.0) / 2.0;
-        let mut x = r.x + 18.0;
+        let mut x = r.x + 16.0;
         let tw = c.text_width(tr("Today"), Font::BodyBold) + 30.0;
         self.btn(c, rect(x, y, tw, 32.0), tr("Today"), 0, Id::Today);
         x += tw + 10.0;
@@ -347,7 +351,7 @@ impl App {
         x += 44.0;
         let title = self.period_title();
         // the view switch and the settings on the right
-        let gear = rect(r.right() - 18.0 - 32.0, y, 32.0, 32.0);
+        let gear = rect(r.right() - 16.0 - 32.0, y, 32.0, 32.0);
         self.icon_btn(c, gear, &icons::GEAR, Id::Settings);
         let views = [View::Day, View::Week, View::Month, View::Agenda];
         let labels = [tr("Day"), tr("Week"), tr("Month"), tr("Agenda")];
@@ -380,17 +384,17 @@ impl App {
         y += 32.0;
         let n = self.store.cals.len();
         for i in 0..n {
-            if y + 34.0 > r.bottom() {
+            if y + 40.0 > r.bottom() {
                 break;
             }
             let cal = self.store.cals[i].clone();
-            let row = rect(x - 4.0, y, w + 8.0, 32.0);
+            let row = rect(x - 4.0, y, w + 8.0, 40.0);
             let hot = self.hot(&Id::CalToggle(i)) || self.hot(&Id::CalMore(i));
             if hot {
-                c.fill_round(row, 8.0, t.hover);
+                c.fill_round(row, 10.0, t.hover);
             }
             let col = color(&cal.color);
-            let bx = rect(x + 4.0, y + 8.0, 16.0, 16.0);
+            let bx = rect(x + 4.0, y + 12.0, 16.0, 16.0);
             if cal.visible {
                 c.fill_round(bx, 5.0, col);
                 c.icon_stroke(&icons::CHECK, bx.inset(2.0), Color::hex(0xffffff), 2.4);
@@ -401,7 +405,7 @@ impl App {
             let busy = self.refreshing.contains(&cal.id);
             if cal.read_only() {
                 name_w -= 34.0;
-                let ic = rect(x + w - 44.0, y + 9.0, 14.0, 14.0);
+                let ic = rect(x + w - 44.0, y + 12.0, 16.0, 16.0);
                 c.icon(
                     &LINK,
                     ic,
@@ -414,15 +418,15 @@ impl App {
                     },
                 );
             }
-            c.text(&cal.name, rect(x + 30.0, y, name_w - 4.0, 32.0), Font::Body, if cal.visible { t.t1 } else { t.t3 }, Align::Left);
+            c.text(&cal.name, rect(x + 30.0, y, name_w - 4.0, 40.0), Font::Body, if cal.visible { t.t1 } else { t.t3 }, Align::Left);
             self.hits.add(row, Id::CalToggle(i));
-            let more = rect(x + w - 24.0, y + 4.0, 24.0, 24.0);
+            let more = rect(x + w - 28.0, y + 6.0, 28.0, 28.0);
             if hot {
                 self.icon_btn(c, more, &icons::MORE, Id::CalMore(i));
             } else {
                 self.hits.add(more, Id::CalMore(i));
             }
-            y += 34.0;
+            y += 40.0;
         }
     }
 
@@ -536,7 +540,7 @@ impl App {
         }
         let y = at.y.clamp(m::TITLE_H + 8.0, (cx.h - h - 10.0).max(m::TITLE_H + 8.0));
         let card = rect(x, y, w, h);
-        self.card(c, card);
+        self.card_r(c, card, 16.0);
         self.hits.add(card, Id::Scroll);
         c.fill_round(rect(card.x + 20.0, card.y + 24.0, 4.0, title_h - 6.0), 2.0, col);
         c.clip(rect(card.x + 32.0, card.y + 18.0, inner - 40.0, title_h));
@@ -545,7 +549,7 @@ impl App {
         self.icon_btn(c, rect(card.right() - 44.0, card.y + 14.0, 28.0, 28.0), &icons::CLOSE, Id::PeekClose);
         let mut yy = card.y + 20.0 + title_h + 10.0;
         for (ic, text) in lines {
-            c.icon(ic, rect(card.x + 20.0, yy + 5.0, 14.0, 14.0), t.t3);
+            c.icon(ic, rect(card.x + 20.0, yy + 4.0, 16.0, 16.0), t.t2);
             c.text(&text, rect(card.x + 44.0, yy, inner - 24.0, 24.0), Font::Body, t.t2, Align::Left);
             yy += 26.0;
         }
@@ -554,7 +558,7 @@ impl App {
         c.text(&cal_line, rect(card.x + 44.0, yy, inner - 24.0, 24.0), Font::Body, t.t3, Align::Left);
         yy += 28.0;
         if !ev.notes.is_empty() {
-            c.icon(&NOTE, rect(card.x + 20.0, yy + 4.0, 14.0, 14.0), t.t3);
+            c.icon(&NOTE, rect(card.x + 20.0, yy + 3.0, 16.0, 16.0), t.t2);
             c.clip(rect(card.x + 44.0, yy, inner - 26.0, notes_h));
             c.text_block(&ev.notes, rect(card.x + 44.0, yy + 2.0, inner - 26.0, notes_h), Font::Body, t.t2);
             c.unclip();
@@ -573,11 +577,11 @@ impl App {
         let colors = menu.colors_for;
         let at = menu.at;
         let w = 236.0;
-        let h = 12.0 + labels.len() as f32 * 34.0 + if colors.is_some() { 74.0 } else { 0.0 };
+        let h = 12.0 + labels.len() as f32 * 40.0 + if colors.is_some() { 74.0 } else { 0.0 };
         let x = at.x.min(cx.w - w - 8.0);
         let y = at.y.min(cx.h - h - 8.0).max(m::TITLE_H + 4.0);
         let card = rect(x, y, w, h);
-        self.card(c, card);
+        self.card_r(c, card, 16.0);
         self.hits.add(card, Id::Scroll);
         let mut yy = y + 6.0;
         if let Some(i) = colors {
@@ -595,15 +599,15 @@ impl App {
             yy += 6.0;
         }
         for (k, label) in labels.iter().enumerate() {
-            let r = rect(x + 6.0, yy, w - 12.0, 32.0);
+            let r = rect(x + 6.0, yy, w - 12.0, 40.0);
             let id = Id::MenuItem(k);
             if self.hot(&id) {
-                c.fill_round(r, 8.0, t.hover);
+                c.fill_round(r, 10.0, t.hover);
             }
             let red = label == tr("Remove");
             c.text(label, r.inset_xy(12.0, 0.0), Font::Body, if red { t.red } else { t.t1 }, Align::Left);
             self.hits.add(r, id);
-            yy += 34.0;
+            yy += 40.0;
         }
     }
 
@@ -719,7 +723,7 @@ impl App {
         let h24 = self.h24();
         for (i, d) in self.alerts.clone().iter().enumerate().take(4) {
             let card = rect(cx.w - w - 16.0, y, w, 112.0);
-            self.card(c, card);
+            self.card_r(c, card, 16.0);
             self.hits.add(card, Id::AlertOpen(i));
             c.fill_round(rect(card.x + 16.0, card.y + 18.0, 4.0, 40.0), 2.0, color(&d.color));
             c.icon(&BELL, rect(card.right() - 34.0, card.y + 18.0, 16.0, 16.0), t.accent);

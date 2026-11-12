@@ -2,14 +2,12 @@
 //! Tout est redessiné à chaque image à partir de l'état ; les zones cliquables sont inscrites au passage.
 
 use super::{
-    App, Col, Drag, EditKind, Id, LIST_TOP, Lay, PAD, ROW_H,
+    App, Col, Drag, EditKind, Id, LIST_TOP, Lay, NavKind, PAD, ROW_H, Sec,
     model::{Item, Load, Location},
+    side::{NAV_TOP, cat_color},
 };
 use crate::ui::{Align, Canvas, Color, Font, PaintCx, Rect, Theme, icons, m, pt, rect};
-use fex_core::{
-    SortKey,
-    query::{Kind, Options},
-};
+use fex_core::{SortKey, query::Kind};
 use std::path::PathBuf;
 
 /// Nom affiché d'un élément : sans extension si Windows est réglé pour les masquer.
@@ -67,6 +65,7 @@ impl App {
             Some(EditKind::Address) => Some(self.lay.addr_text),
             Some(EditKind::Search) => Some(self.lay.search_text),
             Some(EditKind::Password) => self.sheet_lay().map(|l| l.text),
+            Some(EditKind::Category(ci)) => self.cat_edit_rect(*ci),
             _ => None,
         };
         if let Some(r) = wanted
@@ -345,7 +344,17 @@ impl App {
             _ => None,
         };
         if let Some(msg) = message {
-            c.text(msg, rect(list.x + 24.0, list.y + 36.0, (list.w - 48.0).max(0.0), 24.0), Font::Body, t.t3, Align::Center);
+            let icon = match &tab.load {
+                Load::Ready if searching || !tab.filter.trim().is_empty() => Some(&icons::SEARCH),
+                Load::Ready => Some(&icons::FOLDER),
+                _ => None,
+            };
+            let mut y = list.y + 36.0;
+            if let Some(icon) = icon {
+                c.icon(icon, rect(list.x + (list.w - 20.0) / 2.0, y + 4.0, 20.0, 20.0), t.t3);
+                y += 32.0;
+            }
+            c.text(msg, rect(list.x + 24.0, y, (list.w - 48.0).max(0.0), 24.0), Font::Body, t.t3, Align::Center);
         }
 
         // ── barre de défilement, par-dessus la liste
@@ -394,13 +403,20 @@ impl App {
             Kind::Files(k) => s.kinds.get(k).copied().unwrap_or(s.filter_all),
         }
         .to_string();
+        // la date et la taille choisies
+        for (k, label) in [(self.search_date, self.date_labels()[self.search_date.min(6)]), (self.search_size, self.size_labels()[self.search_size.min(5)])] {
+            if k > 0 {
+                filter.push_str("  ·  ");
+                filter.push_str(label);
+            }
+        }
         for (on, tag) in [(o.case, "Aa"), (o.word, "[ab]"), (o.path, "a\\b"), (o.regex, ".*"), (o.content, "{…}")] {
             if on {
                 filter.push_str("  ");
                 filter.push_str(tag);
             }
         }
-        let filtered = o != Options::default();
+        let filtered = self.filtered();
         let fw = c.text_width(&filter, Font::Small) + 40.0;
         let fr = rect(bar.right() - 16.0 - fw, bar.y + 7.0, fw, bar.h - 14.0);
         let mut x = bar.x + 16.0 + label_w + 10.0;
@@ -438,41 +454,124 @@ impl App {
             return;
         }
         c.fill(nav, t.bg2);
+        // le contenu peut dépasser : la barre défile (molette), sans aller plus loin que sa fin
+        let max = (self.nav_h + 2.0 * NAV_TOP - nav.h).max(0.0);
+        self.nav_scroll = self.nav_scroll.clamp(0.0, max);
+        self.hits.add(nav, Id::NavBlank);
         c.clip(nav);
-        let cur = &self.tabs[self.cur].loc;
-        let mut y = nav.y + 8.0;
-        for (i, row) in self.nav_rows.iter().enumerate() {
-            y += row.gap;
-            let r = rect(nav.x + 6.0, y, nav.w - 12.0, m::NAV_ROW_H);
-            // un serveur est « ouvert » quel que soit le dossier où l'on s'y trouve
-            let selected = match (&row.loc, cur) {
-                (Location::Remote { server: a, .. }, Location::Remote { server: b, .. }) => a == b,
-                (a, b) => a == b,
-            };
-            if selected {
-                c.fill_round(r, m::ROW_R, t.fill);
-            } else if self.hover == Some(Id::Nav(i)) {
-                c.fill_round(r, m::ROW_R, t.hover);
+        let cur = self.tabs[self.cur].loc.clone();
+        let (dragged, nav_drop) = match &self.drag {
+            Drag::NavMove { row, drop } => (Some(*row), drop.clone()),
+            _ => (None, None),
+        };
+        let editing = match &self.edit {
+            Some(EditKind::Category(ci)) => Some(*ci),
+            _ => None,
+        };
+        for i in 0..self.nav_rows.len() {
+            let Some(r) = self.nav_rect(i) else { continue };
+            if r.bottom() < nav.y || r.y > nav.bottom() {
+                continue;
             }
-            if self.drop_hl == Some(Id::Nav(i)) {
+            let row = &self.nav_rows[i];
+            let hot = self.hover == Some(Id::Nav(i));
+            match row.kind {
+                // ── titre de section : « Récents » (se replie), « Catégories » (avec son « + »)
+                NavKind::Section(sec) => {
+                    if hot && sec == Sec::Recent {
+                        c.fill_round(r, m::ROW_R, t.hover);
+                    }
+                    c.text(&row.label, rect(r.x + 10.0, r.y + 4.0, r.w - 44.0, r.h - 4.0), Font::SmallBold, t.t3, Align::Left);
+                    let br = rect(r.right() - 26.0, r.y + (r.h - 22.0) / 2.0 + 2.0, 22.0, 22.0);
+                    if sec == Sec::Recent {
+                        let ic = if self.set.recent_open { &icons::CHEVRON_DOWN } else { &icons::CHEVRON_RIGHT };
+                        c.icon(ic, br.centered(12.0, 12.0), t.t3);
+                    } else {
+                        let add_hot = self.hover == Some(Id::NavAdd);
+                        if add_hot {
+                            c.fill_round(br, 11.0, t.fill2);
+                        }
+                        c.icon(&icons::PLUS, br.centered(12.0, 12.0), if add_hot { t.t1 } else { t.t3 });
+                    }
+                    self.hits.add(r, Id::Nav(i));
+                    if sec == Sec::Categories {
+                        self.hits.add(br, Id::NavAdd);
+                    }
+                    continue;
+                }
+                // ── titre d'une catégorie : chevron, pastille de couleur, nom, nombre de dossiers une fois repliée
+                NavKind::CatHeader(ci) => {
+                    let Some(cat) = self.set.categories.get(ci) else { continue };
+                    if hot || dragged == Some(i) {
+                        c.fill_round(r, m::ROW_R, t.hover);
+                    }
+                    let ic = if cat.open { &icons::CHEVRON_DOWN } else { &icons::CHEVRON_RIGHT };
+                    c.icon(ic, rect(r.x + 8.0, r.y + (r.h - 12.0) / 2.0, 12.0, 12.0), t.t3);
+                    let mut x = r.x + 26.0;
+                    if let Some(col) = cat_color(cat.color) {
+                        c.fill_round(rect(x + 1.0, r.y + (r.h - 9.0) / 2.0, 9.0, 9.0), 4.5, col);
+                        x += 14.0;
+                    }
+                    let count = if cat.open || cat.folders.is_empty() { String::new() } else { cat.folders.len().to_string() };
+                    let cw = if count.is_empty() { 0.0 } else { c.text_width(&count, Font::Small) + 10.0 };
+                    if editing != Some(ci) {
+                        c.text(&cat.name, rect(x, r.y, (r.right() - x - 8.0 - cw).max(0.0), r.h), Font::BodyBold, t.t2, Align::Left);
+                    } else {
+                        let er = self.edit_rect;
+                        let frame = rect(er.x - 5.0, er.y - 1.0, er.w + 10.0, er.h + 2.0);
+                        c.fill_round(frame, 5.0, t.solid);
+                        c.stroke_round(frame, 5.0, t.accent, 1.5);
+                    }
+                    if !count.is_empty() {
+                        c.text(&count, rect(r.right() - 8.0 - cw, r.y, cw, r.h), Font::Small, t.t4, Align::Right);
+                    }
+                }
+                // ── un dossier, un lecteur, un serveur
+                _ => {
+                    // un serveur est « ouvert » quel que soit le dossier où l'on s'y trouve
+                    let selected = match (&row.loc, &cur) {
+                        (Some(Location::Remote { server: a, .. }), Location::Remote { server: b, .. }) => a == b,
+                        (Some(a), b) => a == b,
+                        (None, _) => false,
+                    };
+                    if selected {
+                        c.fill_round(r, m::ROW_R, t.fill);
+                    } else if hot || dragged == Some(i) {
+                        c.fill_round(r, m::ROW_R, t.hover);
+                    }
+                    let fade = if row.dim { 0.45 } else { 1.0 };
+                    let ir = rect(r.x + 8.0 + row.indent, r.y + (r.h - 16.0) / 2.0, 16.0, 16.0);
+                    if row.icon >= 0 {
+                        self.icons.draw(c, row.icon, ir, fade, false);
+                    } else {
+                        let icon = match &row.loc {
+                            Some(Location::ThisPc) => &icons::PC,
+                            Some(Location::Remote { .. }) => &icons::SERVER,
+                            _ => &icons::FOLDER,
+                        };
+                        c.icon(icon, ir, t.t2.fade(fade));
+                    }
+                    let tr = rect(ir.right() + 9.0, r.y, (r.right() - ir.right() - 15.0).max(0.0), r.h);
+                    let col = if row.dim {
+                        t.t4
+                    } else if selected {
+                        t.t1
+                    } else {
+                        t.t2
+                    };
+                    c.text(&row.label, tr, Font::Body, col, Align::Left);
+                }
+            }
+            if self.drop_hl == Some(Id::Nav(i)) || nav_drop.as_ref().is_some_and(|d| d.into == Some(i)) {
                 c.fill_round(r, m::ROW_R, t.accent.fade(0.22));
                 c.stroke_round(r, m::ROW_R, t.accent, 1.5);
             }
-            let ir = rect(r.x + 8.0 + row.indent, r.y + (r.h - 16.0) / 2.0, 16.0, 16.0);
-            if row.icon >= 0 {
-                self.icons.draw(c, row.icon, ir, 1.0, false);
-            } else {
-                let icon = match &row.loc {
-                    Location::ThisPc => &icons::PC,
-                    Location::Remote { .. } => &icons::SERVER,
-                    _ => &icons::FOLDER,
-                };
-                c.icon(icon, ir, t.t2);
-            }
-            let tr = rect(ir.right() + 9.0, r.y, (r.right() - ir.right() - 15.0).max(0.0), r.h);
-            c.text(&row.label, tr, Font::Body, if selected { t.t1 } else { t.t2 }, Align::Left);
             self.hits.add(r, Id::Nav(i));
-            y += m::NAV_ROW_H + 2.0;
+        }
+        // rangement en cours : le trait où la ligne tirée viendrait se placer
+        if let Some(y) = nav_drop.and_then(|d| d.line) {
+            c.fill_round(rect(nav.x + 10.0, y - 1.0, nav.w - 20.0, 2.0), 1.0, t.accent);
+            c.fill_round(rect(nav.x + 6.0, y - 3.0, 6.0, 6.0), 3.0, t.accent);
         }
         c.unclip();
         c.vline(nav.right() - 1.0, nav.y, nav.h, t.sep);
@@ -778,12 +877,14 @@ impl App {
             c.fill(r, t.accent.fade(0.16));
             c.stroke_round(r, 0.0, t.accent.fade(0.8), 1.0);
         }
+        self.paint_panels(c, t);
+        self.paint_drag_label(c, t);
         if let Some((text, since)) = &self.toast {
             let age = since.elapsed().as_secs_f32();
-            let alpha = (age / 0.12).min(1.0) * ((2.6 - age) / 0.25).clamp(0.0, 1.0);
+            let alpha = (age / 0.12).min(1.0) * ((4.5 - age) / 0.25).clamp(0.0, 1.0);
             let tw = c.text_width(text, Font::Body).min(cx.w - 96.0);
             let r = rect((cx.w - tw) / 2.0 - 18.0, self.lay.status.y - 54.0, tw + 36.0, 38.0);
-            c.fill_round(r, 19.0, t.solid.fade(alpha));
+            c.fill_round(r, 19.0, t.solid2.fade(alpha));
             c.stroke_round(r, 19.0, t.ring.fade(alpha), 1.0);
             c.text(text, r.inset_xy(18.0, 0.0), Font::Body, t.t1.fade(alpha), Align::Center);
             cx.animate = true;

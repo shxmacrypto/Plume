@@ -61,7 +61,11 @@ try:
     s = choose("Picture")
     check("Picture keeps only pictures", s["search_kind"] == "Files(4)" and sorted(s["visible"]) == sorted(["photo.png", "Été photo.JPG", "IMG_0042.jpg", "IMG_0043.jpeg"]), (s["search_kind"], s["visible"]))
     labels = x.cmd("menu_last")
-    wanted = ["All types", "Audio", "Compressed", "Document", "Executable", "Folder", "Picture", "Video", "Match case", "Match whole word", "Match path", "Regular expression", "Search inside files (slower)", "Export results…"]
+    wanted = ["All types", "Audio", "Compressed", "Document", "Executable", "Folder", "Picture", "Video",
+              "Date modified > Any time", "Date modified > Today", "Date modified > Yesterday", "Date modified > This week",
+              "Date modified > Last week", "Date modified > This month", "Date modified > This year",
+              "Size > Any size", "Size > Empty (0 bytes)", "Size > Smaller than 1 MB", "Size > 1 MB to 100 MB",
+              "Size > 100 MB to 1 GB", "Size > Larger than 1 GB", "Match case", "Match whole word", "Match path", "Regular expression", "Search inside files (slower)", "Export results…"]
     check("the menu lists the types like Everything, then the ways to match", [l.replace(" [x]", "") for l in labels] == wanted, labels)
     x.shot("search-filter-picture")
     s = choose("Folder"); check("Folder keeps only folders", s["search_kind"] == "Folders" and sorted(s["visible"]) == ["Alpha", "dup"], s["visible"])

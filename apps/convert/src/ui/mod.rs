@@ -105,48 +105,49 @@ pub struct Pal {
     pub bg: Color,
     pub side: Color,
     pub card: Color,
+    pub solid: Color,
+    pub solid2: Color,
+    pub fill: Color,
+    pub fill2: Color,
+    pub hover: Color,
     pub line: Color,
+    pub ring: Color,
     pub t1: Color,
     pub t2: Color,
     pub t3: Color,
+    pub t4: Color,
     pub accent: Color,
     pub on_accent: Color,
     pub green: Color,
     pub red: Color,
+    pub close_hover: Color,
 }
 
 impl Pal {
+    /// The suite's colours (plume_ui::Theme), with Convert's accent: the vermilion of its icon.
     pub fn new(dark: bool) -> Pal {
-        if dark {
-            Pal {
-                dark,
-                bg: Color::hex(0x141416),
-                side: Color::hex(0x0e0e10),
-                card: Color::hex(0x1e1e22),
-                line: Color::hex(0xffffff).fade(0.08),
-                t1: Color::hex(0xffffff),
-                t2: Color::hex(0xb8b8c0),
-                t3: Color::hex(0x7e7e88),
-                accent: Color::hex(0xff7a45),
-                on_accent: Color::hex(0xffffff),
-                green: Color::hex(0x30d158),
-                red: Color::hex(0xff5a4f),
-            }
-        } else {
-            Pal {
-                dark,
-                bg: Color::hex(0xf6f6f8),
-                side: Color::hex(0xececf0),
-                card: Color::hex(0xffffff),
-                line: Color::hex(0x000000).fade(0.08),
-                t1: Color::hex(0x111114),
-                t2: Color::hex(0x55555c),
-                t3: Color::hex(0x8a8a92),
-                accent: Color::hex(0xd9480f),
-                on_accent: Color::hex(0xffffff),
-                green: Color::hex(0x248a3d),
-                red: Color::hex(0xd70015),
-            }
+        let t = plume_ui::Theme::new(dark, Some(Color::hex(0xf4622a)));
+        Pal {
+            dark,
+            bg: t.bg,
+            side: t.bg2,
+            card: t.card,
+            solid: t.solid,
+            solid2: t.solid2,
+            fill: t.fill,
+            fill2: t.fill2,
+            hover: t.hover,
+            line: t.sep,
+            ring: t.ring,
+            t1: t.t1,
+            t2: t.t2,
+            t3: t.t3,
+            t4: t.t4,
+            accent: t.accent,
+            on_accent: Color::hex(0xffffff),
+            green: t.green,
+            red: t.red,
+            close_hover: t.close_hover,
         }
     }
 }
@@ -321,18 +322,27 @@ impl App {
             opts.trim_start = t;
         }
         opts.trim_end = parse_time(&self.trim_text.1).unwrap_or(0.0);
-        Spec { src: src.to_path_buf(), preset: self.set.preset, opts, out_dir: self.set.out_dir.clone(), keep_meta: self.set.keep_meta, hw: self.set.hw }
+        Spec {
+            src: src.to_path_buf(),
+            preset: self.set.preset,
+            opts,
+            out_dir: self.set.out_dir.clone(),
+            keep_meta: self.set.keep_meta,
+            hw: self.set.hw,
+            extra: Vec::new(),
+        }
     }
 
     /// "Convert": every ready file gets the current preset and waits its turn.
     pub fn start(&mut self, cx: &mut Cx) {
-        let ready: Vec<usize> = (0..self.items.len()).filter(|&i| self.items[i].state == State::Ready).collect();
-        if ready.is_empty() {
+        if !self.items.iter().any(|i| i.state == State::Ready) {
             if self.items.is_empty() {
                 self.pick_files(cx);
             }
             return;
         }
+        self.group_photos();
+        let ready: Vec<usize> = (0..self.items.len()).filter(|&i| self.items[i].state == State::Ready).collect();
         for i in ready {
             let spec = self.spec_for(&self.items[i].src);
             let it = &mut self.items[i];
@@ -344,6 +354,31 @@ impl App {
         self.set.save();
         self.pump(cx);
         cx.repaint();
+    }
+
+    /// GIF preset, "One animated GIF": the photos waiting in the queue become one slideshow. The first one carries
+    /// them all; the others leave the list.
+    fn group_photos(&mut self) {
+        if self.set.preset != Preset::Gif || !self.set.opts.gif_together {
+            return;
+        }
+        let pics: Vec<(u64, PathBuf, u64)> =
+            self.items.iter().filter(|i| i.state == State::Ready && ffmpeg::is_picture(&i.src)).map(|i| (i.id, i.src.clone(), i.size)).collect();
+        if pics.len() < 2 {
+            return;
+        }
+        let mut spec = self.spec_for(&pics[0].1);
+        spec.extra = pics[1..].iter().map(|p| p.1.clone()).collect();
+        let others: Vec<u64> = pics[1..].iter().map(|p| p.0).collect();
+        self.items.retain(|i| !others.contains(&i.id));
+        if let Some(it) = self.items.iter_mut().find(|i| i.id == pics[0].0) {
+            it.size = pics.iter().map(|p| p.2).sum();
+            it.spec = Some(spec);
+            it.state = State::Waiting;
+            it.frac = 0.0;
+            it.note.clear();
+        }
+        self.note(format!("slideshow of {}", pics.len()));
     }
 
     pub fn retry(&mut self, id: u64, cx: &mut Cx) {
@@ -561,9 +596,8 @@ impl App {
 
     pub fn open_result(&mut self, id: u64) {
         let Some(out) = self.items.iter().find(|i| i.id == id).and_then(|i| i.out.clone()) else { return };
-        // Explorer opens on the folder with the file selected
-        let arg = if out.is_dir() { format!("\"{}\"", out.display()) } else { format!("/select,\"{}\"", out.display()) };
-        let _ = std::process::Command::new("explorer.exe").raw_arg(arg).spawn();
+        // the folder opens with the file selected (in Plume FEx when it opens folders)
+        plume_ui::folder::show(&out);
     }
 
     pub fn busy(&self) -> bool {
@@ -582,7 +616,6 @@ impl App {
 }
 
 use crate::image::Fmt;
-use std::os::windows::process::CommandExt;
 
 impl Handler for App {
     fn paint(&mut self, c: &mut Canvas, cx: &mut PaintCx) {

@@ -31,7 +31,7 @@ impl App {
         let bars = self.bars_shown();
         if self.full.is_none() {
             let bar = rect(0.0, 0.0, w, TOP_H);
-            c.fill(bar, if p.dark { Color::hex(0x151719) } else { p.side });
+            c.fill(bar, p.bar);
             c.hline(0.0, TOP_H - 1.0, w, p.line);
             self.paint_topbar(c, w, p.t1, is_video);
             self.paint_caption(c, w, cx.maximized, false);
@@ -73,7 +73,7 @@ impl App {
         }
         let sq = rect(star.x + 9.0, star.y + 9.0, 18.0, 18.0);
         if fav {
-            c.icon_fill(&icons::STAR, sq, Color::hex(0xffd60a));
+            c.icon_fill(&icons::STAR, sq, self.pal.accent);
         } else {
             c.icon(&icons::STAR, sq, ink);
         }
@@ -364,10 +364,10 @@ impl App {
 
     fn paint_info(&mut self, c: &mut Canvas, r: Rect) {
         let p = self.pal.clone();
-        c.fill(r, if p.dark { Color::hex(0x17191b) } else { p.card });
+        c.fill(r, p.bg);
         c.vline(r.x, r.y, r.h, p.line);
         self.hits.add(r, Hit::Panel);
-        draw::text(c, tr("Info"), rect(r.x + 20.0, r.y + 14.0, r.w - 40.0, 28.0), 18.0, 700, p.t1, Align::Left);
+        c.text(tr("Info"), rect(r.x + 20.0, r.y + 16.0, r.w - 40.0, 28.0), Font::Large, p.t1, Align::Left);
         let Some(o) = &self.open else { return };
         let path = o.path().to_path_buf();
         let vsize = o.video.as_ref().map(|v| v.bmp_size).filter(|s| s.0 > 0);

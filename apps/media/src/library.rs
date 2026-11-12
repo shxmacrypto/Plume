@@ -36,10 +36,6 @@ impl Item {
     pub fn key(&self) -> u64 {
         image::thumb_key(&self.path, self.mtime, self.size)
     }
-    pub fn month(&self) -> (i64, u32) {
-        let (y, m, _) = civil_from_days(self.taken.div_euclid(86400));
-        (y, m)
-    }
     pub fn folder(&self) -> PathBuf {
         self.path.parent().map(Path::to_path_buf).unwrap_or_default()
     }
@@ -121,6 +117,11 @@ pub struct Progress {
 
 /// Every photo and video under `folders`, newest first. Files unchanged since `old` are not read again.
 pub fn scan(folders: &[PathBuf], old: &HashMap<PathBuf, Item>, progress: &Arc<Progress>) -> Vec<Item> {
+    scan_depth(folders, old, progress, 32)
+}
+
+/// Like [`scan`], `max_depth` levels of subfolders down (0: the folders themselves only).
+pub fn scan_depth(folders: &[PathBuf], old: &HashMap<PathBuf, Item>, progress: &Arc<Progress>, max_depth: u32) -> Vec<Item> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
     let mut stack: Vec<(PathBuf, u32)> = folders.iter().map(|f| (f.clone(), 0)).collect();
@@ -134,7 +135,7 @@ pub fn scan(folders: &[PathBuf], old: &HashMap<PathBuf, Item>, progress: &Arc<Pr
             let path = e.path();
             if m.is_dir() {
                 let name = e.file_name().to_string_lossy().to_string();
-                if depth < 32 && !skip_dir(&name, m.file_attributes()) {
+                if depth < max_depth && !skip_dir(&name, m.file_attributes()) {
                     stack.push((path, depth + 1));
                 }
                 continue;

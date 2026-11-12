@@ -36,11 +36,11 @@ use windows::{
 /// Width of the box, heights of its parts (DIP).
 pub const W: f32 = 660.0;
 const BAR_H: f32 = 60.0;
-const ROW_H: f32 = 50.0;
+const ROW_H: f32 = 48.0;
 const HEAD_H: f32 = 28.0;
 const MAX_ROWS: usize = 8;
-const FOOT_H: f32 = 34.0;
-const PAD: f32 = 6.0;
+const FOOT_H: f32 = 36.0;
+const PAD: f32 = 8.0;
 /// Size of a result's icon.
 const ICON: f32 = 32.0;
 /// The list of apps is read again when the box opens, if it is older than this.
@@ -114,12 +114,14 @@ pub fn theme_for(set: &Settings) -> Theme {
         "light" => false,
         _ => system_dark(),
     };
-    Theme::new(dark, Some(if dark { Color::hex(0x8b8ff9) } else { Color::hex(0x4f46e5) }))
+    // the indigo of the icon
+    Theme::new(dark, Some(Color::hex(0x6366f1)))
 }
 
 /// The box's background.
 pub fn surface(t: &Theme) -> Color {
-    if t.dark { Color::hex(0x1f1f22) } else { Color::hex(0xfbfbfd) }
+    // a card of Plume, made opaque: the window has no transparency
+    t.card.over(t.bg)
 }
 
 fn enabled(set: &Settings, k: Kind) -> bool {
@@ -271,6 +273,8 @@ pub struct App {
     worker: shell_icons::Worker,
     pub visible: bool,
     active_seen: bool,
+    /// Shown without the keyboard (tests): focus changes elsewhere do not close it.
+    quiet_show: bool,
     shown_at: Option<Instant>,
     /// Time from the call to the first image of the box, the last time it was shown.
     pub show_ms: Option<f64>,
@@ -319,6 +323,7 @@ impl App {
             worker,
             visible: false,
             active_seen: false,
+            quiet_show: false,
             shown_at: None,
             show_ms: None,
             shows: 0,
@@ -531,6 +536,7 @@ impl App {
         self.file_hits.clear();
         self.visible = true;
         self.active_seen = false;
+        self.quiet_show = !activate;
         self.hover = None;
         if self.apps_at.is_none_or(|t| t.elapsed() > APPS_FRESH) {
             self.load_apps();
@@ -618,7 +624,7 @@ impl App {
             Kind::Calc => (&CALC, true),
             Kind::Web => (&GLOBE, true),
         };
-        c.fill_round(r, 9.0, if tinted { t.accent.fade(0.18) } else { t.fill });
+        c.fill_round(r, 9.0, if tinted { t.accent.fade(0.16) } else { t.fill });
         c.icon(ic, r.centered(18.0, 18.0), if tinted { t.accent } else { t.t2 });
     }
 
@@ -646,28 +652,28 @@ impl App {
         let item = self.rows[i].clone();
         let selected = i == self.sel;
         if selected {
-            c.fill_round(r, 10.0, t.accent.fade(if t.dark { 0.26 } else { 0.13 }));
+            c.fill_round(r, 10.0, t.accent.fade(0.16));
         } else if self.hover == Some(Hit::Row(i)) {
             c.fill_round(r, 10.0, t.hover);
         }
-        let ir = rect(r.x + 10.0, r.y + (r.h - ICON) / 2.0, ICON, ICON);
+        let ir = rect(r.x + 12.0, r.y + (r.h - ICON) / 2.0, ICON, ICON);
         self.draw_icon(c, &item, ir);
         let tx = ir.right() + 12.0;
         let right_w = 96.0;
         let tw = (r.right() - tx - right_w - 8.0).max(40.0);
         let has_sub = !item.sub.is_empty();
         let (title_font, title_h) = if item.kind == Kind::Calc { (Font::Large, 22.0) } else { (Font::Title, 20.0) };
-        let ty = if has_sub { r.y + 6.0 } else { r.y + (r.h - title_h) / 2.0 };
+        let ty = if has_sub { r.y + 5.0 } else { r.y + (r.h - title_h) / 2.0 };
         c.text(&item.title, rect(tx, ty, tw, title_h), title_font, t.t1, Align::Left);
         if has_sub {
-            c.text(&item.sub, rect(tx, r.y + 27.0, tw, 16.0), Font::Small, t.t3, Align::Left);
+            c.text(&item.sub, rect(tx, r.y + 26.0, tw, 16.0), Font::Small, t.t3, Align::Left);
         }
         let lr = rect(r.right() - right_w - 10.0, r.y, right_w, r.h);
         if selected {
             let label = format!("{}  \u{21b5}", Self::action_label(item.kind));
             c.text(&label, lr, Font::SmallBold, t.accent, Align::Right);
         } else {
-            c.text(Self::kind_label(item.kind), lr, Font::Small, t.t4, Align::Right);
+            c.text(Self::kind_label(item.kind), lr, Font::Small, t.t3, Align::Right);
         }
         self.hits.add(r, Hit::Row(i));
     }
@@ -691,7 +697,7 @@ impl App {
             if i >= self.rows.len() {
                 break;
             }
-            let r = rect(PAD + 2.0, y0 + k as f32 * ROW_H, w - 2.0 * (PAD + 2.0), ROW_H);
+            let r = rect(PAD, y0 + k as f32 * ROW_H, w - 2.0 * PAD, ROW_H);
             self.paint_row(c, i, r);
         }
         // where the list is, when it holds more than it shows
@@ -719,15 +725,15 @@ impl App {
                 None => tr("Nothing found"),
             }
         };
-        c.text(hint, rect(18.0, fy, w - 200.0, FOOT_H), Font::Small, t.t4, Align::Left);
-        let gear = rect(w - 40.0, fy + (FOOT_H - 26.0) / 2.0, 26.0, 26.0);
+        c.text(hint, rect(20.0, fy, w - 200.0, FOOT_H), Font::Small, t.t3, Align::Left);
+        let gear = rect(w - 44.0, fy + (FOOT_H - 28.0) / 2.0, 28.0, 28.0);
         if self.sh.files.building.load(std::sync::atomic::Ordering::Relaxed) && self.sh.set.borrow().files {
-            c.text(tr("Indexing files…"), rect(gear.x - 170.0, fy, 160.0, FOOT_H), Font::Small, t.t4, Align::Right);
+            c.text(tr("Indexing files…"), rect(gear.x - 170.0, fy, 160.0, FOOT_H), Font::Small, t.t3, Align::Right);
         }
         if self.hover == Some(Hit::Gear) {
-            c.fill_round(gear, 8.0, t.hover);
+            c.fill_round(gear, 14.0, t.hover);
         }
-        c.icon(&icons::GEAR, gear.centered(15.0, 15.0), t.t3);
+        c.icon(&icons::GEAR, gear.centered(16.0, 16.0), t.t2);
         self.hits.add(gear, Hit::Gear);
     }
 
@@ -807,7 +813,8 @@ impl Handler for App {
                 }
             }
             Event::Active(false) => {
-                if self.visible && self.active_seen {
+                if self.visible && self.active_seen && !self.quiet_show {
+                    sys::test_note("hide: lost focus");
                     self.hide(cx);
                 }
             }

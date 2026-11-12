@@ -60,6 +60,8 @@ impl Settings {
             && let Some(cfg) = plume.get("cfg")
         {
             s.apply_look(cfg);
+            // la langue et le thème suivent Plume ; l'accent reste celui de Plume Mail (la couleur de son icône)
+            s.accent = None;
         }
         if let Some(v) = read_json(&s.file()) {
             s.apply_look(&v);
@@ -96,6 +98,11 @@ impl Settings {
 
     pub fn language(&self) -> Lang {
         Lang::parse(&self.lang)
+    }
+
+    /// L'accent : le rose de l'icône de Plume Mail, sauf s'il est choisi dans ses réglages.
+    pub fn accent_color(&self) -> Color {
+        self.accent.unwrap_or_else(|| Color::hex(if self.dark() { 0xff375f } else { 0xff2d55 }))
     }
 
     pub fn dark(&self) -> bool {

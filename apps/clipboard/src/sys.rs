@@ -24,6 +24,7 @@ pub const MENU_OPEN: u32 = 1;
 pub const MENU_PANEL: u32 = 2;
 pub const MENU_PAUSE: u32 = 3;
 pub const MENU_QUIT: u32 = 4;
+pub const MENU_CLEAR_SECRETS: u32 = 5;
 
 fn data(hwnd: HWND, tip: &str) -> NOTIFYICONDATAW {
     let mut d = NOTIFYICONDATAW {
@@ -66,13 +67,14 @@ pub fn tray_remove(hwnd: HWND) {
     }
 }
 
-/// The icon's menu; returns the chosen command (0: none). `labels`: open, panel, pause, quit.
-pub fn tray_menu(hwnd: HWND, labels: [&str; 4], paused: bool) -> u32 {
+/// The icon's menu; returns the chosen command (0: none). `labels`: open, panel, pause, quit, clear sensitive.
+pub fn tray_menu(hwnd: HWND, labels: [&str; 5], paused: bool) -> u32 {
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return 0 };
         let _ = AppendMenuW(menu, MF_STRING, MENU_OPEN as usize, &HSTRING::from(labels[0]));
         let _ = AppendMenuW(menu, MF_STRING, MENU_PANEL as usize, &HSTRING::from(labels[1]));
         let _ = AppendMenuW(menu, if paused { MF_STRING | MF_CHECKED } else { MF_STRING }, MENU_PAUSE as usize, &HSTRING::from(labels[2]));
+        let _ = AppendMenuW(menu, MF_STRING, MENU_CLEAR_SECRETS as usize, &HSTRING::from(labels[4]));
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
         let _ = AppendMenuW(menu, MF_STRING, MENU_QUIT as usize, &HSTRING::from(labels[3]));
         let _ = SetMenuDefaultItem(menu, MENU_OPEN, 0);

@@ -2,12 +2,12 @@
 //! searches, the arrows choose, Enter pastes into the window that was in front, Shift+Enter pastes the text
 //! without its formatting, Del removes, 1 to 9 paste at once, Esc closes. A snippet's trigger (";sig") finds it.
 
-use super::{draw, draw::ic, paint, thumb_key};
+use super::{Reveal, draw, draw::ic, paint, thumb_key};
 use crate::{
     i18n::tr,
     image, input,
     model::Model,
-    store::{self, Entry, Kind},
+    store::{self, Entry, Kind, MASK},
 };
 use plume_ui::{Align, Area, Button, Canvas, Cursor, Cx, Event, Font, Handler, Hits, Mods, PaintCx, Pt, Window, icons, rect};
 use std::{any::Any, cell::RefCell, collections::HashSet, rc::Rc};
@@ -24,14 +24,17 @@ pub const PANEL_W: f32 = 400.0;
 pub const PANEL_H: f32 = 480.0;
 const BLINK: usize = 10;
 const PASTE: usize = 11;
-const ROW_H: f32 = 54.0;
-const LIST_Y: f32 = 64.0;
+const REVEAL: usize = 12;
+const ROW_H: f32 = 52.0;
+const LIST_Y: f32 = 68.0;
 const FOOT_H: f32 = 34.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PHit {
     Row(usize),
     Pin(usize),
+    /// The eye of a sensitive line.
+    Reveal(usize),
     Search,
 }
 
@@ -51,6 +54,9 @@ pub struct Panel {
     pub open: bool,
     caret_on: bool,
     pending: Option<String>,
+    pub reveal: Reveal,
+    /// A short message in the footer instead of the keys (until the next key).
+    pub notice: Option<&'static str>,
     /// What the last pick did (for the test socket).
     pub last: Option<String>,
     drawn: HashSet<u64>,
@@ -104,6 +110,8 @@ impl Panel {
             open: false,
             caret_on: true,
             pending: None,
+            reveal: Reveal::default(),
+            notice: None,
             last: None,
             drawn: HashSet::new(),
             noactivate: std::env::var_os("PLUME_CLIPBOARD_NOACTIVATE").is_some(),
@@ -155,6 +163,8 @@ impl Panel {
             return;
         }
         self.open = false;
+        self.reveal = Reveal::default();
+        self.notice = None;
         unsafe {
             let _ = ShowWindow(self.win.hwnd, SW_HIDE);
         }
@@ -199,7 +209,12 @@ impl Panel {
 
     fn toggle_pin(&mut self, i: usize) {
         if let Some(Entry::Item(id)) = self.list.get(i).copied() {
-            let on = self.model.borrow().store.get(id).is_some_and(|it| it.pin.is_none());
+            let (on, secret) = self.model.borrow().store.get(id).map_or((false, false), |it| (it.pin.is_none(), it.secret.is_some()));
+            // a sensitive item is kept forever only after a question, asked in the main window
+            if on && secret {
+                self.notice = Some(tr("Sensitive items are pinned from the main window."));
+                return;
+            }
             self.model.borrow_mut().set_pin(id, on);
             self.refresh();
         }
@@ -219,6 +234,7 @@ impl Panel {
     }
 
     fn typed(&mut self) {
+        self.notice = None;
         self.sel = 0;
         self.scroll = 0.0;
         self.caret_on = true;
@@ -226,6 +242,7 @@ impl Panel {
     }
 
     pub fn key(&mut self, vk: u16, mods: Mods, cx: &mut Cx) {
+        self.notice = None;
         let n = self.list.len();
         match vk {
             0x1B => self.hide(cx),
@@ -277,9 +294,9 @@ impl Panel {
         c.clear(t.bg);
         c.stroke_round(rect(0.5, 0.5, w - 1.0, h - 1.0), 8.0, t.ring, 1.0);
         // the search
-        let sr = rect(12.0, 12.0, w - 24.0, 42.0);
-        c.fill_round(sr, 12.0, t.fill);
-        c.icon(&icons::SEARCH, rect(sr.x + 14.0, sr.y + 13.0, 16.0, 16.0), t.t3);
+        let sr = rect(16.0, 16.0, w - 32.0, 40.0);
+        c.fill_round(sr, sr.h / 2.0, t.fill);
+        c.icon(&icons::SEARCH, rect(sr.x + 14.0, sr.y + 12.0, 16.0, 16.0), t.t3);
         let tx = sr.x + 40.0;
         if self.query.is_empty() {
             c.text(tr("Search, or type a snippet's ;trigger"), rect(tx, sr.y, sr.w - 52.0, sr.h), Font::Body, t.t3, Align::Left);
@@ -288,7 +305,7 @@ impl Panel {
         }
         if self.caret_on && self.open {
             let qw = if self.query.is_empty() { 0.0 } else { draw_width(c, &self.query) };
-            c.fill(rect((tx + qw + 1.0).min(sr.right() - 12.0), sr.y + 12.0, 1.5, 18.0), t.accent);
+            c.fill(rect((tx + qw + 1.0).min(sr.right() - 16.0), sr.y + 11.0, 1.5, 18.0), t.accent);
         }
         self.hits.add(sr, PHit::Search);
         // the lines
@@ -301,14 +318,18 @@ impl Panel {
             c.text(msg, rect(0.0, area.y + 40.0, w, 24.0), Font::Body, t.t3, Align::Center);
         }
         let now = store::now();
+        let secs = m.set.secret_secs();
         let first = (self.scroll / ROW_H) as usize;
         let last = (((self.scroll + area.h) / ROW_H).ceil() as usize).min(self.list.len());
         let list = self.list.clone();
         for (i, e) in list.iter().enumerate().take(last).skip(first) {
-            let r = rect(8.0, area.y + i as f32 * ROW_H - self.scroll, w - 16.0, ROW_H - 4.0);
+            let r = rect(12.0, area.y + i as f32 * ROW_H - self.scroll, w - 24.0, ROW_H - 4.0);
             let hit = PHit::Row(i);
-            if i == self.sel {
-                c.fill_round(r, 10.0, t.accent.fade(if t.dark { 0.24 } else { 0.15 }));
+            let on = i == self.sel;
+            // the chosen line: the accent at 16 %, its icon in the accent
+            let icon_ink = if on { draw::accent_ink(&t) } else { t.t2 };
+            if on {
+                c.fill_round(r, 10.0, draw::selection(&t));
             } else if self.hover == Some(hit.clone()) {
                 c.fill_round(r, 10.0, t.hover);
             }
@@ -324,11 +345,11 @@ impl Panel {
             match e {
                 Entry::Snippet(id) => {
                     let Some(s) = m.store.snippet(*id) else { continue };
-                    c.fill_round(tile, 9.0, t.accent.fade(0.16));
-                    c.icon(&ic::SNIPPET, tile.centered(16.0, 16.0), t.accent);
+                    c.fill_round(tile, 9.0, t.fill);
+                    c.icon(&ic::SNIPPET, tile.centered(16.0, 16.0), icon_ink);
                     let nw = c.text_width(&s.name, Font::BodyBold).min(tw * 0.6);
                     c.text(&s.name, rect(tx, r.y + 7.0, nw + 2.0, 20.0), Font::BodyBold, t.t1, Align::Left);
-                    c.text(&s.trigger, rect(tx + nw + 8.0, r.y + 7.0, tw - nw - 8.0, 20.0), Font::SmallBold, t.accent, Align::Left);
+                    c.text(&s.trigger, rect(tx + nw + 8.0, r.y + 7.0, tw - nw - 8.0, 20.0), Font::SmallBold, draw::accent_ink(&t), Align::Left);
                     let preview = s.text.split_whitespace().collect::<Vec<_>>().join(" ");
                     c.text(&preview, rect(tx, r.y + 27.0, tw, 18.0), Font::Small, t.t3, Align::Left);
                 }
@@ -344,24 +365,42 @@ impl Panel {
                         });
                         self.drawn.insert(item);
                     } else {
-                        c.fill_round(tile, 9.0, t.accent.fade(0.16));
-                        c.icon(paint::kind_icon(it.kind), tile.centered(16.0, 16.0), t.accent);
+                        c.fill_round(tile, 9.0, t.fill);
+                        c.icon(it.secret.map_or(paint::kind_icon(it.kind), paint::secret_icon), tile.centered(16.0, 16.0), icon_ink);
+                    }
+                    let pr = rect(r.right() - 34.0, r.y + (r.h - 28.0) / 2.0, 28.0, 28.0);
+                    if let Some(sec) = it.secret {
+                        // sensitive: its kind and dots; the eye shows it while held (or a moment after a click)
+                        let shown = self.reveal.shown(it.id);
+                        let label = paint::secret_label(sec);
+                        let lw = c.text_width(label, Font::BodyBold).min(tw * 0.5);
+                        c.text(label, rect(tx, r.y + 7.0, lw + 2.0, 20.0), Font::BodyBold, t.t1, Align::Left);
+                        let (value, ink) = if shown { (it.preview_real(120), t.t1) } else { (MASK.to_string(), t.t2) };
+                        c.text(&value, rect(tx + lw + 10.0, r.y + 7.0, tw - lw - 10.0, 20.0), Font::Body, ink, Align::Left);
+                        c.text(&paint::meta(it, now, secs), rect(tx, r.y + 27.0, tw, 18.0), Font::Small, t.t3, Align::Left);
+                        let rhit = PHit::Reveal(i);
+                        if self.hover == Some(rhit.clone()) || shown {
+                            c.fill_round(pr, 14.0, t.hover);
+                        }
+                        let (icon, eye) = if shown { (&ic::EYE_OFF, draw::accent_ink(&t)) } else { (&ic::EYE, t.t2) };
+                        c.icon(icon, pr.centered(15.0, 15.0), eye);
+                        self.hits.add(pr, rhit);
+                        continue;
                     }
                     let (title, ink) = match it.kind {
                         Kind::Image => (format!("{} · {} × {}", tr("Picture"), it.w, it.h), t.t1),
-                        Kind::Link => (it.preview(160), t.accent),
+                        Kind::Link => (it.preview(160), draw::accent_ink(&t)),
                         _ => (it.preview(160), t.t1),
                     };
                     c.text(&title, rect(tx, r.y + 7.0, tw, 20.0), Font::Body, ink, Align::Left);
-                    c.text(&paint::meta(it, now), rect(tx, r.y + 27.0, tw, 18.0), Font::Small, t.t3, Align::Left);
-                    let pr = rect(r.right() - 34.0, r.y + (r.h - 28.0) / 2.0, 28.0, 28.0);
+                    c.text(&paint::meta(it, now, secs), rect(tx, r.y + 27.0, tw, 18.0), Font::Small, t.t3, Align::Left);
                     let phit = PHit::Pin(i);
                     if it.pin.is_some() {
-                        c.icon_fill(&icons::PIN, pr.centered(14.0, 14.0), t.accent);
+                        c.icon_fill(&icons::PIN, pr.centered(14.0, 14.0), draw::accent_ink(&t));
                         self.hits.add(pr, phit);
                     } else if self.hover.as_ref().is_some_and(|h| *h == PHit::Row(i) || *h == phit) {
                         if self.hover == Some(phit.clone()) {
-                            c.fill_round(pr, 14.0, t.t1.fade(0.1));
+                            c.fill_round(pr, 14.0, t.hover);
                         }
                         c.icon(&icons::PIN, pr.centered(14.0, 14.0), t.t2);
                         self.hits.add(pr, phit);
@@ -372,7 +411,8 @@ impl Panel {
         c.unclip();
         // what the keys do
         c.hline(0.0, h - FOOT_H, w, t.sep);
-        c.text(tr("Enter paste · Shift+Enter plain text · Del remove · Esc close"), rect(10.0, h - FOOT_H, w - 20.0, FOOT_H), Font::Small, t.t3, Align::Center);
+        let foot = self.notice.unwrap_or(tr("Enter paste · Shift+Enter plain text · Del remove · Esc close"));
+        c.text(foot, rect(10.0, h - FOOT_H, w - 20.0, FOOT_H), Font::Small, if self.notice.is_some() { t.orange } else { t.t3 }, Align::Center);
         drop(m);
         // thumbnails of removed items
         let m = model.borrow();
@@ -412,8 +452,19 @@ impl Handler for Panel {
                 self.hover = None;
                 cx.repaint();
             }
-            Event::MouseDown { p, button: Button::Left, .. } => self.pressed = self.hits.at(p).cloned(),
+            Event::MouseDown { p, button: Button::Left, .. } => {
+                self.pressed = self.hits.at(p).cloned();
+                if let Some(PHit::Reveal(i)) = self.pressed
+                    && let Some(Entry::Item(id)) = self.list.get(i).copied()
+                {
+                    self.reveal.press(id);
+                    cx.repaint();
+                }
+            }
             Event::MouseUp { p, button: Button::Left, mods } => {
+                if self.reveal.held() && self.reveal.release() {
+                    cx.timer(REVEAL, Some(200));
+                }
                 let up = self.hits.at(p).cloned();
                 if let (Some(a), Some(b)) = (self.pressed.take(), up)
                     && a == b
@@ -421,7 +472,7 @@ impl Handler for Panel {
                     match a {
                         PHit::Row(i) => self.pick(i, mods.shift, cx),
                         PHit::Pin(i) => self.toggle_pin(i),
-                        PHit::Search => {}
+                        PHit::Reveal(_) | PHit::Search => {}
                     }
                 }
                 cx.repaint();
@@ -443,6 +494,12 @@ impl Handler for Panel {
                 self.caret_on = !self.caret_on;
                 cx.repaint();
             }
+            Event::Timer(REVEAL) => {
+                if !self.reveal.tick() {
+                    cx.timer(REVEAL, None);
+                }
+                cx.repaint();
+            }
             Event::Timer(PASTE) => {
                 cx.timer(PASTE, None);
                 if let Some(what) = self.pending.take() {
@@ -461,7 +518,7 @@ impl Handler for Panel {
 
     fn cursor(&self, p: Pt) -> Cursor {
         match self.hits.at(p) {
-            Some(PHit::Row(_) | PHit::Pin(_)) => Cursor::Hand,
+            Some(PHit::Row(_) | PHit::Pin(_) | PHit::Reveal(_)) => Cursor::Hand,
             _ => Cursor::Arrow,
         }
     }

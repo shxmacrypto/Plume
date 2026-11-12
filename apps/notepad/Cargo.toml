@@ -1,0 +1,50 @@
+[package]
+name = "plume-notepad"
+version.workspace = true
+edition = "2024"
+build = "build.rs"
+description = "Plume Notepad: a fast plain-text editor with tabs, and sticky pads that stay on top."
+license = "MIT"
+
+[[bin]]
+name = "plume-notepad"
+path = "src/main.rs"
+
+[features]
+# Prise d'essai (pilotage de la fenêtre par un script, sur 127.0.0.1) : jamais dans une version publiée.
+test-hook = ["plume-ui/test-hook"]
+
+[dependencies]
+plume-defaults = { path = "../../crates/plume-defaults" }
+plume-ui = { path = "../../crates/plume-ui" }
+plume-update = { path = "../../crates/plume-update" }
+regex = { version = "1", default-features = false, features = ["std", "unicode", "perf"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+windows-numerics = "0.2"
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Imaging",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_DataExchange",
+    "Win32_System_Environment",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_Security",
+    "Win32_System_Threading",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_Ime",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }

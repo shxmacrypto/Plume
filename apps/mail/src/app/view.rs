@@ -11,6 +11,28 @@ use windows::Win32::{
         Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTime},
     },
 };
+use windows::{
+    Win32::Graphics::Imaging::{
+        GUID_WICPixelFormat32bppPBGRA, IWICBitmapSource, IWICImagingFactory, WICBitmapDitherTypeNone, WICBitmapPaletteTypeMedianCut,
+        WICDecodeMetadataCacheOnLoad,
+    },
+    core::Interface,
+};
+
+const LOGO: &[u8] = include_bytes!("../../../../assets/brand/plume-mail-256.png");
+
+/// Décode le logo intégré au programme en image prête pour Direct2D.
+fn png(wic: &IWICImagingFactory, bytes: &'static [u8]) -> Option<IWICBitmapSource> {
+    unsafe {
+        let stream = wic.CreateStream().ok()?;
+        stream.InitializeFromMemory(bytes).ok()?;
+        let decoder = wic.CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnLoad).ok()?;
+        let frame = decoder.GetFrame(0).ok()?;
+        let conv = wic.CreateFormatConverter().ok()?;
+        conv.Initialize(&frame, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeMedianCut).ok()?;
+        conv.cast::<IWICBitmapSource>().ok()
+    }
+}
 
 /// Un instant (secondes depuis 1970) à l'heure d'ici : (année, mois, jour, heure, minute).
 fn local(ts: i64) -> Option<(u16, u16, u16, u16, u16)> {
@@ -88,8 +110,9 @@ impl App {
         c.gradient_v(rect(0.0, 0.0, w, TOP), t.hdr1, t.hdr2);
         c.hline(0.0, TOP - 1.0, w, t.edge);
         // ── le nom de l'application, puis les boutons de la fenêtre
-        c.icon(&icons::MAIL, rect(14.0, (m::TITLE_H - 16.0) / 2.0, 16.0, 16.0), t.accent);
-        c.text("Plume Mail", rect(38.0, 0.0, 200.0, m::TITLE_H), Font::BodyBold, if cx.active { t.t1 } else { t.t3 }, Align::Left);
+        let wic = self.wic.clone();
+        c.image(1, rect(14.0, (m::TITLE_H - 18.0) / 2.0, 18.0, 18.0), 1.0, || png(&wic, LOGO));
+        c.text("Plume Mail", rect(40.0, 0.0, 200.0, m::TITLE_H), Font::BodyBold, if cx.active { t.t1 } else { t.t3 }, Align::Left);
         let cap_x = w - 3.0 * m::CAPTION_W;
         let glyphs = [(Id::Min, '\u{E921}'), (Id::Max, if cx.maximized { '\u{E923}' } else { '\u{E922}' }), (Id::Close, '\u{E8BB}')];
         for (k, (id, glyph)) in glyphs.into_iter().enumerate() {
@@ -130,7 +153,7 @@ impl App {
             (true, false) => t.accent.mix(Color::hex(0xffffff), 0.1),
             (false, _) => t.accent,
         };
-        c.fill_round(new, 10.0, fill);
+        c.fill_round(new, new.h / 2.0, fill);
         c.icon(&icons::PENCIL, rect(new.x + 12.0, new.y + 8.0, 16.0, 16.0), Color::hex(0xffffff));
         c.text(s.new_message, rect(new.x + 34.0, new.y, label_w + 4.0, new.h), Font::BodyBold, Color::hex(0xffffff), Align::Left);
         self.hits.add(new, Id::New);
@@ -291,10 +314,25 @@ impl App {
             } else {
                 s.no_match
             };
+            let y = list.y + list.h * 0.34;
             if self.boxes.is_empty() {
-                c.text(s.welcome, rect(list.x, list.y + list.h * 0.34 - 26.0, list.w, 24.0), Font::Title, t.t2, Align::Center);
+                c.icon(&icons::MAIL, rect(list.x + (list.w - 20.0) / 2.0, y - 60.0, 20.0, 20.0), t.t2);
+                c.text(s.welcome, rect(list.x, y - 30.0, list.w, 24.0), Font::Title, t.t1, Align::Center);
             }
-            c.text(text, rect(list.x + 12.0, list.y + list.h * 0.34, list.w - 24.0, 22.0), Font::Body, t.t3, Align::Center);
+            c.text(text, rect(list.x + 16.0, y, list.w - 32.0, 22.0), Font::Body, t.t3, Align::Center);
+            if self.boxes.is_empty() {
+                let bw = c.text_width(s.add_account, Font::BodyBold) + 40.0;
+                let b = rect(list.x + ((list.w - bw) / 2.0).round(), y + 38.0, bw, 34.0);
+                let hot = self.hover == Some(Id::AddAccount);
+                let fill = match (hot, self.pressed == Some(Id::AddAccount)) {
+                    (true, true) => t.accent.mix(Color::hex(0), 0.18),
+                    (true, false) => t.accent.mix(Color::hex(0xffffff), 0.1),
+                    (false, _) => t.accent,
+                };
+                c.fill_round(b, b.h / 2.0, fill);
+                c.text(s.add_account, b, Font::BodyBold, Color::hex(0xffffff), Align::Center);
+                self.hits.add(b, Id::AddAccount);
+            }
             return;
         }
         let total = self.shown.len() as f32 * ROW_H;
@@ -315,9 +353,9 @@ impl App {
             let r = rect(list.x, list.y + row as f32 * ROW_H - scroll, list.w - 1.0, ROW_H);
             let selected = self.sel == Some(msg.uid);
             if selected {
-                c.fill(r, t.selection(self.active));
+                c.fill_round(r.inset_xy(6.0, 2.0), 10.0, t.selection(self.active));
             } else if self.hover == Some(Id::Row(row)) {
-                c.fill(r, t.hover);
+                c.fill_round(r.inset_xy(6.0, 2.0), 10.0, t.hover);
             }
             // une conversation fermée montre le non-lu de tous ses messages
             let closed = info.count > 1 && !self.open_threads.contains(&info.key);
@@ -432,7 +470,7 @@ impl App {
         let subject_h = c.text_height(subject, width, Font::Title);
         let note_h = if msg.from_html { c.text_height(s.from_html, width, Font::Small) + 12.0 } else { 0.0 };
         let files_h = if msg.attachments.is_empty() { 0.0 } else { 40.0 };
-        let head_h = 22.0 + subject_h + 12.0 + 22.0 + 20.0 + 14.0 + files_h + 34.0 + 12.0;
+        let head_h = 22.0 + subject_h + 12.0 + 22.0 + 20.0 + 14.0 + files_h + 44.0 + 12.0;
         let body_h: f32 = r.heights.iter().sum();
         r.max_scroll = (head_h + note_h + body_h + 30.0 - area.h).max(0.0);
         r.scroll = r.scroll.clamp(0.0, r.max_scroll);
@@ -481,20 +519,16 @@ impl App {
             buttons.insert(0, (Id::EditDraft, s.edit_draft, true));
         }
         for (id, label, enabled) in buttons {
-            let w = c.text_width(label, Font::Small) + 24.0;
-            let b = rect(bx, y, w, 26.0);
-            if enabled && hover == Some(id) {
-                c.fill_round(b, 13.0, t.fill);
-            } else {
-                c.stroke_round(b, 13.0, t.sep, 1.0);
-            }
-            c.text(label, b, Font::Small, if enabled { t.t2 } else { t.t4 }, Align::Center);
+            let w = c.text_width(label, Font::BodyBold) + 32.0;
+            let b = rect(bx, y, w, 32.0);
+            c.fill_round(b, 16.0, if enabled && hover == Some(id) { t.fill2 } else { t.fill });
+            c.text(label, b, Font::BodyBold, if enabled { t.t1 } else { t.t4 }, Align::Center);
             if enabled {
                 hits.push((b, id));
             }
             bx += w + 8.0;
         }
-        y += 34.0;
+        y += 44.0;
         c.hline(x, y, width, t.sep);
         y += 12.0;
         if msg.from_html {

@@ -7,9 +7,9 @@ mod settings_view;
 
 use crate::{
     clip::{self, Captured, Read},
-    i18n::tr,
+    i18n::{fill, tr},
     image,
-    model::{self, Model, PRUNE, RETRY, SAVE, TOAST},
+    model::{self, Model, PRUNE, RETRY, REVEAL, SAVE, TOAST},
     settings::{self, Settings},
     store::{self, Filter},
 };
@@ -25,6 +25,53 @@ use std::{
 pub const SIDEBAR_W: f32 = 224.0;
 /// The list starts below the title row.
 pub const LIST_TOP: f32 = 112.0;
+/// How long a message stays at the bottom of the window.
+pub const TOAST_SECS: f32 = 4.5;
+
+/// A press on the eye shorter than this is a click: the item stays revealed for `REVEAL_SECS`.
+const REVEAL_CLICK: f32 = 0.35;
+const REVEAL_SECS: f32 = 5.0;
+
+/// A sensitive item shown in clear: while its eye is held down, or for a few seconds after a click on it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Reveal {
+    pub id: Option<u64>,
+    down: Option<Instant>,
+    until: Option<Instant>,
+}
+
+impl Reveal {
+    pub fn shown(&self, id: u64) -> bool {
+        self.id == Some(id) && (self.down.is_some() || self.until.is_some_and(|u| Instant::now() < u))
+    }
+    pub fn held(&self) -> bool {
+        self.down.is_some()
+    }
+    pub fn press(&mut self, id: u64) {
+        *self = Reveal { id: Some(id), down: Some(Instant::now()), until: None };
+    }
+    /// The eye is let go: a click keeps it revealed a moment (true: a timer must end it), a hold hides it now.
+    pub fn release(&mut self) -> bool {
+        match self.down.take() {
+            Some(d) if d.elapsed().as_secs_f32() < REVEAL_CLICK => {
+                self.until = Some(Instant::now() + std::time::Duration::from_secs_f32(REVEAL_SECS));
+                true
+            }
+            _ => {
+                *self = Reveal::default();
+                false
+            }
+        }
+    }
+    /// The timer: false once it is hidden again.
+    pub fn tick(&mut self) -> bool {
+        if self.down.is_none() && self.until.is_none_or(|u| Instant::now() >= u) {
+            *self = Reveal::default();
+            return false;
+        }
+        true
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Page {
@@ -49,10 +96,18 @@ pub enum Hit {
     Close,
     Nav(Page),
     Search,
+    ClearSearch,
     Row(u64),
     RowPin(u64),
     RowCopy(u64),
     RowDelete(u64),
+    /// The eye of a sensitive item: held (or clicked) to see it.
+    RowReveal(u64),
+    ClearSecrets,
+    DialogOk,
+    DialogCancel,
+    /// Behind a dialog: the rest of the window cannot be clicked.
+    Scrim,
     RowUp(u64),
     RowDown(u64),
     Clear,
@@ -103,6 +158,9 @@ pub struct App {
     pub hotkey_error: bool,
     pub confirm_clear: Option<Instant>,
     pub toast: Option<(String, Instant)>,
+    pub reveal: Reveal,
+    /// Asking before a sensitive item is pinned (kept forever): its id.
+    pub dialog: Option<u64>,
     retries: u32,
     /// Thumbnails drawn, to forget those of removed items.
     drawn: HashSet<u64>,
@@ -142,6 +200,8 @@ impl App {
             hotkey_error: false,
             confirm_clear: None,
             toast: None,
+            reveal: Reveal::default(),
+            dialog: None,
             retries: 0,
             drawn: HashSet::new(),
             quitting,
@@ -299,15 +359,16 @@ impl App {
         if m.set.hotkey != old.hotkey {
             m.register_hotkey();
         }
-        if (m.set.max_items, m.set.days) != (old.max_items, old.days) {
-            let (max, days) = (m.set.max_items as usize, m.set.days);
-            let removed = m.store.prune(max, days, store::now());
-            for it in &removed {
-                store::delete_image(&m.dir, it.id);
-            }
-            if !removed.is_empty() {
-                m.changed();
-            }
+        if (m.set.hide_passwords, m.set.hide_ips, m.set.hide_keys) != (old.hide_passwords, old.hide_ips, old.hide_keys) {
+            m.reclassify();
+        }
+        if m.set.never_keep_secrets && !old.never_keep_secrets && m.store.items.iter().any(|i| i.secret.is_some() && i.pin.is_none()) {
+            // "never keep" from now on: those already kept go too (pinned ones stay, the user chose them)
+            m.store.items.retain(|i| i.secret.is_none() || i.pin.is_some());
+            m.changed();
+        }
+        if (m.set.max_items, m.set.days, m.set.secret_minutes) != (old.max_items, old.days, old.secret_minutes) && m.prune_now() {
+            m.changed();
         }
         m.save_settings();
         drop(m);
@@ -387,9 +448,20 @@ impl App {
                 self.edit_for = Some(Field::Search);
                 cx.repaint();
             }
+            Hit::ClearSearch => {
+                self.query.clear();
+                self.win.edit_set_text("");
+                self.edit_for = None;
+            }
             Hit::Row(id) | Hit::RowCopy(id) => self.copy(id, cx),
             Hit::RowPin(id) => {
-                let on = self.model.borrow().store.get(id).is_some_and(|i| i.pin.is_none());
+                let (on, secret) = self.model.borrow().store.get(id).map_or((false, false), |i| (i.pin.is_none(), i.secret.is_some()));
+                // a sensitive item is kept forever only if the user says so
+                if on && secret {
+                    self.dialog = Some(id);
+                    cx.repaint();
+                    return;
+                }
                 self.model.borrow_mut().set_pin(id, on);
                 self.say(if on { tr("Pinned: kept forever") } else { tr("Unpinned") }, cx);
             }
@@ -462,8 +534,25 @@ impl App {
             ),
             Hit::IgnoredAdd => self.add_ignored(cx),
             Hit::Toast => self.toast = None,
+            Hit::RowReveal(_) | Hit::Scrim => {}
+            Hit::ClearSecrets => {
+                let n = self.model.borrow_mut().clear_secrets();
+                self.say(fill(tr("{n} sensitive items cleared"), &[&n.to_string()]), cx);
+            }
+            Hit::DialogOk => {
+                if let Some(id) = self.dialog.take() {
+                    self.model.borrow_mut().set_pin(id, true);
+                    self.say(tr("Pinned: kept forever"), cx);
+                }
+            }
+            Hit::DialogCancel => self.dialog = None,
         }
         cx.repaint();
+    }
+
+    /// A click done from outside the window (the icon's menu).
+    pub fn act_public(&mut self, h: Hit, cx: &mut Cx) {
+        self.act(h, cx);
     }
 
     fn toggle(&mut self, name: &str, cx: &mut Cx) {
@@ -482,6 +571,10 @@ impl App {
                 "encrypt" => s.encrypt = !s.encrypt,
                 "paste" => s.paste = !s.paste,
                 "paused" => s.paused = !s.paused,
+                "hide_passwords" => s.hide_passwords = !s.hide_passwords,
+                "hide_ips" => s.hide_ips = !s.hide_ips,
+                "hide_keys" => s.hide_keys = !s.hide_keys,
+                "never_keep_secrets" => s.never_keep_secrets = !s.never_keep_secrets,
                 _ => {}
             },
             cx,
@@ -496,6 +589,7 @@ impl App {
                 "max_items" => s.max_items = settings::MAX_ITEMS[i.min(settings::MAX_ITEMS.len() - 1)],
                 "days" => s.days = settings::DAYS[i.min(settings::DAYS.len() - 1)],
                 "image_mb" => s.max_image_mb = settings::IMAGE_MB[i.min(settings::IMAGE_MB.len() - 1)],
+                "secret_minutes" => s.secret_minutes = settings::SECRET_MINUTES[i.min(settings::SECRET_MINUTES.len() - 1)],
                 _ => {}
             },
             cx,
@@ -527,6 +621,14 @@ impl App {
             // Ctrl+F: the search
             0x46 if mods.ctrl && matches!(self.page, Page::History(_)) => {
                 self.edit_for = Some(Field::Search);
+                cx.handled();
+            }
+            0x1B if self.dialog.is_some() => {
+                self.dialog = None;
+                cx.handled();
+            }
+            0x0D if self.dialog.is_some() => {
+                self.act(Hit::DialogOk, cx);
                 cx.handled();
             }
             0x1B => {
@@ -613,6 +715,9 @@ impl App {
             }
             Event::MouseDown { p, button: Button::Left, .. } => {
                 self.pressed = self.hits.at(p).cloned();
+                if let Some(Hit::RowReveal(id)) = self.pressed {
+                    self.reveal.press(id);
+                }
                 // a click outside the open field closes it (its text stays)
                 if self.edit_for.is_some() && !matches!(self.pressed, Some(Hit::Field(_) | Hit::Search | Hit::IgnoredAdd | Hit::Save)) {
                     self.edit_for = None;
@@ -620,6 +725,9 @@ impl App {
                 cx.repaint();
             }
             Event::MouseUp { p, button: Button::Left, .. } => {
+                if self.reveal.held() && self.reveal.release() {
+                    cx.timer(REVEAL, Some(200));
+                }
                 let up = self.hits.at(p).cloned();
                 if let (Some(a), Some(b)) = (self.pressed.take(), up)
                     && a == b
@@ -630,7 +738,9 @@ impl App {
             }
             Event::MouseDown { p, button: Button::Right, .. } => {
                 // right click on an item: pin or unpin
-                if let Some(Hit::Row(id)) = self.hits.at(p).cloned() {
+                if let Some(Hit::Row(id)) = self.hits.at(p).cloned()
+                    && self.dialog.is_none()
+                {
                     self.act(Hit::RowPin(id), cx);
                 }
             }
@@ -659,12 +769,7 @@ impl App {
             }
             Event::Timer(PRUNE) => {
                 let mut m = self.model.borrow_mut();
-                let (max, days) = (m.set.max_items as usize, m.set.days);
-                let removed = m.store.prune(max, days, store::now());
-                for it in &removed {
-                    store::delete_image(&m.dir, it.id);
-                }
-                if !removed.is_empty() {
+                if m.prune_now() {
                     m.changed();
                 }
             }
@@ -672,8 +777,14 @@ impl App {
                 cx.timer(RETRY, None);
                 self.on_clipboard(cx);
             }
+            Event::Timer(REVEAL) => {
+                if !self.reveal.tick() {
+                    cx.timer(REVEAL, None);
+                }
+                cx.repaint();
+            }
             Event::Timer(TOAST) => {
-                let done = self.toast.as_ref().is_none_or(|(_, at)| at.elapsed().as_secs_f32() > 2.6);
+                let done = self.toast.as_ref().is_none_or(|(_, at)| at.elapsed().as_secs_f32() > TOAST_SECS);
                 if done {
                     self.toast = None;
                     cx.timer(TOAST, None);

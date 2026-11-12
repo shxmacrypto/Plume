@@ -22,7 +22,7 @@ $env:Path = "$binutils;$env:USERPROFILE\.cargo\bin;$env:Path"
 # 1. The programs: the browser (apps/web), Plume Suite and the apps
 # Plume Mail waits for its Microsoft sign-in: it is left out unless PLUME_WITH_MAIL=1 (read by Plume Suite and the launcher)
 $withMail = $env:PLUME_WITH_MAIL -eq "1"
-$apps = "fex", "viewer", "music", "drop", "launcher", "passwords", "media", "task", "clean", "backup", "clipboard", "pdf", "calendar", "convert"
+$apps = "fex", "viewer", "music", "drop", "launcher", "passwords", "media", "task", "clean", "backup", "clipboard", "pdf", "calendar", "convert", "notepad", "cut", "create", "boost"
 $pkgs = "-p plume -p plume-suite " + (($apps | ForEach-Object { "-p plume-$_" }) -join " ")
 if ($withMail) { $pkgs += " -p plume-mail" }
 cmd /c "cargo build --release $pkgs 2>&1"

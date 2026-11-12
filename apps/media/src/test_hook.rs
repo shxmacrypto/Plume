@@ -14,6 +14,10 @@
 //!   {"cmd":"seek","t":4.5}                   the video's position
 //!   {"cmd":"scroll","y":800}                 the library's scroll position
 //!   {"cmd":"rescan"} {"cmd":"repaint"} {"cmd":"back"}
+//!   {"cmd":"pin","path":"…"} {"cmd":"unpin","path":"…"} {"cmd":"move_pin","from":2,"to":0}
+//!   {"cmd":"pin_opt","key":"show","value":"videos"}   sort / show / subfolders of the pinned folder shown
+//!   {"cmd":"rename_start","i":0} then {"cmd":"type","text":"…"} and {"cmd":"editkey","vk":13}
+//!   {"cmd":"drop","paths":["…"],"x":100,"y":200}    files or folders dropped from File Explorer
 
 use crate::ui::{App, Page};
 use plume_ui::{Button, Event, Handler, Mods, Sender, Window, pt};
@@ -126,6 +130,7 @@ fn run(sender: &Sender, line: &str) -> String {
                             "folders" => Page::Folders,
                             "favorites" => Page::Favorites,
                             "settings" => Page::Settings,
+                            p if p.starts_with("pin:") => Page::Pin(PathBuf::from(&p[4..])),
                             p => Page::Folder(PathBuf::from(p.trim_start_matches("folder:"))),
                         };
                         if app.open.is_some() {
@@ -163,6 +168,54 @@ fn run(sender: &Sender, line: &str) -> String {
                         app.scroll_to = (cmd["y"].as_f64().unwrap_or(0.0) as f32).clamp(0.0, app.max_scroll());
                         app.scroll = app.scroll_to;
                         cx.repaint();
+                        json!({ "ok": true })
+                    }
+                    "pin" => {
+                        app.pin_folder(PathBuf::from(cmd["path"].as_str().unwrap_or("")), cx);
+                        json!({ "ok": true })
+                    }
+                    "unpin" => {
+                        app.unpin(&PathBuf::from(cmd["path"].as_str().unwrap_or("")), cx);
+                        json!({ "ok": true })
+                    }
+                    "move_pin" => {
+                        let (from, to) = (cmd["from"].as_u64().unwrap_or(0) as usize, cmd["to"].as_u64().unwrap_or(0) as usize);
+                        crate::settings::move_pin(&mut app.set.pins, from, to);
+                        app.set.save();
+                        json!({ "ok": true })
+                    }
+                    "pin_opt" => {
+                        let v = cmd["value"].clone();
+                        match cmd["key"].as_str().unwrap_or("") {
+                            "sort" => app.set_pin_option(|p| p.sort = v.as_str().unwrap_or("taken").into(), cx),
+                            "show" => app.set_pin_option(|p| p.show = v.as_str().unwrap_or("all").into(), cx),
+                            "subfolders" => app.set_pin_option(|p| p.subfolders = v.as_bool().unwrap_or(true), cx),
+                            _ => {}
+                        }
+                        json!({ "ok": true })
+                    }
+                    "rename_start" => {
+                        let i = cmd["i"].as_u64().unwrap_or(0) as usize;
+                        match app.set.pins.get(i).map(|p| p.path.clone()) {
+                            Some(p) => {
+                                app.start_rename(p, cx);
+                                json!({ "ok": true })
+                            }
+                            None => json!({ "error": "no such pin" }),
+                        }
+                    }
+                    "type" => {
+                        app.win.edit_set_text(cmd["text"].as_str().unwrap_or(""));
+                        json!({ "ok": app.win.edit_visible() })
+                    }
+                    "editkey" => {
+                        app.event(Event::EditKey { vk: cmd["vk"].as_u64().unwrap_or(13) as u16, mods }, cx);
+                        json!({ "ok": true })
+                    }
+                    "drop" => {
+                        let paths = cmd["paths"].as_array().map(|a| a.iter().filter_map(|v| v.as_str()).map(PathBuf::from).collect()).unwrap_or_default();
+                        let at = pt(cmd["x"].as_f64().unwrap_or(0.0) as f32, cmd["y"].as_f64().unwrap_or(0.0) as f32);
+                        app.dropped(paths, at, cx);
                         json!({ "ok": true })
                     }
                     "rescan" => {
@@ -230,6 +283,13 @@ fn state(app: &mut App) -> Value {
     });
     json!({
         "page": format!("{:?}", app.page),
+        "pins": app.set.pins.iter().map(|p| json!({ "label": p.label(), "path": p.path, "sort": p.sort, "show": p.show, "subfolders": p.subfolders })).collect::<Vec<_>>(),
+        "pin_items": app.extra.len(),
+        "pin_scanning": app.pin_scanning.is_some(),
+        "renaming": app.renaming,
+        "month_shown": app.shown_month().map(|(y, m)| format!("{y}-{m:02}")),
+        "months": app.rows.iter().filter(|r| matches!(r, crate::ui::Row::Head { .. })).count(),
+        "max_scroll": app.max_scroll(),
         "items": app.lib.len(),
         "list": app.list.len(),
         "videos": app.lib.iter().filter(|i| i.video).count(),

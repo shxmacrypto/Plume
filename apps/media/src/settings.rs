@@ -58,6 +58,74 @@ pub struct Settings {
     pub info_open: bool,
     /// Subtitles found next to a video are shown.
     pub subtitles: bool,
+    /// Folders pinned to the sidebar, in their order.
+    pub pins: Vec<Pin>,
+}
+
+/// A folder pinned to the sidebar, and how its timeline shows.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Pin {
+    pub path: PathBuf,
+    /// Its own name in the sidebar (empty: the folder's name).
+    pub name: String,
+    /// "taken" (date taken) or "modified" (the file's date).
+    pub sort: String,
+    /// "all", "photos", "videos", "favorites".
+    pub show: String,
+    /// The pictures of its subfolders too.
+    pub subfolders: bool,
+}
+
+impl Default for Pin {
+    fn default() -> Self {
+        Pin { path: PathBuf::new(), name: String::new(), sort: "taken".into(), show: "all".into(), subfolders: true }
+    }
+}
+
+impl Pin {
+    pub fn new(path: PathBuf) -> Pin {
+        Pin { path, ..Default::default() }
+    }
+    /// What the sidebar shows.
+    pub fn label(&self) -> String {
+        if !self.name.trim().is_empty() {
+            return self.name.trim().to_string();
+        }
+        self.path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| self.path.display().to_string())
+    }
+}
+
+/// The same folder (case and a final separator aside).
+pub fn same(a: &std::path::Path, b: &std::path::Path) -> bool {
+    a.to_string_lossy().trim_end_matches(['\\', '/']).eq_ignore_ascii_case(b.to_string_lossy().trim_end_matches(['\\', '/']))
+}
+
+/// Where a folder is among the pins.
+pub fn pin_index(pins: &[Pin], path: &std::path::Path) -> Option<usize> {
+    pins.iter().position(|p| same(&p.path, path))
+}
+
+/// Pins a folder at the end; false when it already is.
+pub fn add_pin(pins: &mut Vec<Pin>, path: PathBuf) -> bool {
+    if pin_index(pins, &path).is_some() {
+        return false;
+    }
+    pins.push(Pin::new(path));
+    true
+}
+
+/// Moves the pin at `from` so it ends at `to` (dragged in the sidebar).
+pub fn move_pin(pins: &mut [Pin], from: usize, to: usize) {
+    if from >= pins.len() {
+        return;
+    }
+    let to = to.min(pins.len() - 1);
+    if from < to {
+        pins[from..=to].rotate_left(1);
+    } else {
+        pins[to..=from].rotate_right(1);
+    }
 }
 
 impl Default for Settings {
@@ -73,6 +141,7 @@ impl Default for Settings {
             muted: false,
             info_open: false,
             subtitles: true,
+            pins: vec![],
         }
     }
 }
@@ -112,6 +181,35 @@ pub fn sound_allowed() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pins_saved_reordered_restored() {
+        let mut s = Settings::default();
+        assert!(add_pin(&mut s.pins, PathBuf::from(r"C:\Photos\Trips")));
+        assert!(add_pin(&mut s.pins, PathBuf::from(r"D:\Family")));
+        assert!(add_pin(&mut s.pins, PathBuf::from(r"E:\Work\Shoots")));
+        // the same folder twice (case, trailing slash): once
+        assert!(!add_pin(&mut s.pins, PathBuf::from(r"c:\photos\trips\")));
+        s.pins[1].name = "Home".into();
+        s.pins[2].sort = "modified".into();
+        s.pins[2].show = "videos".into();
+        s.pins[2].subfolders = false;
+        move_pin(&mut s.pins, 2, 0);
+        let order: Vec<String> = s.pins.iter().map(Pin::label).collect();
+        assert_eq!(order, ["Shoots", "Trips", "Home"]);
+        move_pin(&mut s.pins, 0, 2);
+        assert_eq!(s.pins.iter().map(Pin::label).collect::<Vec<_>>(), ["Trips", "Home", "Shoots"]);
+        move_pin(&mut s.pins, 9, 0);
+        // written and read back as the settings file is
+        let back: Settings = serde_json::from_slice(&serde_json::to_vec_pretty(&s).unwrap()).unwrap();
+        assert_eq!(back.pins, s.pins);
+        assert_eq!(back.pins[2].show, "videos");
+        assert!(!back.pins[2].subfolders);
+        assert_eq!(pin_index(&back.pins, std::path::Path::new(r"D:\FAMILY")), Some(1));
+        // a settings file from before pins: none
+        let old: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert!(old.pins.is_empty());
+    }
 
     #[test]
     fn unknown_fields_and_defaults() {

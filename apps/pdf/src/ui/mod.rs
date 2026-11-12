@@ -253,55 +253,65 @@ pub struct Menu {
     pub more: bool,
 }
 
-/// Colors of Plume PDF.
+/// Colors of Plume PDF: plume-ui's theme (the Plume look), with the accent of the app's icon. Only the paper of
+/// dark pages is Plume PDF's own (it matches the colors the render thread gives inverted pages).
 #[derive(Clone)]
 pub struct Pal {
     pub dark: bool,
+    /// Window and title bar ground, sidebar.
     pub chrome: Color,
     pub side: Color,
+    /// The calm ground under the pages.
     pub area: Color,
     pub card: Color,
+    /// Hairlines (Theme::sep) and the hairline of raised controls (Theme::ring).
     pub line: Color,
+    pub ring: Color,
     pub t1: Color,
     pub t2: Color,
     pub t3: Color,
     pub accent: Color,
     pub on_accent: Color,
+    /// Buttons and fields at rest, hovered or raised, and hovered rows.
+    pub fill: Color,
+    pub fill2: Color,
+    pub hover: Color,
+    /// Toasts.
+    pub solid2: Color,
+    /// Title bar gradient (the toolbar continues `hdr2`).
+    pub hdr1: Color,
+    pub hdr2: Color,
+    pub close_hover: Color,
     pub paper_dark: Color,
 }
 
+/// The accent: the main color of Plume PDF's icon.
+pub const ACCENT: u32 = 0xe5383b;
+
 impl Pal {
     pub fn new(dark: bool) -> Pal {
-        if dark {
-            Pal {
-                dark,
-                chrome: Color::hex(0x1b1b1e),
-                side: Color::hex(0x18181b),
-                area: Color::hex(0x26262a),
-                card: Color::hex(0x2c2c30),
-                line: Color::hexa(0xffffff, 0.08),
-                t1: Color::hex(0xffffff),
-                t2: Color::hexa(0xebebf5, 0.72),
-                t3: Color::hexa(0xebebf5, 0.45),
-                accent: Color::hex(0xff5a5f),
-                on_accent: Color::hex(0xffffff),
-                paper_dark: Color::hex(0x1e1e1e),
-            }
-        } else {
-            Pal {
-                dark,
-                chrome: Color::hex(0xf6f6f8),
-                side: Color::hex(0xefeff2),
-                area: Color::hex(0xe2e2e7),
-                card: Color::hex(0xffffff),
-                line: Color::hexa(0x000000, 0.09),
-                t1: Color::hex(0x111114),
-                t2: Color::hexa(0x3c3c43, 0.82),
-                t3: Color::hexa(0x3c3c43, 0.55),
-                accent: Color::hex(0xd62839),
-                on_accent: Color::hex(0xffffff),
-                paper_dark: Color::hex(0x1e1e1e),
-            }
+        let t = plume_ui::Theme::new(dark, Some(Color::hex(ACCENT)));
+        Pal {
+            dark,
+            chrome: t.bg,
+            side: t.bg,
+            area: t.bg2,
+            card: t.card,
+            line: t.sep,
+            ring: t.ring,
+            t1: t.t1,
+            t2: t.t2,
+            t3: t.t3,
+            accent: t.accent,
+            on_accent: Color::hex(0xffffff),
+            fill: t.fill,
+            fill2: t.fill2,
+            hover: t.hover,
+            solid2: t.solid2,
+            hdr1: t.hdr1,
+            hdr2: t.hdr2,
+            close_hover: t.close_hover,
+            paper_dark: Color::hex(0x1e1e1e),
         }
     }
 }
@@ -2405,7 +2415,7 @@ impl App {
                 cx.repaint();
             }
             Event::Timer(TICK) => {
-                if self.toast.as_ref().is_some_and(|(_, at)| at.elapsed() > Duration::from_millis(3500)) {
+                if self.toast.as_ref().is_some_and(|(_, at)| at.elapsed() > Duration::from_millis(4500)) {
                     self.toast = None;
                     cx.repaint();
                 }

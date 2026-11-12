@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Plume Create: the Plume feather as a brush, leaving a stroke across an artboard marked by crop corners, a spark beside it, on magenta. -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f9a8d4"/>
+      <stop offset=".5" stop-color="#db2b9a"/>
+      <stop offset="1" stop-color="#831860"/>
+    </linearGradient>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".28"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#g)"/>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#s)"/>
+  <!-- the artboard's crop corners -->
+  <path fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"
+        d="M11 19v-8h8M45 11h8v8M53 45v8h-8M19 53h-8v-8"/>
+  <!-- the stroke the feather leaves -->
+  <path fill="none" stroke="#fff" stroke-width="4.6" stroke-linecap="round" d="M14.5 45.5c5.5-1.5 7.5 2.5 12.5 1.5"/>
+  <!-- the feather, its quill on the stroke -->
+  <g transform="translate(26 44.6) scale(.66) translate(-15 -50.5)">
+    <path fill="#fff" d="M48.5 12.5c-12.6 1.2-23.4 9.6-26.6 22.4l-1.4 6.6 6.4-1.6c4.6-1.2 8.6-3.6 11.6-7.2l-6.2-.6 8.8-3.6c3.8-4.6 7-10 7.4-16z"/>
+    <path fill="none" stroke="#c0267f" stroke-width="2.4" stroke-linecap="round" d="M25 37.5C30 28 36 21 44.5 15.5"/>
+    <path fill="none" stroke="#fff" stroke-width="4.6" stroke-linecap="round" d="M15 50.5 24 40"/>
+  </g>
+  <!-- a spark: something new -->
+  <path fill="#fff" d="M47 29.5l1.9 5.6 5.6 1.9-5.6 1.9-1.9 5.6-1.9-5.6-5.6-1.9 5.6-1.9z"/>
+</svg>

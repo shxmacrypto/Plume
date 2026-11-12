@@ -5,8 +5,12 @@
 //   plume-backup.exe --background    no window, only the icon near the clock (start with Windows)
 //   plume-backup.exe --run           backs up every plan now (the running Plume Backup does it if there is one)
 //   plume-backup.exe --unregister    no more start with Windows, and the running Plume Backup quits (uninstall)
+//   plume-backup.exe --ensure-plan "<name>" --source "<dir>" --dest "<dir>" [--keep <n>]
+//                                    creates or updates a plan without a window (other Plume apps, see cli.rs)
+//   plume-backup.exe --run-plan "<name>"   backs up that plan now and waits: exit code 0 when it worked
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod cli;
 mod engine;
 mod i18n;
 mod settings;
@@ -33,9 +37,6 @@ use windows::{
     core::w,
 };
 
-/// Marks the window: a second launch finds it and brings it forward.
-const MARK: &str = "PlumeBackupWindow";
-
 pub fn system_dark() -> bool {
     let (mut data, mut size) = (1u32, 4u32);
     let read = unsafe {
@@ -53,15 +54,24 @@ pub fn system_dark() -> bool {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).map(|a| a.to_lowercase()).collect();
+    let raw: Vec<String> = std::env::args().skip(1).collect();
+    // Marks the window: a second launch finds it and brings it forward (one mark per data folder in tests).
+    let mark = cli::mark();
+    let mark = mark.as_str();
+    if let Some(req) = cli::parse(&raw) {
+        let set = settings::Settings::load();
+        i18n::set(&set.lang);
+        std::process::exit(cli::main(req, window::find(mark)));
+    }
+    let args: Vec<String> = raw.iter().map(|a| a.to_lowercase()).collect();
     let has = |a: &str| args.iter().any(|x| x == a);
     let background = has("--background");
     if has("--unregister") {
         sys::set_autostart(false);
-        if let Some(w) = window::find(MARK) {
+        if let Some(w) = window::find(mark) {
             w.send_text("quit");
             for _ in 0..50 {
-                if window::find(MARK).is_none() {
+                if window::find(mark).is_none() {
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
@@ -71,7 +81,7 @@ fn main() {
     }
     // already running: it comes forward, or backs up (unless this launch only wanted the background)
     let test = std::env::var_os("PLUME_BACKUP_TEST_PORT").is_some();
-    if !test && let Some(w) = window::find(MARK) {
+    if !test && let Some(w) = window::find(mark) {
         if has("--run") {
             w.send_text("run");
         } else if !background {
@@ -101,7 +111,7 @@ fn main() {
     let k = keep.clone();
     let g = gfx.clone();
     let win = window::create(&gfx, o, move |win| Box::new(ui::App::new(win, g, k))).expect("window");
-    win.mark(MARK);
+    win.mark(mark);
     let hwnd = win.hwnd;
     if background {
         sys::show(hwnd, false);

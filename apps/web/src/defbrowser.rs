@@ -62,6 +62,40 @@ fn get(key: &str, name: &str) -> Option<String> {
     ok.then(|| String::from_utf16_lossy(&buf[..buf.iter().position(|&c| c == 0).unwrap_or(buf.len())]))
 }
 
+/// Le programme de Plume FEx quand c'est lui qui ouvre les dossiers (option « Ouvrir les dossiers et Win+E avec
+/// Plume FEx ») : « Afficher dans le dossier » d'un téléchargement passe alors par lui, pas par l'Explorateur.
+/// PLUME_FEX_CLASSES_ROOT désigne la clé d'essai des tests, comme dans Plume FEx.
+pub fn folder_app() -> Option<std::path::PathBuf> {
+    let base = std::env::var("PLUME_FEX_CLASSES_ROOT").ok().filter(|b| !b.trim().is_empty()).unwrap_or_else(|| r"Software\Classes".into());
+    fex_exe(get(&format!(r"{base}\Directory\shell"), "").as_deref(), get(&format!(r"{base}\Directory\shell\PlumeFEx\command"), "").as_deref())
+        .filter(|exe| exe.is_file())
+}
+
+/// Le programme de la commande `"C:\…\plume-fex.exe" "%1"`, si le verbe par défaut des dossiers est celui de Plume FEx.
+fn fex_exe(default_verb: Option<&str>, command: Option<&str>) -> Option<std::path::PathBuf> {
+    if !default_verb?.eq_ignore_ascii_case("PlumeFEx") {
+        return None;
+    }
+    let exe = command?.trim().strip_prefix('"')?.split('"').next()?;
+    exe.to_ascii_lowercase().ends_with(".exe").then(|| exe.into())
+}
+
+#[cfg(test)]
+mod folder_app_tests {
+    use super::fex_exe;
+
+    #[test]
+    fn only_when_fex_opens_folders() {
+        let cmd = Some(r#""C:\Users\a\AppData\Local\Programs\Plume\plume-fex.exe" "%1""#);
+        assert_eq!(fex_exe(Some("PlumeFEx"), cmd), Some(r"C:\Users\a\AppData\Local\Programs\Plume\plume-fex.exe".into()));
+        assert!(fex_exe(Some("plumefex"), cmd).is_some());
+        assert_eq!(fex_exe(Some("OtherManager"), cmd), None);
+        assert_eq!(fex_exe(None, cmd), None);
+        assert_eq!(fex_exe(Some("PlumeFEx"), None), None);
+        assert_eq!(fex_exe(Some("PlumeFEx"), Some("plume-fex.exe %1")), None);
+    }
+}
+
 fn notify() {
     unsafe { SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None) }
 }

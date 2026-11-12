@@ -3,6 +3,8 @@
 
 pub mod draw;
 mod library_view;
+pub mod pins;
+pub mod scrub;
 mod settings_view;
 mod viewer;
 
@@ -15,7 +17,7 @@ use crate::{
     video::{self, AudioTrack, Ev, Player},
 };
 use draw::Bitmaps;
-use plume_ui::{Area, Button, Canvas, Color, Cursor, Cx, Event, Gfx, Handler, Mods, PaintCx, Pt, Rect, Window};
+use plume_ui::{Area, Button, Canvas, Color, Cursor, Cx, Event, Gfx, Handler, Mods, PaintCx, Pt, Rect, Theme, Window};
 use std::{
     any::Any,
     collections::{HashMap, HashSet},
@@ -35,6 +37,8 @@ pub const TOP_H: f32 = 48.0;
 pub const SIDEBAR_W: f32 = 216.0;
 pub const INFO_W: f32 = 320.0;
 pub const CONTROLS_H: f32 = 104.0;
+/// How far one notch of the wheel moves the pins.
+const PIN_SCROLL: f32 = 42.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Page {
@@ -44,6 +48,8 @@ pub enum Page {
     Folder(PathBuf),
     Favorites,
     Settings,
+    /// A folder pinned to the sidebar.
+    Pin(PathBuf),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -59,6 +65,16 @@ pub enum Hit {
     FolderCard(usize),
     Scrollbar,
     EmptyAdd,
+    /// A pin of the sidebar (its place among the pins).
+    Pin(usize),
+    PinAdd,
+    /// "Pin to sidebar" on a folder's page.
+    PinHere,
+    /// The date rail of a timeline.
+    Rail,
+    Show(&'static str),
+    Sort(&'static str),
+    Subfolders,
     // the viewer and the player
     Back,
     Prev,
@@ -96,10 +112,31 @@ pub enum Hit {
 
 #[derive(Clone, Debug)]
 pub enum Drag {
-    Pan { from: Pt, ox: f32, oy: f32, moved: bool },
+    Pan {
+        from: Pt,
+        ox: f32,
+        oy: f32,
+        moved: bool,
+    },
     Seek,
     Volume,
-    Scroll { from_y: f32, scroll: f32 },
+    Scroll {
+        from_y: f32,
+        scroll: f32,
+    },
+    Rail,
+    /// A pin dragged to another place.
+    Pin {
+        i: usize,
+        from: Pt,
+        moved: bool,
+    },
+    /// A folder card dragged to the sidebar (to pin it).
+    Card {
+        path: PathBuf,
+        from: Pt,
+        moved: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -110,6 +147,13 @@ pub enum MenuAct {
     Open(usize),
     Favorite(usize),
     Explorer(usize),
+    PinPath(PathBuf),
+    Unpin(PathBuf),
+    Rename(PathBuf),
+    MovePin(PathBuf, i32),
+    ExplorerPath(PathBuf),
+    OpenFolder(PathBuf),
+    Cut(PathBuf),
 }
 
 #[derive(Clone, Debug)]
@@ -123,7 +167,7 @@ pub struct Menu {
 /// A row of the grid: a month's title, or tiles.
 #[derive(Clone, Debug)]
 pub enum Row {
-    Head { y: f32, title: String, n: usize },
+    Head { y: f32, title: String, n: usize, ym: (i64, u32) },
     Tiles { y: f32, first: usize, count: usize },
 }
 
@@ -222,55 +266,68 @@ pub struct InfoData {
     pub duration: f64,
 }
 
-/// Colors of Plume Media.
+/// The gold of Plume Media's icon: the accent.
+pub const GOLD: u32 = 0xeab308;
+
+/// Colors of Plume Media: plume-ui's theme with the icon's gold as accent.
 #[derive(Clone)]
 pub struct Pal {
     pub dark: bool,
     pub bg: Color,
+    /// The sidebar.
     pub side: Color,
     pub card: Color,
+    /// Hairlines.
     pub line: Color,
     pub t1: Color,
     pub t2: Color,
     pub t3: Color,
+    pub fill: Color,
+    pub fill2: Color,
+    pub hover: Color,
+    pub solid: Color,
+    pub solid2: Color,
+    pub ring: Color,
     pub accent: Color,
+    /// Text on the accent: the gold is light, so near-black.
     pub on_accent: Color,
+    /// The accent as text or icon on the page (a deeper gold on light backgrounds, to stay readable).
+    pub ink: Color,
+    /// Around pictures and videos: always dark.
     pub stage: Color,
     pub tile: Color,
+    pub close_hover: Color,
+    /// The title bar's band (viewer).
+    pub bar: Color,
 }
 
 impl Pal {
     pub fn new(dark: bool) -> Pal {
-        if dark {
-            Pal {
-                dark,
-                bg: Color::hex(0x121315),
-                side: Color::hex(0x0b0c0d),
-                card: Color::hex(0x1b1d20),
-                line: Color::hex(0xffffff).fade(0.08),
-                t1: Color::hex(0xffffff),
-                t2: Color::hex(0xb7bbb9),
-                t3: Color::hex(0x7d827f),
-                accent: Color::hex(0x34d058),
-                on_accent: Color::hex(0x06210e),
-                stage: Color::hex(0x08090a),
-                tile: Color::hex(0x1e2023),
-            }
-        } else {
-            Pal {
-                dark,
-                bg: Color::hex(0xf6f7f6),
-                side: Color::hex(0xecefed),
-                card: Color::hex(0xffffff),
-                line: Color::hex(0x000000).fade(0.08),
-                t1: Color::hex(0x111413),
-                t2: Color::hex(0x525a56),
-                t3: Color::hex(0x8a918d),
-                accent: Color::hex(0x16a34a),
-                on_accent: Color::hex(0xffffff),
-                stage: Color::hex(0x101112),
-                tile: Color::hex(0xe1e5e2),
-            }
+        let accent = Color::hex(GOLD);
+        let t = Theme::new(dark, Some(accent));
+        let night = Theme::dark();
+        Pal {
+            dark,
+            bg: t.bg,
+            side: t.bg2,
+            card: t.card,
+            line: t.sep,
+            t1: t.t1,
+            t2: t.t2,
+            t3: t.t3,
+            fill: t.fill,
+            fill2: t.fill2,
+            hover: t.hover,
+            solid: t.solid,
+            solid2: t.solid2,
+            ring: t.ring,
+            accent,
+            on_accent: accent.mix(Color::hex(0x000000), 0.86),
+            ink: if dark { accent } else { accent.mix(Color::hex(0x000000), 0.32) },
+            stage: night.bg2.mix(Color::hex(0x000000), 0.5),
+            tile: t.fill.over(t.bg),
+            close_hover: t.close_hover,
+            bar: t.hdr2,
         }
     }
 }
@@ -335,8 +392,21 @@ pub struct App {
     pub store: Store,
     pub lib: Vec<Item>,
     pub page: Page,
-    /// Items of the page (indexes into `lib`).
+    /// Items of the page: indexes into `lib`, or past its end into `extra` (a pinned folder's items).
     pub list: Vec<usize>,
+    /// The date each item of `list` is sorted (and grouped by month) by.
+    pub list_dates: Vec<i64>,
+    /// The items of the pinned folder shown, read from it.
+    pub extra: Vec<Item>,
+    pub pin_cache: HashMap<String, Vec<Item>>,
+    pub pin_scanning: Option<Arc<Progress>>,
+    /// The pin being renamed, the field's place, and whether the field is open.
+    pub renaming: Option<PathBuf>,
+    pub rename_rect: Option<Rect>,
+    pub rename_open: bool,
+    /// Where the pins are in the sidebar, and how far they are scrolled.
+    pub pins_area: Rect,
+    pub pin_scroll: f32,
     pub rows: Vec<Row>,
     pub rows_w: f32,
     pub tile: f32,
@@ -377,6 +447,8 @@ pub struct App {
     pub frames: u64,
     pub openwith: bool,
     pub cache_bytes: Option<u64>,
+    /// The window is in front (the title is dimmed otherwise).
+    pub active: bool,
 }
 
 pub fn with_app(h: &mut dyn Handler) -> Option<&mut App> {
@@ -413,6 +485,15 @@ impl App {
             lib,
             page: Page::Timeline,
             list: vec![],
+            list_dates: vec![],
+            extra: vec![],
+            pin_cache: HashMap::new(),
+            pin_scanning: None,
+            renaming: None,
+            rename_rect: None,
+            rename_open: false,
+            pins_area: Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+            pin_scroll: 0.0,
             rows: vec![],
             rows_w: 0.0,
             tile: 160.0,
@@ -452,6 +533,7 @@ impl App {
             frames: 0,
             openwith: crate::openwith::is_registered(),
             cache_bytes: None,
+            active: true,
         };
         app.refresh_list();
         app
@@ -517,8 +599,12 @@ impl App {
                 let d = library::norm(dir);
                 (0..self.lib.len()).filter(|&i| library::norm(&self.lib[i].folder()) == d).collect()
             }
-            Page::Folders | Page::Settings => vec![],
+            Page::Folders | Page::Settings | Page::Pin(_) => vec![],
         };
+        self.list_dates = self.list.iter().map(|&i| self.lib[i].taken).collect();
+        if matches!(self.page, Page::Pin(_)) {
+            (self.list, self.list_dates) = self.pin_list();
+        }
         let mut by: HashMap<String, (PathBuf, Vec<usize>)> = HashMap::new();
         for (i, it) in self.lib.iter().enumerate() {
             let f = it.folder();
@@ -533,11 +619,23 @@ impl App {
         self.rows_w = 0.0; // layout again at the next image
     }
 
+    /// An item of the page's list (from the library, or from the pinned folder shown).
+    pub fn item(&self, i: usize) -> &Item {
+        if i < self.lib.len() { &self.lib[i] } else { &self.extra[i - self.lib.len()] }
+    }
+
     pub fn go(&mut self, page: Page, cx: &mut Cx) {
+        if self.renaming.is_some() {
+            self.end_rename(true, cx);
+        }
         if self.page != page {
             self.page = page;
             self.scroll = 0.0;
             self.scroll_to = 0.0;
+        }
+        if matches!(self.page, Page::Pin(_)) {
+            self.scan_pin();
+            cx.timer(TICK, Some(200));
         }
         if matches!(self.page, Page::Settings) {
             self.openwith = crate::openwith::is_registered();
@@ -566,14 +664,18 @@ impl App {
         self.tile = tile;
         self.rows.clear();
         let mut y = 0.0;
-        let months = matches!(self.page, Page::Timeline | Page::Videos);
+        let months = true;
+        let month = |d: i64| {
+            let (y, m, _) = library::civil_from_days(d.div_euclid(86400));
+            (y, m)
+        };
         let mut i = 0;
         while i < self.list.len() {
             let mut end = self.list.len();
             if months {
-                let m = self.lib[self.list[i]].month();
-                end = i + self.list[i..].iter().take_while(|&&k| self.lib[k].month() == m).count();
-                self.rows.push(Row::Head { y, title: crate::i18n::month_year(m.0, m.1), n: end - i });
+                let m = month(self.list_dates[i]);
+                end = i + self.list_dates[i..].iter().take_while(|&&d| month(d) == m).count();
+                self.rows.push(Row::Head { y, title: crate::i18n::month_year(m.0, m.1), n: end - i, ym: m });
                 y += 52.0;
             }
             let mut k = i;
@@ -598,13 +700,13 @@ impl App {
 
     /// Asks for a thumbnail (it arrives in `thumb_px`).
     pub fn request_thumb(&mut self, idx: usize) {
-        let it = &self.lib[idx];
-        let key = it.key();
+        let it = self.item(idx);
+        let (key, path, video) = (it.key(), it.path.clone(), it.video);
         if self.thumbs.contains_key(&key) || self.thumb_px.contains_key(&key) {
             return;
         }
         self.thumbs.insert(key, Thumb::Pending);
-        let (path, video, wanted, s) = (it.path.clone(), it.video, self.wanted.clone(), self.win.sender());
+        let (wanted, s) = (self.wanted.clone(), self.win.sender());
         self.pool.run(move || {
             // scrolled away meanwhile: asked again when seen again
             if !wanted.lock().unwrap().contains(&key) {
@@ -1055,7 +1157,7 @@ impl App {
     pub fn toggle_favorite_path(&mut self, path: &Path, cx: &mut Cx) {
         let on = self.store.toggle_favorite(path);
         self.store.save();
-        if self.page == Page::Favorites {
+        if self.page == Page::Favorites || matches!(self.page, Page::Pin(_)) {
             self.refresh_list();
         }
         self.say(if on { tr("Added to favorites") } else { tr("Removed from favorites") }, cx);
@@ -1383,7 +1485,7 @@ impl App {
     fn tick(&mut self, cx: &mut Cx) {
         let mut keep = false;
         if let Some((_, t)) = &self.toast {
-            if t.elapsed() > Duration::from_millis(2600) {
+            if t.elapsed() > Duration::from_millis(4500) {
                 self.toast = None;
                 cx.repaint();
             } else {
@@ -1413,7 +1515,7 @@ impl App {
             // bars and controls hide by themselves
             cx.repaint();
         }
-        if self.scanning.is_some() {
+        if self.scanning.is_some() || self.pin_scanning.is_some() {
             keep = true;
             cx.repaint();
         }
@@ -1440,7 +1542,7 @@ impl App {
                 cx.repaint();
             }
             Hit::Tile(i) => {
-                let seq: Vec<PathBuf> = self.list.iter().map(|&k| self.lib[k].path.clone()).collect();
+                let seq: Vec<PathBuf> = self.list.iter().map(|&k| self.item(k).path.clone()).collect();
                 self.open_seq(seq, i, cx);
             }
             Hit::FolderCard(i) => {
@@ -1449,6 +1551,34 @@ impl App {
                     self.go(Page::Folder(d), cx);
                 }
             }
+            Hit::Pin(i) => {
+                if let Some(pin) = self.set.pins.get(i) {
+                    let path = pin.path.clone();
+                    if self.open.is_some() {
+                        self.close_viewer(cx);
+                    }
+                    self.go(Page::Pin(path), cx);
+                }
+            }
+            Hit::PinAdd => {
+                cx.after(|w| {
+                    if let Some(dir) = plume_ui::dialogs::pick_folder(w.hwnd, tr("Pin a folder")) {
+                        w.with(|h, cx| {
+                            if let Some(app) = with_app(h) {
+                                app.pin_folder(dir, cx);
+                            }
+                        });
+                    }
+                });
+            }
+            Hit::PinHere => {
+                if let Page::Folder(d) = self.page.clone() {
+                    self.pin_folder(d, cx);
+                }
+            }
+            Hit::Show(k) => self.set_pin_option(|p| p.show = k.into(), cx),
+            Hit::Sort(k) => self.set_pin_option(|p| p.sort = k.into(), cx),
+            Hit::Subfolders => self.set_pin_option(|p| p.subfolders = !p.subfolders, cx),
             Hit::Back => {
                 if self.full.is_some() {
                     self.toggle_fullscreen(cx);
@@ -1596,7 +1726,7 @@ impl App {
                 self.cache_bytes = Some(image::cache_size());
                 self.say(tr("Thumbnails cleared"), cx);
             }
-            Hit::Seek | Hit::Volume | Hit::Scrollbar | Hit::Panel | Hit::Controls => {}
+            Hit::Seek | Hit::Volume | Hit::Scrollbar | Hit::Panel | Hit::Controls | Hit::Rail => {}
         }
     }
 
@@ -1622,15 +1752,75 @@ impl App {
             MenuAct::Open(i) => self.act(Hit::Tile(i), self.mouse, 1, cx),
             MenuAct::Favorite(i) => {
                 if let Some(&k) = self.list.get(i) {
-                    let p = self.lib[k].path.clone();
+                    let p = self.item(k).path.clone();
                     self.toggle_favorite_path(&p, cx);
                 }
             }
             MenuAct::Explorer(i) => {
                 if let Some(&k) = self.list.get(i) {
-                    show_in_explorer(&self.lib[k].path);
+                    show_in_explorer(&self.item(k).path);
                 }
             }
+            MenuAct::PinPath(p) => self.pin_folder(p, cx),
+            MenuAct::Unpin(p) => self.unpin(&p, cx),
+            MenuAct::Rename(p) => self.start_rename(p, cx),
+            MenuAct::MovePin(p, d) => self.move_pin_by(&p, d, cx),
+            MenuAct::ExplorerPath(p) => {
+                let _ = std::process::Command::new("explorer.exe").arg(&p).spawn();
+            }
+            MenuAct::OpenFolder(p) => self.go(Page::Folder(p), cx),
+            MenuAct::Cut(p) => self.open_in_cut(&p),
+        }
+    }
+
+    /// What a right click offers on a tile, a folder or a pin.
+    fn context_menu(&self, p: Pt) -> Option<Vec<(String, bool, MenuAct)>> {
+        match self.hits.at(p).cloned()? {
+            Hit::Tile(i) => {
+                let it = self.item(*self.list.get(i)?);
+                let fav = self.store.is_favorite(&it.path);
+                let folder = it.folder();
+                let mut items = vec![
+                    (tr("Open").to_string(), false, MenuAct::Open(i)),
+                    (if fav { tr("Remove from favorites") } else { tr("Add to favorites") }.to_string(), false, MenuAct::Favorite(i)),
+                ];
+                if it.video && pins::cut_exe().is_some() {
+                    items.push((tr("Open in Plume Cut").to_string(), false, MenuAct::Cut(it.path.clone())));
+                }
+                if settings::pin_index(&self.set.pins, &folder).is_none() {
+                    items.push((tr("Pin its folder to the sidebar").to_string(), false, MenuAct::PinPath(folder)));
+                }
+                items.push((tr("Show in File Explorer").to_string(), false, MenuAct::Explorer(i)));
+                Some(items)
+            }
+            Hit::FolderCard(i) => {
+                let dir = self.folders.get(i)?.0.clone();
+                let pinned = settings::pin_index(&self.set.pins, &dir).is_some();
+                Some(vec![
+                    (tr("Open").to_string(), false, MenuAct::OpenFolder(dir.clone())),
+                    if pinned {
+                        (tr("Unpin from sidebar").to_string(), false, MenuAct::Unpin(dir.clone()))
+                    } else {
+                        (tr("Pin to sidebar").to_string(), false, MenuAct::PinPath(dir.clone()))
+                    },
+                    (tr("Show in File Explorer").to_string(), false, MenuAct::ExplorerPath(dir)),
+                ])
+            }
+            Hit::Pin(i) => {
+                let path = self.set.pins.get(i)?.path.clone();
+                let n = self.set.pins.len();
+                let mut items = vec![(tr("Rename").to_string(), false, MenuAct::Rename(path.clone()))];
+                if i > 0 {
+                    items.push((tr("Move up").to_string(), false, MenuAct::MovePin(path.clone(), -1)));
+                }
+                if i + 1 < n {
+                    items.push((tr("Move down").to_string(), false, MenuAct::MovePin(path.clone(), 1)));
+                }
+                items.push((tr("Show in File Explorer").to_string(), false, MenuAct::ExplorerPath(path.clone())));
+                items.push((tr("Unpin from sidebar").to_string(), false, MenuAct::Unpin(path)));
+                Some(items)
+            }
+            _ => None,
         }
     }
 
@@ -1698,6 +1888,18 @@ impl App {
                     Some(Hit::Scrollbar) => {
                         self.drag = Some(Drag::Scroll { from_y: p.y, scroll: self.scroll });
                     }
+                    Some(Hit::Rail) => {
+                        self.drag = Some(Drag::Rail);
+                        self.rail_to(p.y);
+                    }
+                    Some(Hit::Pin(i)) if self.renaming.is_none() => {
+                        self.drag = Some(Drag::Pin { i, from: p, moved: false });
+                    }
+                    Some(Hit::FolderCard(i)) => {
+                        if let Some((dir, _)) = self.folders.get(i) {
+                            self.drag = Some(Drag::Card { path: dir.clone(), from: p, moved: false });
+                        }
+                    }
                     Some(Hit::Stage) if self.open.as_ref().is_some_and(|o| o.photo.is_some()) => {
                         let (ox, oy) = self.open.as_ref().and_then(|o| o.photo.as_ref()).map_or((0.0, 0.0), |ph| (ph.ox, ph.oy));
                         self.drag = Some(Drag::Pan { from: p, ox, oy, moved: false });
@@ -1733,8 +1935,25 @@ impl App {
                         self.set.save();
                         return;
                     }
-                    Some(Drag::Scroll { .. }) => return,
+                    Some(Drag::Scroll { .. } | Drag::Rail) => {
+                        cx.repaint();
+                        return;
+                    }
                     Some(Drag::Pan { moved: true, .. }) => return,
+                    Some(Drag::Pin { i, moved: true, .. }) => {
+                        let to = self.pin_slot(p.y);
+                        settings::move_pin(&mut self.set.pins, i, to);
+                        self.set.save();
+                        cx.repaint();
+                        return;
+                    }
+                    Some(Drag::Card { path, moved: true, .. }) => {
+                        if p.x < SIDEBAR_W {
+                            self.pin_folder(path, cx);
+                        }
+                        cx.repaint();
+                        return;
+                    }
                     _ => {}
                 }
                 let h = self.hits.at(p).cloned();
@@ -1745,13 +1964,7 @@ impl App {
                 cx.repaint();
             }
             Event::MouseDown { p, button: Button::Right, .. } => {
-                if let Some(Hit::Tile(i)) = self.hits.at(p).cloned() {
-                    let fav = self.list.get(i).is_some_and(|&k| self.store.is_favorite(&self.lib[k].path));
-                    let items = vec![
-                        (tr("Open").to_string(), false, MenuAct::Open(i)),
-                        (if fav { tr("Remove from favorites") } else { tr("Add to favorites") }.to_string(), false, MenuAct::Favorite(i)),
-                        (tr("Show in File Explorer").to_string(), false, MenuAct::Explorer(i)),
-                    ];
+                if let Some(items) = self.context_menu(p) {
                     self.menu = Some(Menu { items, anchor: Rect { x: p.x, y: p.y, w: 1.0, h: 1.0 }, up: false });
                     cx.repaint();
                 }
@@ -1780,6 +1993,12 @@ impl App {
                 }
             }
             Event::Opened(text) => self.open_args(&text, cx),
+            Event::EditKey { vk, .. } => match vk {
+                0x0D => self.end_rename(true, cx),
+                0x1B => self.end_rename(false, cx),
+                _ => {}
+            },
+            Event::EditBlur => self.end_rename(true, cx),
             Event::Close => {
                 self.leave_current();
                 if let Some(p) = &self.scanning {
@@ -1824,6 +2043,20 @@ impl App {
                     self.set_volume(v, cx);
                 }
             }
+            Drag::Rail => {
+                self.rail_to(p.y);
+                cx.repaint();
+            }
+            Drag::Pin { i, from, moved } => {
+                let moved = moved || (p.y - from.y).abs() > 4.0;
+                self.drag = Some(Drag::Pin { i, from, moved });
+                cx.repaint();
+            }
+            Drag::Card { path, from, moved } => {
+                let moved = moved || (p.x - from.x).abs() + (p.y - from.y).abs() > 6.0;
+                self.drag = Some(Drag::Card { path, from, moved });
+                cx.repaint();
+            }
             Drag::Scroll { from_y, scroll } => {
                 let track = self.view_h.max(1.0);
                 let k = self.content_h / track;
@@ -1856,6 +2089,11 @@ impl App {
                 self.set_volume(self.set.volume + dy * 0.05, cx);
                 self.last_move = Instant::now();
             }
+            return;
+        }
+        if self.pins_area.contains(p) {
+            self.pin_scroll -= dy * PIN_SCROLL;
+            cx.repaint();
             return;
         }
         self.scroll_to = (self.scroll_to - dy * 140.0).clamp(0.0, self.max_scroll());
@@ -2026,7 +2264,7 @@ fn default_subs(video: &Path, subs: &[PathBuf]) -> usize {
 }
 
 pub fn show_in_explorer(path: &Path) {
-    let _ = std::process::Command::new("explorer.exe").arg(format!("/select,{}", path.display())).spawn();
+    plume_ui::folder::show(path);
 }
 
 /// Splits a command line the way Windows does for simple quoted paths.

@@ -8,6 +8,7 @@
 //!   {"cmd":"type","text":"…"}                    text in the open field
 //!   {"cmd":"key","vk":13}                        a key in the open field (Enter closes it)
 //!   {"cmd":"wheel","x":600,"y":400,"dy":-3}      the mouse wheel
+//!   {"cmd":"leave"}                              the mouse leaves the window (no hover left in a screenshot)
 //!   {"cmd":"env","key":"PLUME_TEST_FOLDER","value":"…"}   what the next folder dialog answers
 //!   {"cmd":"wait","timeout":30}                  waits until no backup runs or waits (and no restore)
 //!   {"cmd":"schedules"}                          checks the schedules now
@@ -137,6 +138,10 @@ fn run(sender: &Sender, line: &str) -> String {
             "wheel" => {
                 let p = pt(cmd["x"].as_f64().unwrap_or(0.0) as f32, cmd["y"].as_f64().unwrap_or(0.0) as f32);
                 app.event(Event::Wheel { p, dx: 0.0, dy: cmd["dy"].as_f64().unwrap_or(-1.0) as f32, mods: Mods::default() }, cx);
+                json!({ "ok": true })
+            }
+            "leave" => {
+                app.event(Event::MouseLeave, cx);
                 json!({ "ok": true })
             }
             "schedules" => {

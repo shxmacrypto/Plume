@@ -6,8 +6,8 @@
 
 <p align="center">
   <b>Light, native apps for Windows, with one look.</b><br>
-  A web browser, a file explorer, a music player and remote control from your phone (a mail app is coming), written in Rust, installed and updated together.<br>
-  <i>Des applications légères et natives pour Windows : un navigateur, un explorateur de fichiers, un lecteur de musique, le contrôle du PC depuis le téléphone, et bientôt une messagerie.</i>
+  A web browser, a file explorer, a music player, a video editor, a photo editor, remote control from your phone and more (a mail app is coming), written in Rust, installed and updated together.<br>
+  <i>Des applications légères et natives pour Windows : un navigateur, un explorateur de fichiers, un lecteur de musique, un éditeur vidéo, un éditeur photo, le contrôle du PC depuis le téléphone et plus, et bientôt une messagerie.</i>
 </p>
 
 <p align="center">
@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/brand/family.png" width="560" alt="The Plume Suite family: Plume Web, Plume FEx, Plume Mail, Plume Viewer, Plume Music and the eleven tools">
+  <img src="assets/brand/family.png" width="560" alt="The Plume Suite family: Plume Web, Plume FEx, Plume Mail, Plume Viewer, Plume Music and the tools">
 </p>
 
 ---
@@ -42,6 +42,10 @@
 | **[Plume PDF](apps/pdf)** | Read, search, highlight, annotate, sign, fill, merge, split and reorder PDF files. |
 | **[Plume Calendar](apps/calendar)** | Month, week, day and agenda views, recurring events, reminders, `.ics` files and subscribed calendars. |
 | **[Plume Convert](apps/convert)** | Drop a video, song or picture and get it for phone, for Discord (10/25/50 MB), as a GIF, audio only or another picture format. |
+| **[Plume Notepad](apps/notepad)** | Replaces Windows Notepad: tabs that come back after a restart, find and replace with regular expressions, every encoding, huge files in a blink, and sticky pads that stay on top. |
+| **[Plume Cut](apps/cut)** | A video editor with a timeline (video, text, overlay, sound and music tracks), cuts, text, transitions, colour and speed, exported in 9:16, 16:9 or 1:1 with the graphics card. |
+| **[Plume Create](apps/create)** | Photo editing and graphic design in one app: layers, crop, adjustments and looks, background remover, text effects, templates for stories and posts. |
+| **[Plume Boost](apps/boost)** | Measured Windows performance tweaks and graphics card tuning (NVIDIA, AMD, Intel Arc) with a keep-or-revert countdown, a stability test and a crash guard; every change undoable and backed up with Plume Backup. |
 | **[Plume Mail](apps/mail)** *(coming soon)* | A mail app for IMAP accounts, Outlook.com and Microsoft 365, that never loads a remote image. It is built and tested, and joins the installer once its *Sign in with Microsoft* is registered. |
 
 Each app is a single program drawn by Windows itself (FEx and Mail use Direct2D, no web view). When a new version
@@ -116,7 +120,7 @@ Requires Windows 10 or 11 (64-bit). Plume Web also needs the **WebView2 Runtime*
 
 ## Privacy
 
-No Plume app has an account or telemetry. Everything stays in `%LOCALAPPDATA%\Plume`. Plume FEx goes online only for the SFTP servers you connect to; Plume Mail (coming soon) only talks to your mail servers (and to Microsoft's sign-in page for a Microsoft account). Plume Viewer keeps a small link to its relay (a Cloudflare Worker, [apps/viewer/relay](apps/viewer/relay)) so phones can find the PC by its ID: the relay sees the ID and the devices' addresses, never the screen, the code or the password (the screen goes directly between the two devices, encrypted); STUN (`stun.cloudflare.com`) tells the PC its public address when a session starts. Plume Music talks to YouTube Music (search, radio, and the sound through yt-dlp), to LRCLIB for lyrics, to the pages of the playlists you import, and to Apple's iTunes search for animated covers when they are on (details in [apps/music](apps/music)). Plume Drop only listens on your local network, for the phones you allow. Plume Calendar downloads only the calendars you subscribe to, and Plume Convert only FFmpeg, the first time it needs it. Plume Launcher opens your browser only when you pick its web search line. Plume Passwords, Media, Task, Clean, Backup, Clipboard and PDF make no network connection at all. Plume Suite and each app check this repository's latest release at start (the same request as below). Plume Web only goes online when you ask it to, plus:
+No Plume app has an account or telemetry. Everything stays in `%LOCALAPPDATA%\Plume`. Plume FEx goes online only for the SFTP servers you connect to; Plume Mail (coming soon) only talks to your mail servers (and to Microsoft's sign-in page for a Microsoft account). Plume Viewer keeps a small link to its relay (a Cloudflare Worker, [apps/viewer/relay](apps/viewer/relay)) so phones can find the PC by its ID: the relay sees the ID and the devices' addresses, never the screen, the code or the password (the screen goes directly between the two devices, encrypted); STUN (`stun.cloudflare.com`) tells the PC its public address when a session starts. Plume Music talks to YouTube Music (search, radio, and the sound through yt-dlp), to LRCLIB for lyrics, to the pages of the playlists you import, and to Apple's iTunes search for animated covers when they are on (details in [apps/music](apps/music)). Plume Drop only listens on your local network, for the phones you allow. Plume Calendar downloads only the calendars you subscribe to, and Plume Convert and Plume Cut only FFmpeg, the first time they need it. Plume Launcher opens your browser only when you pick its web search line. Plume Passwords, Media, Task, Clean, Backup, Clipboard, PDF, Notepad, Create and Boost make no network connection at all (apart from the update check). Plume Suite and each app check this repository's latest release at start (the same request as below). Plume Web only goes online when you ask it to, plus:
 
 | Request | When | Can be turned off |
 |---|---|---|
@@ -164,8 +168,8 @@ The code style is set in `rustfmt.toml` (lines up to 160 columns). `vendor/wry` 
 ## Publish a new version
 
 ```powershell
-.\release.ps1 1.0.1            # bump the version, build, commit, tag, push and publish the release
-.\release.ps1 1.0.1 -DryRun    # preview, change nothing
+.\release.ps1 1.2.0            # bump the version, build, commit, tag, push and publish the release
+.\release.ps1 1.2.0 -DryRun    # preview, change nothing
 ```
 
 1. Describe the changes under a `## 1.0.1 - YYYY-MM-DD` heading in [`CHANGELOG.md`](CHANGELOG.md), and the same in French in [`CHANGELOG.fr.md`](CHANGELOG.fr.md). The English text becomes the GitHub release notes; both are shown on the website's *Release notes* page (`site-notes.ps1`, run by the script, copies them there).
@@ -191,13 +195,14 @@ apps/fex/          Plume FEx, the file explorer (see its README)
 apps/viewer/       Plume Viewer, remote control from a phone (see its README); relay/ is its Cloudflare Worker
 apps/music/        Plume Music, the music player (see its README)
 apps/drop/ apps/launcher/ apps/passwords/ apps/media/ apps/task/ apps/clean/ apps/backup/ apps/clipboard/
-apps/pdf/ apps/calendar/ apps/convert/
-                   the eleven tools, one native program each (each README lists what it does and how it is tested)
+apps/pdf/ apps/calendar/ apps/convert/ apps/notepad/ apps/cut/ apps/create/ apps/boost/
+                   the tools, one native program each (each README lists what it does and how it is tested)
 apps/mail/         Plume Mail, the mail app (see its README; not in the installer yet)
 crates/plume-ui/   the native interface kit of every app but the browser (Win32, Direct2D, DirectWrite)
 crates/fex-core/   FEx without interface: listing, index, change journal, query language
 crates/mail-core/  Mail without interface: IMAP, SMTP, messages, OAuth, the kept mailbox
 crates/plume-update/  the update check and download shared by every app
+crates/plume-defaults/  "Set as default": the file types an app can open instead of Windows' own apps
 launcher/          PlumeSetup.exe: holds the programs and installs, updates and removes them
 assets/brand/      every logo and icon (SVG sources, PNG, ICO)
 tools/             icon_res.rs (icons and version info of every .exe), site-notes.ps1 (release notes for the website)

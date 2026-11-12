@@ -12,14 +12,11 @@ use std::{
     time::{Duration, Instant},
 };
 use windows::{
-    Win32::{
-        Graphics::Imaging::{
-            GUID_WICPixelFormat32bppPBGRA, IWICBitmapSource, IWICImagingFactory, WICBitmapDitherTypeNone, WICBitmapPaletteTypeMedianCut,
-            WICDecodeMetadataCacheOnLoad,
-        },
-        UI::WindowsAndMessaging::{IDYES, MB_DEFBUTTON2, MB_ICONQUESTION, MB_YESNO, MessageBoxW},
+    Win32::Graphics::Imaging::{
+        GUID_WICPixelFormat32bppPBGRA, IWICBitmapSource, IWICImagingFactory, WICBitmapDitherTypeNone, WICBitmapPaletteTypeMedianCut,
+        WICDecodeMetadataCacheOnLoad,
     },
-    core::{HSTRING, Interface},
+    core::Interface,
 };
 
 pub const SITE: &str = "https://plumeweb.netlify.app/";
@@ -42,6 +39,10 @@ const LOGOS: [&[u8]; COUNT + 1] = [
     include_bytes!("../../../assets/brand/plume-pdf-256.png"),
     include_bytes!("../../../assets/brand/plume-calendar-256.png"),
     include_bytes!("../../../assets/brand/plume-convert-256.png"),
+    include_bytes!("../../../assets/brand/plume-notepad-256.png"),
+    include_bytes!("../../../assets/brand/plume-cut-256.png"),
+    include_bytes!("../../../assets/brand/plume-create-256.png"),
+    include_bytes!("../../../assets/brand/plume-boost-256.png"),
     include_bytes!("../../../assets/brand/plume-suite-256.png"),
 ];
 /// Le logo de Plume Suite (dans la barre de titre).
@@ -60,10 +61,16 @@ pub enum Id {
     Install(usize),
     Open(usize),
     Remove(usize),
+    /// "Set as default": the app registers its file types, then Windows' Default apps page opens.
+    SetDefault(usize),
     Update,
     Check,
     Site,
     Notes,
+    /// The removal dialog: confirm, cancel, and the dimmed window behind it (clicks there do nothing).
+    DialogOk,
+    DialogCancel,
+    DialogDim,
 }
 
 /// Où en sont les mises à jour de la suite.
@@ -103,6 +110,16 @@ pub struct Hub {
     view: Rect,
     /// Le haut et le bas de chaque carte dans la liste (sans le défilement), pour la montrer (`reveal`).
     cards: [(f32, f32); COUNT],
+    /// The application whose removal is being confirmed (dialog open).
+    pub confirm: Option<usize>,
+    /// What Windows opens the app's file types with (None: the app is not installed, or opens no files).
+    pub defaults: [Option<plume_defaults::State>; COUNT],
+    /// The first "Set as default": what Windows will ask, explained before its page opens (dialog open).
+    pub explain: Option<usize>,
+    /// The app registering its file types (its pill says "Opening…").
+    pub defaulting: Option<usize>,
+    /// The last Default apps page opened (with PLUME_DEFAULTS_ROOT, the tests: only noted, never opened).
+    pub settings_link: Option<String>,
 }
 
 /// Décode un PNG intégré au programme en image prête pour Direct2D.
@@ -142,6 +159,11 @@ impl Hub {
             content_h: 0.0,
             view: rect(0.0, 0.0, 0.0, 0.0),
             cards: [(0.0, 0.0); COUNT],
+            confirm: None,
+            defaults: [None; COUNT],
+            explain: None,
+            defaulting: None,
+            settings_link: None,
         };
         h.refresh();
         if updated {
@@ -153,9 +175,46 @@ impl Hub {
     }
 
     pub fn refresh(&mut self) {
+        let root = plume_defaults::Root::from_env();
         for (i, app) in ALL.iter().enumerate() {
             self.installed[i] = app.installed();
+            self.defaults[i] = app.defaults().filter(|_| self.installed[i]).map(|spec| plume_defaults::state(spec, &root));
         }
+    }
+
+    /// The app claims its file types (`--register-defaults`), then Windows' Default apps page opens on it: only
+    /// the user can make it the default there ("Set default").
+    fn set_default(&mut self, i: usize, cx: &mut Cx) {
+        if self.defaulting.is_some() {
+            return;
+        }
+        self.defaulting = Some(i);
+        cx.repaint();
+        let sender = self.win.sender();
+        std::thread::spawn(move || {
+            let r = apps::run_app(ALL[i], &["--register-defaults"]);
+            sender.send(move |h, cx| {
+                if let Some(hub) = h.as_any().downcast_mut::<Hub>() {
+                    hub.defaulting = None;
+                    let s = hub.s;
+                    match (r, ALL[i].defaults()) {
+                        (Ok(0), Some(spec)) => {
+                            let link = spec.settings_link();
+                            // the tests write under a test key: Windows' page would show the real state, so it stays shut
+                            if !plume_defaults::Root::from_env().is_test() {
+                                hub.win.open(&link);
+                            }
+                            hub.settings_link = Some(link);
+                            hub.say(s.default_opened.to_string(), cx);
+                        }
+                        (Ok(code), _) => hub.say(fill(s.failed, &[("e", &code.to_string())]), cx),
+                        (Err(e), _) => hub.say(fill(s.failed, &[("e", &e)]), cx),
+                    }
+                    hub.refresh();
+                    cx.repaint();
+                }
+            });
+        });
     }
 
     /// Fait défiler la liste pour que la carte de l'application `i` soit entièrement visible.
@@ -328,20 +387,29 @@ impl Hub {
                 if ALL[i] == App::Web {
                     return self.run(i, false, cx);
                 }
-                let text = fill(self.s.confirm_remove, &[("app", ALL[i].name())]);
-                let title = self.s.title;
-                cx.after(move |w| {
-                    let yes =
-                        unsafe { MessageBoxW(Some(w.hwnd), &HSTRING::from(text), &HSTRING::from(title), MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) } == IDYES;
-                    if yes {
-                        w.with(|h, cx| {
-                            if let Some(hub) = h.as_any().downcast_mut::<Hub>() {
-                                hub.run(i, false, cx);
-                            }
-                        });
-                    }
-                });
+                self.confirm = Some(i);
             }
+            Id::SetDefault(i) => {
+                // the first time, what Windows will ask is said before its page opens
+                if apps::defaults_explained() {
+                    self.set_default(i, cx);
+                } else {
+                    self.explain = Some(i);
+                }
+            }
+            Id::DialogOk => {
+                if let Some(i) = self.explain.take() {
+                    apps::set_defaults_explained();
+                    self.set_default(i, cx);
+                } else if let Some(i) = self.confirm.take() {
+                    self.run(i, false, cx);
+                }
+            }
+            Id::DialogCancel => {
+                self.confirm = None;
+                self.explain = None;
+            }
+            Id::DialogDim => {}
             Id::Update => match self.upd {
                 Upd::Failed(_) => {
                     self.check();
@@ -382,7 +450,7 @@ impl Hub {
         };
         c.text(label, r, Font::BodyBold, ink, Align::Center);
         if let Some(id) = id {
-            let scrolled = matches!(id, Id::Install(_) | Id::Open(_) | Id::Remove(_) | Id::Update);
+            let scrolled = matches!(id, Id::Install(_) | Id::Open(_) | Id::Remove(_) | Id::SetDefault(_) | Id::Update);
             if !scrolled || (r.y >= self.view.y && r.bottom() <= self.view.bottom()) {
                 self.hits.add(r, id);
             }
@@ -452,11 +520,11 @@ impl Hub {
         let t = self.theme.clone();
         let s = self.s;
         let app = ALL[i];
-        let hot = matches!(self.hover, Some(Id::Install(k) | Id::Open(k) | Id::Remove(k)) if k == i);
+        let hot = matches!(self.hover, Some(Id::Install(k) | Id::Open(k) | Id::Remove(k) | Id::SetDefault(k)) if k == i);
         c.fill_round(card, 18.0, if hot { t.card.mix(t.t1, 0.03) } else { t.card });
         c.stroke_round(card, 18.0, t.sep, 1.0);
-        self.logo(c, i, rect(card.x + 18.0, card.y + 18.0, 56.0, 56.0));
-        let x = card.x + 92.0;
+        self.logo(c, i, rect(card.x + 20.0, card.y + 20.0, 56.0, 56.0));
+        let x = card.x + 96.0;
         let text_w = (card.right() - 20.0 - x).max(60.0);
         // le nom et l'état
         let installed = self.installed[i];
@@ -476,11 +544,18 @@ impl Hub {
         // ce que fait l'application, sur deux lignes au plus
         let desc = rect(x, card.y + 44.0, text_w, 38.0);
         c.clip(desc);
-        c.text_block(s.desc[i], desc, Font::Small, t.t2);
+        // une application qui en demande une autre le dit tant qu'elle n'est pas installée
+        let needs: Vec<&str> = app.needs().iter().filter(|n| !self.installed[**n as usize]).map(|n| n.name()).collect();
+        let text = if installed || needs.is_empty() {
+            s.desc[i].to_string()
+        } else {
+            format!("{} {}", s.desc[i], fill(s.installs_too, &[("apps", &needs.join(", "))]))
+        };
+        c.text_block(&text, desc, Font::Small, t.t2);
         c.unclip();
         // en bas à droite, les boutons
-        let mut right = card.right() - 18.0;
-        let by = card.bottom() - 18.0 - 32.0;
+        let mut right = card.right() - 20.0;
+        let by = card.bottom() - 20.0 - 32.0;
         match self.busy {
             Some((k, install)) if k == i => {
                 let label = if install { s.installing } else { s.removing };
@@ -499,6 +574,27 @@ impl Hub {
                 if installed {
                     let rw = c.text_width(s.remove, Font::BodyBold) + 32.0;
                     self.button(c, rect(right - 10.0 - rw, by, rw, 32.0), s.remove, false, (!others_busy).then_some(Id::Remove(i)));
+                    right -= 10.0 + rw;
+                }
+                // bottom left, under the logo: Windows opens its files with it, or the way to ask for it
+                if let Some(state) = self.defaults[i] {
+                    let left = card.x + 20.0;
+                    if state == plume_defaults::State::Default {
+                        let pw = c.text_width(s.is_default, Font::BodyBold) + 32.0;
+                        if left + pw + 10.0 <= right {
+                            let pill = rect(left, by, pw, 32.0);
+                            c.fill_round(pill, 16.0, t.green.fade(0.16));
+                            c.text(s.is_default, pill, Font::BodyBold, t.green, Align::Center);
+                        }
+                    } else {
+                        let opening = self.defaulting == Some(i);
+                        let label = if opening { s.opening } else { s.set_default };
+                        let pw = c.text_width(label, Font::BodyBold) + 32.0;
+                        if left + pw + 10.0 <= right {
+                            let id = (!opening && self.defaulting.is_none() && !others_busy).then_some(Id::SetDefault(i));
+                            self.button(c, rect(left, by, pw, 32.0), label, false, id);
+                        }
+                    }
                 }
             }
         }
@@ -535,6 +631,60 @@ impl Hub {
             self.hits.add(r, id);
             x -= 18.0;
         }
+    }
+
+    /// Removing an application, or what Windows will ask before "Set as default": a centred card over the dimmed
+    /// window, Cancel then Remove (red) or Continue (accent) on the right.
+    fn paint_confirm(&mut self, c: &mut Canvas, cx: &PaintCx) {
+        let s = self.s;
+        let (text, ok_label, danger) = match (self.confirm, self.explain) {
+            (Some(i), _) => {
+                let users: Vec<&str> = ALL[i].needed_by().iter().map(|a| a.name()).collect();
+                let text = if users.is_empty() {
+                    fill(s.confirm_remove, &[("app", ALL[i].name())])
+                } else {
+                    fill(s.confirm_remove_needed, &[("app", ALL[i].name()), ("users", &users.join(", "))])
+                };
+                (text, s.remove, true)
+            }
+            (None, Some(i)) => (fill(s.default_explain, &[("app", ALL[i].name())]), s.continue_, false),
+            _ => return,
+        };
+        let t = self.theme.clone();
+        let dim = rect(0.0, m::TITLE_H, cx.w, (cx.h - m::TITLE_H).max(0.0));
+        c.fill(dim, Color::hexa(0x000000, if t.dark { 0.5 } else { 0.28 }));
+        self.hits.add(dim, Id::DialogDim);
+        let (title, body) = text.split_once("\n\n").unwrap_or((text.as_str(), ""));
+        let w = (cx.w - 48.0).min(if danger { 440.0 } else { 480.0 });
+        let body_h = c.text_height(body, w - 48.0, Font::Body);
+        let h = 24.0 + 24.0 + 8.0 + body_h + 24.0 + 36.0 + 24.0;
+        let card = rect(((cx.w - w) / 2.0).round(), ((cx.h - h) * 0.42).round().max(m::TITLE_H + 16.0), w, h);
+        c.fill_round(card, 20.0, t.solid);
+        c.stroke_round(card, 20.0, t.ring, 1.0);
+        self.hits.add(card, Id::DialogDim);
+        c.text(title, rect(card.x + 24.0, card.y + 24.0, w - 48.0, 24.0), Font::Large, t.t1, Align::Left);
+        c.text_block(body, rect(card.x + 24.0, card.y + 56.0, w - 48.0, body_h), Font::Body, t.t2);
+        let by = card.bottom() - 24.0 - 36.0;
+        let ow = c.text_width(ok_label, Font::BodyBold) + 40.0;
+        let ok = rect(card.right() - 24.0 - ow, by, ow, 36.0);
+        let hot = self.hover == Some(Id::DialogOk);
+        let down = hot && self.pressed == Some(Id::DialogOk);
+        let base = if danger { t.red } else { t.accent };
+        let fill_ok = if down {
+            base.mix(Color::hex(0), 0.18)
+        } else if hot {
+            base.mix(Color::hex(0xffffff), 0.1)
+        } else {
+            base
+        };
+        c.fill_round(ok, 18.0, fill_ok);
+        c.text(ok_label, ok, Font::BodyBold, Color::hex(0xffffff), Align::Center);
+        self.hits.add(ok, Id::DialogOk);
+        let cw = c.text_width(s.cancel, Font::BodyBold) + 40.0;
+        let cancel = rect(ok.x - 12.0 - cw, by, cw, 36.0);
+        c.fill_round(cancel, 18.0, if self.hover == Some(Id::DialogCancel) { t.fill2 } else { t.fill });
+        c.text(s.cancel, cancel, Font::BodyBold, t.t1, Align::Center);
+        self.hits.add(cancel, Id::DialogCancel);
     }
 
     fn paint_toast(&mut self, c: &mut Canvas, cx: &PaintCx) {
@@ -592,6 +742,7 @@ impl Handler for Hub {
         self.paint_footer(c, cx);
         self.paint_head(c, cx);
         self.paint_toast(c, cx);
+        self.paint_confirm(c, cx);
     }
 
     fn event(&mut self, ev: Event, cx: &mut Cx) {
@@ -622,6 +773,12 @@ impl Handler for Hub {
                 }
                 cx.repaint();
             }
+            Event::Key { vk: 0x1B, .. } if self.confirm.is_some() || self.explain.is_some() => {
+                self.confirm = None;
+                self.explain = None;
+                cx.repaint();
+            }
+            Event::Wheel { .. } | Event::Key { .. } if self.confirm.is_some() || self.explain.is_some() => {}
             Event::Wheel { dy, .. } => {
                 self.scroll -= dy * 72.0;
                 self.clamp_scroll();
@@ -681,7 +838,7 @@ impl Handler for Hub {
 
     fn cursor(&self, p: Pt) -> Cursor {
         match self.hits.at(p) {
-            Some(Id::Min | Id::Max | Id::Close) | None => Cursor::Arrow,
+            Some(Id::Min | Id::Max | Id::Close | Id::DialogDim) | None => Cursor::Arrow,
             Some(_) => Cursor::Hand,
         }
     }

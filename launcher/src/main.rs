@@ -37,25 +37,107 @@ struct One {
     /// Lancé avant de retirer le programme : il défait ce qu'il a fait dans Windows (démarrage avec Windows, « Ouvrir
     /// avec », dossiers…) et quitte s'il tournait près de l'horloge.
     unregister: &'static str,
+    /// Les applications dont elle a besoin : installées avec elle (`--install boost` installe aussi Plume Backup).
+    needs: &'static [&'static str],
 }
 
 /// Dans l'ordre de Plume Suite (et des mises à jour). Plume Mail en dernier : il peut manquer à cette version.
-static ONES: [One; 15] = [
-    One { key: "fex", name: "Plume FEx", exe: "plume-fex.exe", bytes: include_bytes!(env!("PLUME_FEX_EXE")), unregister: "--unregister" },
-    One { key: "viewer", name: "Plume Viewer", exe: "plume-viewer.exe", bytes: include_bytes!(env!("PLUME_VIEWER_EXE")), unregister: "--unregister" },
-    One { key: "music", name: "Plume Music", exe: "plume-music.exe", bytes: include_bytes!(env!("PLUME_MUSIC_EXE")), unregister: "" },
-    One { key: "drop", name: "Plume Drop", exe: "plume-drop.exe", bytes: include_bytes!(env!("PLUME_DROP_EXE")), unregister: "" },
-    One { key: "launcher", name: "Plume Launcher", exe: "plume-launcher.exe", bytes: include_bytes!(env!("PLUME_LAUNCHER_EXE")), unregister: "--unregister" },
-    One { key: "passwords", name: "Plume Passwords", exe: "plume-passwords.exe", bytes: include_bytes!(env!("PLUME_PASSWORDS_EXE")), unregister: "--unregister" },
-    One { key: "media", name: "Plume Media", exe: "plume-media.exe", bytes: include_bytes!(env!("PLUME_MEDIA_EXE")), unregister: "--unregister-open-with" },
-    One { key: "task", name: "Plume Task", exe: "plume-task.exe", bytes: include_bytes!(env!("PLUME_TASK_EXE")), unregister: "" },
-    One { key: "clean", name: "Plume Clean", exe: "plume-clean.exe", bytes: include_bytes!(env!("PLUME_CLEAN_EXE")), unregister: "" },
-    One { key: "backup", name: "Plume Backup", exe: "plume-backup.exe", bytes: include_bytes!(env!("PLUME_BACKUP_EXE")), unregister: "--unregister" },
-    One { key: "clipboard", name: "Plume Clipboard", exe: "plume-clipboard.exe", bytes: include_bytes!(env!("PLUME_CLIPBOARD_EXE")), unregister: "--unregister" },
-    One { key: "pdf", name: "Plume PDF", exe: "plume-pdf.exe", bytes: include_bytes!(env!("PLUME_PDF_EXE")), unregister: "" },
-    One { key: "calendar", name: "Plume Calendar", exe: "plume-calendar.exe", bytes: include_bytes!(env!("PLUME_CALENDAR_EXE")), unregister: "--unregister" },
-    One { key: "convert", name: "Plume Convert", exe: "plume-convert.exe", bytes: include_bytes!(env!("PLUME_CONVERT_EXE")), unregister: "" },
-    One { key: "mail", name: "Plume Mail", exe: "plume-mail.exe", bytes: MAIL, unregister: "" },
+static ONES: [One; 19] = [
+    One { key: "fex", name: "Plume FEx", exe: "plume-fex.exe", bytes: include_bytes!(env!("PLUME_FEX_EXE")), unregister: "--unregister", needs: &[] },
+    One {
+        key: "viewer",
+        name: "Plume Viewer",
+        exe: "plume-viewer.exe",
+        bytes: include_bytes!(env!("PLUME_VIEWER_EXE")),
+        unregister: "--unregister",
+        needs: &[],
+    },
+    One { key: "music", name: "Plume Music", exe: "plume-music.exe", bytes: include_bytes!(env!("PLUME_MUSIC_EXE")), unregister: "", needs: &[] },
+    One { key: "drop", name: "Plume Drop", exe: "plume-drop.exe", bytes: include_bytes!(env!("PLUME_DROP_EXE")), unregister: "", needs: &[] },
+    One {
+        key: "launcher",
+        name: "Plume Launcher",
+        exe: "plume-launcher.exe",
+        bytes: include_bytes!(env!("PLUME_LAUNCHER_EXE")),
+        unregister: "--unregister",
+        needs: &[],
+    },
+    One {
+        key: "passwords",
+        name: "Plume Passwords",
+        exe: "plume-passwords.exe",
+        bytes: include_bytes!(env!("PLUME_PASSWORDS_EXE")),
+        unregister: "--unregister",
+        needs: &[],
+    },
+    One {
+        key: "media",
+        name: "Plume Media",
+        exe: "plume-media.exe",
+        bytes: include_bytes!(env!("PLUME_MEDIA_EXE")),
+        unregister: "--unregister-open-with",
+        needs: &[],
+    },
+    One { key: "task", name: "Plume Task", exe: "plume-task.exe", bytes: include_bytes!(env!("PLUME_TASK_EXE")), unregister: "", needs: &[] },
+    One { key: "clean", name: "Plume Clean", exe: "plume-clean.exe", bytes: include_bytes!(env!("PLUME_CLEAN_EXE")), unregister: "", needs: &[] },
+    One {
+        key: "backup",
+        name: "Plume Backup",
+        exe: "plume-backup.exe",
+        bytes: include_bytes!(env!("PLUME_BACKUP_EXE")),
+        unregister: "--unregister",
+        needs: &[],
+    },
+    One {
+        key: "clipboard",
+        name: "Plume Clipboard",
+        exe: "plume-clipboard.exe",
+        bytes: include_bytes!(env!("PLUME_CLIPBOARD_EXE")),
+        unregister: "--unregister",
+        needs: &[],
+    },
+    One { key: "pdf", name: "Plume PDF", exe: "plume-pdf.exe", bytes: include_bytes!(env!("PLUME_PDF_EXE")), unregister: "", needs: &[] },
+    One {
+        key: "calendar",
+        name: "Plume Calendar",
+        exe: "plume-calendar.exe",
+        bytes: include_bytes!(env!("PLUME_CALENDAR_EXE")),
+        unregister: "--unregister",
+        needs: &[],
+    },
+    One { key: "convert", name: "Plume Convert", exe: "plume-convert.exe", bytes: include_bytes!(env!("PLUME_CONVERT_EXE")), unregister: "", needs: &[] },
+    // Plume Notepad rend notepad.exe à Windows (et retire son démarrage avec Windows et ses types de fichiers)
+    One {
+        key: "notepad",
+        name: "Plume Notepad",
+        exe: "plume-notepad.exe",
+        bytes: include_bytes!(env!("PLUME_NOTEPAD_EXE")),
+        unregister: "--unregister",
+        needs: &[],
+    },
+    One { key: "cut", name: "Plume Cut", exe: "plume-cut.exe", bytes: include_bytes!(env!("PLUME_CUT_EXE")), unregister: "", needs: &[] },
+    One { key: "create", name: "Plume Create", exe: "plume-create.exe", bytes: include_bytes!(env!("PLUME_CREATE_EXE")), unregister: "", needs: &[] },
+    // Plume Boost remet chaque réglage de Windows qu'il avait changé
+    One {
+        key: "boost",
+        name: "Plume Boost",
+        exe: "plume-boost.exe",
+        bytes: include_bytes!(env!("PLUME_BOOST_EXE")),
+        unregister: "--undo-all",
+        needs: &["backup"],
+    },
+    One { key: "mail", name: "Plume Mail", exe: "plume-mail.exe", bytes: MAIL, unregister: "", needs: &[] },
+];
+/// Celles que Plume Suite peut faire ouvrir les fichiers à la place des applications de Windows (« Set as default »,
+/// crates/plume-defaults) : nom dans RegisteredApplications, clé de leurs Capabilities, leurs ProgID. Avant de les
+/// retirer, `--unregister-defaults` défait tout ; [`defaults_cleanup`] vérifie ensuite.
+const DEFAULTS: [(&str, &str, &str, &[&str]); 6] = [
+    ("media", "Plume Media", r"Software\Plume\Media", &["PlumeMedia.Photo", "PlumeMedia.Video"]),
+    ("music", "Plume Music", r"Software\Plume\Music", &["PlumeMusic.Audio"]),
+    ("pdf", "Plume PDF", r"Software\Plume\PDF", &["PlumePDF.Document"]),
+    ("notepad", "Plume Notepad", r"Software\Plume\Notepad", &["PlumeNotepad.txt"]),
+    ("cut", "Plume Cut", r"Software\Plume\Cut", &["PlumeCut.Project"]),
+    ("create", "Plume Create", r"Software\Plume\Create", &["PlumeCreate.Project"]),
 ];
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const NO_WINDOW: u32 = 0x0800_0000;
@@ -144,6 +226,13 @@ impl App {
             App::Web => "plume.exe",
             App::One(i) => ONES[i].exe,
         })
+    }
+    /// Les applications à installer avec elle.
+    fn needs(self) -> &'static [&'static str] {
+        match self {
+            App::Web => &[],
+            App::One(i) => ONES[i].needs,
+        }
     }
     fn installed(self, dir: &Path) -> bool {
         self.exe(dir).is_file()
@@ -274,6 +363,24 @@ fn fex_cleanup() {
     }
 }
 
+/// Une application qui ouvrait des fichiers à la place de celles de Windows est retirée : ses types de fichiers, ses
+/// Capabilities et son entrée dans RegisteredApplications s'en vont même si son `--unregister-defaults` n'a pas pu
+/// tourner. Sans son ProgID, Windows revient de lui-même à ses propres applications pour ces fichiers.
+fn defaults_cleanup(name: &str, key: &str, progids: &[&str]) {
+    unsafe {
+        RegDeleteKeyValueW(HKCU, wide(r"Software\RegisteredApplications").as_ptr(), wide(name).as_ptr());
+        let caps = format!(r"{key}\Capabilities");
+        RegDeleteTreeW(HKCU, wide(&caps).as_ptr());
+        RegDeleteKeyW(HKCU, wide(&caps).as_ptr());
+        // (les clés parentes restent : `--unregister-defaults` les retire quand elles sont vides)
+        for id in progids {
+            let k = format!(r"Software\Classes\{id}");
+            RegDeleteTreeW(HKCU, wide(&k).as_ptr());
+            RegDeleteKeyW(HKCU, wide(&k).as_ptr());
+        }
+    }
+}
+
 /// Retire une application. Rend un code de sortie (0 : retirée).
 fn uninstall(app: App, dir: &Path, quiet: bool, fr: bool) -> i32 {
     if !app.installed(dir) {
@@ -295,6 +402,11 @@ fn uninstall(app: App, dir: &Path, quiet: bool, fr: bool) -> i32 {
         App::One(i) => {
             // Plume FEx rend les dossiers à l'Explorateur ; celles qui tournent près de l'horloge quittent et ne
             // démarrent plus avec Windows ; Plume Media n'est plus proposé dans « Ouvrir avec »
+            // Celles qui ouvraient des fichiers à la place de Windows les lui rendent d'abord.
+            let defaults = DEFAULTS.iter().find(|d| d.0 == app.key());
+            if defaults.is_some() && !sandbox() {
+                run(&app.exe(dir), &["--unregister-defaults"]);
+            }
             if !ONES[i].unregister.is_empty() && !sandbox() {
                 run(&app.exe(dir), &[ONES[i].unregister]);
             }
@@ -324,6 +436,12 @@ fn uninstall(app: App, dir: &Path, quiet: bool, fr: bool) -> i32 {
             if app.key() == "fex" && !sandbox() {
                 fex_cleanup();
             }
+            // de même, les photos, la musique, les PDF reviennent aux applications de Windows
+            if let Some((_, name, key, progids)) = defaults
+                && !sandbox()
+            {
+                defaults_cleanup(name, key, progids);
+            }
         }
     }
     if dir.join("plume-suite.exe").is_file() && !sandbox() {
@@ -348,7 +466,11 @@ fn uninstall_all(dir: &Path, quiet: bool, fr: bool) -> i32 {
         let code = uninstall(app, dir, true, fr);
         if code != 0 {
             if !quiet {
-                let msg = if fr { format!("Fermez {}, puis relancez la désinstallation.", app.name()) } else { format!("Close {}, then uninstall again.", app.name()) };
+                let msg = if fr {
+                    format!("Fermez {}, puis relancez la désinstallation.", app.name())
+                } else {
+                    format!("Close {}, then uninstall again.", app.name())
+                };
                 alert(&msg, 0x30);
             }
             return code;
@@ -397,7 +519,9 @@ fn main() {
     let written = write_suite(&dir).and_then(|r| {
         running |= r;
         for app in apps() {
-            if app.installed(&dir) || install == Some(app) {
+            // celle demandée, et celles dont elle a besoin (Plume Boost garde ses réglages avec Plume Backup)
+            let needed = install.is_some_and(|i| i.needs().contains(&app.key()));
+            if app.installed(&dir) || install == Some(app) || needed {
                 running |= app.write(&dir)?;
             }
         }

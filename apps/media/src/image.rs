@@ -271,6 +271,18 @@ fn gif_frames(wic: &IWICImagingFactory, dec: &IWICBitmapDecoder, count: u32, max
     }
 }
 
+/// A picture held in memory (the app's logo), at most `max` pixels on its long side.
+pub fn decode_bytes(bytes: &[u8], max: u32) -> Option<Px> {
+    unsafe {
+        let wic = wic()?;
+        let stream = wic.CreateStream().ok()?;
+        stream.InitializeFromMemory(bytes).ok()?;
+        let dec = wic.CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand).ok()?;
+        let frame: IWICBitmapSource = windows::core::Interface::cast(&dec.GetFrame(0).ok()?).ok()?;
+        Some(pixels(&frame)?.scaled_to(max.max(1)))
+    }
+}
+
 /// Size of a picture as shown (after its orientation), read from the header only.
 pub fn size_of(path: &Path) -> Option<(u32, u32)> {
     let wic = wic()?;

@@ -26,8 +26,8 @@ use std::{
 use windows::Win32::Graphics::Imaging::IWICImagingFactory;
 
 pub const TICK: usize = 1;
-pub const TOP_H: f32 = 56.0;
-pub const ROW_H: f32 = 34.0;
+pub const TOP_H: f32 = 48.0;
+pub const ROW_H: f32 = 40.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum View {
@@ -112,51 +112,66 @@ pub enum Modal {
     Elevate,
 }
 
+/// The icon's lime: Plume Clean's accent.
+pub const LIME: u32 = 0x84cc16;
+
+/// The colors of the window: Plume's theme (plume_ui::Theme), with the icon's lime as the accent.
 #[derive(Clone)]
 pub struct Pal {
     pub dark: bool,
     pub bg: Color,
     pub card: Color,
-    pub line: Color,
+    pub solid: Color,
+    pub solid2: Color,
+    pub fill: Color,
+    pub fill2: Color,
+    pub hover: Color,
     pub t1: Color,
     pub t2: Color,
     pub t3: Color,
-    pub accent: Color,
-    pub on_accent: Color,
+    pub t4: Color,
+    /// Hairlines between things and around cards.
+    pub line: Color,
+    pub ring: Color,
+    pub hdr1: Color,
+    pub hdr2: Color,
+    pub close_hover: Color,
+    pub red: Color,
     pub warn: Color,
-    pub bar: Color,
+    /// Buttons, ticks, switches, selection.
+    pub accent: Color,
+    /// The accent as text or icon on a card (darker in light mode, to stay readable).
+    pub ink: Color,
+    /// Text on the accent: lime is light, so near-black.
+    pub on_accent: Color,
 }
 
 impl Pal {
     pub fn new(dark: bool) -> Pal {
-        if dark {
-            Pal {
-                dark,
-                bg: Color::hex(0x121214),
-                card: Color::hex(0x1c1c20),
-                line: Color::hex(0xffffff).fade(0.08),
-                t1: Color::hex(0xffffff),
-                t2: Color::hex(0xb5b5bd),
-                t3: Color::hex(0x7c7c86),
-                accent: Color::hex(0x34d399),
-                on_accent: Color::hex(0x04140d),
-                warn: Color::hex(0xfbbf24),
-                bar: Color::hex(0x0c0c0e),
-            }
-        } else {
-            Pal {
-                dark,
-                bg: Color::hex(0xf6f6f8),
-                card: Color::hex(0xffffff),
-                line: Color::hex(0x000000).fade(0.08),
-                t1: Color::hex(0x111114),
-                t2: Color::hex(0x55555c),
-                t3: Color::hex(0x8a8a92),
-                accent: Color::hex(0x059669),
-                on_accent: Color::hex(0xffffff),
-                warn: Color::hex(0xb45309),
-                bar: Color::hex(0xffffff),
-            }
+        let t = plume_ui::Theme::new(dark, Some(Color::hex(LIME)));
+        Pal {
+            dark,
+            bg: t.bg,
+            card: t.card,
+            solid: t.solid,
+            solid2: t.solid2,
+            fill: t.fill,
+            fill2: t.fill2,
+            hover: t.hover,
+            t1: t.t1,
+            t2: t.t2,
+            t3: t.t3,
+            t4: t.t4,
+            line: t.sep,
+            ring: t.ring,
+            hdr1: t.hdr1,
+            hdr2: t.hdr2,
+            close_hover: t.close_hover,
+            red: t.red,
+            warn: t.orange,
+            accent: t.accent,
+            ink: if dark { Color::hex(0xa3e635) } else { Color::hex(0x4d7c0f) },
+            on_accent: Color::hex(0x1a2e05),
         }
     }
 }
@@ -587,8 +602,7 @@ impl App {
         if cfg!(feature = "test-hook") {
             return;
         }
-        let args = if p.is_dir() { format!("\"{}\"", p.display()) } else { format!("/select,\"{}\"", p.display()) };
-        let _ = std::process::Command::new("explorer.exe").raw_arg_compat(&args).spawn();
+        plume_ui::folder::show(p);
     }
 
     /// Opens a folder in Plume FEx (installed with the suite, or next to this program).
@@ -1028,17 +1042,5 @@ pub fn blocked_text(b: &Blocked) -> String {
         Blocked::NeedScan => tr("Scan a drive first").to_string(),
         Blocked::Close(name) => fill(tr("Close {name} first"), &[name]),
         Blocked::Admin => tr("Needs administrator").to_string(),
-    }
-}
-
-/// `explorer.exe` wants its arguments exactly as given (quotes after "/select,").
-trait RawArg {
-    fn raw_arg_compat(&mut self, s: &str) -> &mut Self;
-}
-
-impl RawArg for std::process::Command {
-    fn raw_arg_compat(&mut self, s: &str) -> &mut Self {
-        use std::os::windows::process::CommandExt;
-        self.raw_arg(s)
     }
 }

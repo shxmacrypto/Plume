@@ -72,6 +72,7 @@ fn french_of(en: &str) -> Option<&'static str> {
         "Cancel" => "Annuler",
         "Clear the history" => "Effacer l'historique",
         "Clear" => "Effacer",
+        "Clear the search" => "Effacer la recherche",
         "Click again to clear" => "Cliquez encore pour effacer",
         "Copied" => "Copié",
         "Copy something, then press {k} to paste it again." => "Copiez quelque chose, puis {k} pour le recoller.",
@@ -132,6 +133,7 @@ fn french_of(en: &str) -> Option<&'static str> {
         "Settings" => "Paramètres",
         "Shortcut unavailable: pick another one in Settings" => "Raccourci indisponible : choisissez-en un autre dans les paramètres",
         "Shortcut" => "Raccourci",
+        "Show all" => "Tout afficher",
         "Signature" => "Signature",
         "Snippet saved" => "Extrait enregistré",
         "Snippets" => "Extraits",
@@ -162,6 +164,37 @@ fn french_of(en: &str) -> Option<&'static str> {
         "{n} items" => "{n} éléments",
         "{n} items, newest first" => "{n} éléments, les plus récents d'abord",
         "{n} min ago" => "il y a {n} min",
+        "Password" => "Mot de passe",
+        "IP address" => "Adresse IP",
+        "Key" => "Clé",
+        "hidden" => "masqué",
+        "hidden, removed in {n} min" => "masqué, retiré dans {n} min",
+        "{n} sensitive items cleared" => "{n} éléments sensibles effacés",
+        "Pin this sensitive item?" => "Épingler cet élément sensible ?",
+        "This item ({kind}) will be kept forever instead of a short time. It stays hidden and sealed." => {
+            "Cet élément ({kind}) sera gardé pour toujours au lieu d'un court moment. Il reste masqué et scellé."
+        }
+        "Pin it" => "Épingler",
+        "Sensitive items are pinned from the main window." => "Les éléments sensibles s'épinglent depuis la fenêtre principale.",
+        "Clear sensitive items" => "Effacer les éléments sensibles",
+        "Sensitive copies" => "Copies sensibles",
+        "Shown hidden, sealed on this PC even if the history is not encrypted, and kept a short time." => {
+            "Affichées masquées, scellées sur ce PC même si l'historique n'est pas chiffré, et gardées peu de temps."
+        }
+        "Hide passwords" => "Masquer les mots de passe",
+        "One word mixing capitals, digits and symbols." => "Un mot qui mélange majuscules, chiffres et symboles.",
+        "Hide IP addresses" => "Masquer les adresses IP",
+        "Hide keys and tokens" => "Masquer les clés et jetons",
+        "API keys, tokens, JWTs and private keys." => "Clés d'API, jetons, JWT et clés privées.",
+        "Keep them for" => "Les garder pendant",
+        "Unless pinned." => "Sauf si épinglées.",
+        "5 min" => "5 min",
+        "15 min" => "15 min",
+        "1 hour" => "1 heure",
+        "8 hours" => "8 heures",
+        "Never keep sensitive items" => "Ne jamais garder les éléments sensibles",
+        "Skipped like private content." => "Ignorées comme le contenu privé.",
+        "Pinned ones too." => "Les épinglés aussi.",
         _ => return None,
     })
 }

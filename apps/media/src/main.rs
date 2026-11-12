@@ -32,6 +32,7 @@ use windows::{
 };
 
 const MARK: &str = "PlumeMediaWindow";
+pub const LOGO: &[u8] = include_bytes!("../../../assets/brand/plume-media-256.png");
 
 pub fn system_dark() -> bool {
     if let Ok(t) = std::env::var("PLUME_SUITE_THEME") {
@@ -54,6 +55,10 @@ pub fn system_dark() -> bool {
 
 fn main() {
     let raw: Vec<String> = std::env::args().skip(1).collect();
+    // --register-defaults / --unregister-defaults: Windows default app (run by Plume Suite and the installer)
+    if let Some(code) = plume_defaults::switch(&plume_defaults::MEDIA, &raw) {
+        std::process::exit(code);
+    }
     match raw.first().map(String::as_str) {
         Some("--register-open-with") => {
             let ok = openwith::register(&std::env::current_exe().unwrap_or_default());
@@ -108,6 +113,7 @@ fn main() {
     let g = gfx.clone();
     let win = window::create(&gfx, o, move |win| Box::new(ui::App::new(win, g, set))).expect("window");
     win.mark(MARK);
+    ui::pins::accept_drops(win);
     win.with(|h, cx| {
         if let Some(app) = ui::with_app(h) {
             app.scale = app.win.scale();

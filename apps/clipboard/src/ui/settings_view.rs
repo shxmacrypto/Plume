@@ -3,14 +3,14 @@
 use super::{App, Field, Hit, LIST_TOP, draw};
 use crate::{
     i18n::{fill, tr},
-    settings::{DAYS, IMAGE_MB, MAX_ITEMS},
+    settings::{DAYS, IMAGE_MB, MAX_ITEMS, SECRET_MINUTES},
 };
 use plume_ui::{Align, Canvas, Color, Font, Rect, icons, rect};
 
 impl App {
     fn group(&mut self, c: &mut Canvas, x: f32, y: f32, w: f32, title: &str) -> f32 {
         let t = self.theme();
-        draw::text(c, title, rect(x, y, w, 28.0), 17.0, 700, t.t1, Align::Left);
+        c.text(title, rect(x, y, w, 28.0), Font::Large, t.t1, Align::Left);
         y + 36.0
     }
 
@@ -31,36 +31,30 @@ impl App {
     fn switch(&mut self, c: &mut Canvas, r: Rect, on: bool, name: &'static str) {
         let t = self.theme();
         let sw = rect(r.right() - 46.0, r.y + (r.h - 26.0) / 2.0, 46.0, 26.0);
-        c.fill_round(sw, 13.0, if on { t.accent } else { t.t1.fade(0.22) });
+        c.fill_round(sw, 13.0, if on { t.accent } else { t.fill2 });
         let k = if on { sw.right() - 23.0 } else { sw.x + 3.0 };
         c.fill_round(rect(k, sw.y + 3.0, 20.0, 20.0), 10.0, Color::hex(0xffffff));
         self.hits.add(r, Hit::Toggle(name));
     }
 
-    /// A segmented choice on the right of a row.
+    /// A segmented choice on the right of a row: a pill track, the chosen segment raised.
     fn choices(&mut self, c: &mut Canvas, r: Rect, labels: &[&str], cur: usize, name: &'static str) {
         let t = self.theme();
-        let widths: Vec<f32> = labels.iter().map(|l| c.text_width(l, Font::Small) + 24.0).collect();
+        let widths: Vec<f32> = labels.iter().map(|l| c.text_width(l, Font::SmallBold) + 24.0).collect();
         let total: f32 = widths.iter().sum::<f32>() + 6.0;
         let bg = rect(r.right() - total, r.y + (r.h - 34.0) / 2.0, total, 34.0);
-        c.fill_round(bg, 17.0, t.t1.fade(0.07));
+        c.fill_round(bg, 17.0, t.fill);
         let mut x = bg.x + 3.0;
         for (i, (l, w)) in labels.iter().zip(widths).enumerate() {
             let b = rect(x, bg.y + 3.0, w, 28.0);
             let hit = Hit::Choice(name, i);
             if i == cur {
-                c.fill_round(b, 14.0, t.accent);
+                c.fill_round(b, 14.0, t.fill2.over(t.bg));
+                c.stroke_round(b.inset(0.5), 14.0, t.ring, 1.0);
             } else if self.hovered(&hit) {
-                c.fill_round(b, 14.0, t.t1.fade(0.08));
+                c.fill_round(b, 14.0, t.hover);
             }
-            let ink = if i != cur {
-                t.t1
-            } else if t.dark {
-                Color::hex(0x1a0420)
-            } else {
-                Color::hex(0xffffff)
-            };
-            c.text(l, b, Font::Small, ink, Align::Center);
+            c.text(l, b, if i == cur { Font::SmallBold } else { Font::Small }, if i == cur { t.t1 } else { t.t2 }, Align::Center);
             self.hits.add(b, hit);
             x += w;
         }
@@ -69,8 +63,8 @@ impl App {
     pub fn paint_settings(&mut self, c: &mut Canvas, content: Rect) {
         let t = self.theme();
         let area = rect(content.x, LIST_TOP, content.w, content.h - LIST_TOP);
-        let x = area.x + 28.0;
-        let w = (area.w - 56.0).min(780.0);
+        let x = area.x + 24.0;
+        let w = (area.w - 48.0).min(780.0);
         let mut y = area.y + 4.0 - self.scroll;
         let set = self.model.borrow().set.clone();
         let (autostart, hk, hk_ok) = {
@@ -88,9 +82,9 @@ impl App {
         let hit = Hit::Hotkey;
         c.fill_round(
             hr,
-            10.0,
+            18.0,
             if self.capturing {
-                t.accent.fade(0.2)
+                draw::selection(&t)
             } else if self.hovered(&hit) {
                 t.fill2
             } else {
@@ -98,7 +92,7 @@ impl App {
             },
         );
         if self.capturing {
-            c.stroke_round(hr.inset(0.5), 10.0, t.accent, 1.5);
+            c.stroke_round(hr.inset(0.5), 18.0, t.accent, 1.5);
         }
         c.text(&label, hr, Font::BodyBold, t.t1, Align::Center);
         self.hits.add(hr, hit);
@@ -145,16 +139,49 @@ impl App {
         self.pill(c, rect(r.right() - bw, r.y + 14.0, bw, 36.0), label, 2, Hit::Clear);
         y += r.h + 26.0;
 
+        // sensitive copies
+        y = self.group(c, x, y, w, tr("Sensitive copies"));
+        c.text(
+            tr("Shown hidden, sealed on this PC even if the history is not encrypted, and kept a short time."),
+            rect(x, y - 8.0, w, 22.0),
+            Font::Body,
+            t.t3,
+            Align::Left,
+        );
+        y += 22.0;
+        for (name, label, sub, on) in [
+            ("hide_passwords", tr("Hide passwords"), tr("One word mixing capitals, digits and symbols."), set.hide_passwords),
+            ("hide_ips", tr("Hide IP addresses"), "", set.hide_ips),
+            ("hide_keys", tr("Hide keys and tokens"), tr("API keys, tokens, JWTs and private keys."), set.hide_keys),
+        ] {
+            let r = self.row(c, x, y, w, label, sub);
+            self.switch(c, r, on, name);
+            y += r.h + 1.0;
+        }
+        let r = self.row(c, x, y, w, tr("Keep them for"), tr("Unless pinned."));
+        let cur = SECRET_MINUTES.iter().position(|n| *n == set.secret_minutes).unwrap_or(2);
+        self.choices(c, r, &[tr("5 min"), tr("15 min"), tr("1 hour"), tr("8 hours"), tr("1 day")], cur, "secret_minutes");
+        y += r.h + 1.0;
+        let r = self.row(c, x, y, w, tr("Never keep sensitive items"), tr("Skipped like private content."));
+        self.switch(c, r, set.never_keep_secrets, "never_keep_secrets");
+        y += r.h + 1.0;
+        let r = self.row(c, x, y, w, tr("Clear sensitive items"), tr("Pinned ones too."));
+        let label = tr("Clear");
+        let bw = Self::pill_w(c, label);
+        self.pill(c, rect(r.right() - bw, r.y + 14.0, bw, 36.0), label, 2, Hit::ClearSecrets);
+        y += r.h + 26.0;
+
         // privacy
         y = self.group(c, x, y, w, tr("Privacy"));
-        let note = rect(x, y, w, 64.0);
-        c.fill_round(note, 12.0, t.fill);
-        c.icon(&draw::ic::SHIELD, rect(note.x + 14.0, note.y + 14.0, 18.0, 18.0), t.green);
+        let note = rect(x, y, w, 76.0);
+        c.fill_round(note, 16.0, t.card);
+        c.stroke_round(note.inset(0.5), 16.0, t.sep, 1.0);
+        c.icon(&draw::ic::SHIELD, rect(note.x + 20.0, note.y + 20.0, 18.0, 18.0), t.green);
         draw::text_box(
             c,
             tr("What apps mark as private is never kept: password managers mark the passwords they copy. Everything stays on this PC, nothing goes online."),
-            rect(note.x + 44.0, note.y + 12.0, note.w - 58.0, 44.0),
-            12.5,
+            rect(note.x + 52.0, note.y + 18.0, note.w - 72.0, 44.0),
+            13.0,
             400,
             t.t2,
         );
@@ -175,7 +202,7 @@ impl App {
             let xr = rect(chip.right() - 28.0, chip.y + 3.0, 24.0, 24.0);
             let hit = Hit::IgnoredRemove(i);
             if self.hovered(&hit) {
-                c.fill_round(xr, 12.0, t.t1.fade(0.12));
+                c.fill_round(xr, 12.0, t.hover);
             }
             c.icon(&icons::CLOSE, xr.centered(9.0, 9.0), t.t2);
             self.hits.add(xr, hit);

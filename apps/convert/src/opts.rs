@@ -77,11 +77,11 @@ impl Preset {
         match self {
             Preset::Phone => "Plays everywhere",
             Preset::Discord => "Under the size limit",
-            Preset::Smaller => "Same look, fewer MB",
+            Preset::Smaller => "Fewer MB",
             Preset::Audio => "MP3, M4A, FLAC…",
-            Preset::Gif => "Loop from a video",
+            Preset::Gif => "Video or photos",
             Preset::Images => "WebP, JPEG, PNG…",
-            Preset::Frames => "Pictures from a video",
+            Preset::Frames => "Stills from a video",
             Preset::Trim => "Keep a part",
             Preset::Mute => "Remove the sound",
             Preset::Rotate => "Turn the picture",
@@ -105,6 +105,12 @@ pub struct Opts {
     pub gif_fps: u32,
     /// The GIF's longer side, in pixels.
     pub gif_width: u32,
+    /// GIF from photos: how long each photo stays, in seconds.
+    pub gif_secs: f64,
+    /// GIF from several photos: one animated GIF of them all (true) or one still GIF each.
+    pub gif_together: bool,
+    /// GIF from photos: plays in a loop (true) or once.
+    pub gif_loop: bool,
     /// "Images": webp, jpeg, png, bmp, tiff, ico.
     pub img_fmt: String,
     /// 1..100 (JPEG, WebP).
@@ -149,6 +155,9 @@ impl Default for Opts {
             audio_fmt: "mp3".into(),
             gif_fps: 15,
             gif_width: 480,
+            gif_secs: 1.0,
+            gif_together: true,
+            gif_loop: true,
             img_fmt: "webp".into(),
             img_quality: 85,
             img_max: 0,

@@ -82,21 +82,22 @@ enum Style {
     Accent,
 }
 
+/// A pill button: primary (accent, white text) or secondary (fill, t1 text); lighter on hover, darker when pressed.
 fn button(app: &mut App, c: &mut Canvas, r: Rect, label: &str, style: Style, id: Id) {
     let t = app.theme.clone();
     let hot = app.hover == Some(id);
-    let base = match style {
-        Style::Accent => t.accent,
-        Style::Plain => t.fill,
-    };
-    let fill = match (style, hot) {
-        (Style::Plain, true) => t.fill2,
-        (_, true) => base.mix(Color::hex(0xffffff), 0.1),
-        _ => base,
+    let down = hot && app.pressed == Some(id);
+    let fill = match (style, hot, down) {
+        (Style::Accent, _, true) => t.accent.mix(Color::hex(0), 0.18),
+        (Style::Accent, true, _) => t.accent.mix(Color::hex(0xffffff), 0.1),
+        (Style::Accent, ..) => t.accent,
+        (Style::Plain, _, true) => t.fill2.mix(Color::hex(0), 0.12),
+        (Style::Plain, true, _) => t.fill2,
+        (Style::Plain, ..) => t.fill,
     };
     c.fill_round(r, r.h / 2.0, fill);
     let ink = if style == Style::Plain { t.t1 } else { Color::hex(0xffffff) };
-    c.text(label, r, if r.h < 30.0 { Font::SmallBold } else { Font::BodyBold }, ink, Align::Center);
+    c.text(label, r, Font::BodyBold, ink, Align::Center);
     app.hits.add(r, id);
 }
 
@@ -104,8 +105,7 @@ fn button(app: &mut App, c: &mut Canvas, r: Rect, label: &str, style: Style, id:
 /// `at`: the right edge and the top.
 fn button_left_of(app: &mut App, c: &mut Canvas, at: (f32, f32), h: f32, label: &str, style: Style, id: Id) -> f32 {
     let (right, y) = at;
-    let font = if h < 30.0 { Font::SmallBold } else { Font::BodyBold };
-    let w = c.text_width(label, font) + if h < 30.0 { 24.0 } else { 32.0 };
+    let w = c.text_width(label, Font::BodyBold) + 32.0;
     button(app, c, rect(right - w, y, w, h), label, style, id);
     right - w
 }
@@ -124,14 +124,39 @@ fn pill(c: &mut Canvas, x: f32, y: f32, text: &str, ink: Color) -> f32 {
     w
 }
 
+/// iOS-style switch, 48 x 28: on = accent.
 fn switch(app: &mut App, c: &mut Canvas, r: Rect, on: bool, id: Id) {
     let t = &app.theme;
     c.fill_round(r, r.h / 2.0, if on { t.accent } else { t.fill2 });
-    let k = r.h - 6.0;
-    let x = if on { r.right() - 3.0 - k } else { r.x + 3.0 };
-    c.fill_round(rect(x, r.y + 3.0, k, k), k / 2.0, Color::hex(0xffffff));
+    let k = r.h - 4.0;
+    let x = if on { r.right() - 2.0 - k } else { r.x + 2.0 };
+    c.fill_round(rect(x, r.y + 2.0, k, k), k / 2.0, Color::hex(0xffffff));
     app.hits.add(r, id);
 }
+
+/// A list row under the pointer: the hover fill, radius 10.
+fn row_hover(app: &mut App, c: &mut Canvas, r: Rect, id: Id) {
+    if app.hover == Some(id) {
+        c.fill_round(r, 10.0, app.theme.hover);
+    }
+    app.hits.add(r, id);
+}
+
+/// An empty list: centred icon, title, one line and one primary button. `at`: left, top, width.
+fn empty_state(app: &mut App, c: &mut Canvas, at: (f32, f32, f32), icon: &Icon, text: (&str, &str), action: (&str, Id)) {
+    let (x, y, w) = at;
+    let t = app.theme.clone();
+    let circle = rect(x + (w - 48.0) / 2.0, y, 48.0, 48.0);
+    c.fill_round(circle, 24.0, t.accent.fade(0.16));
+    c.icon(icon, circle.centered(20.0, 20.0), t.accent);
+    c.text(text.0, rect(x, y + 60.0, w, 24.0), Font::Title, t.t1, Align::Center);
+    c.text(text.1, rect(x, y + 84.0, w, 20.0), Font::Body, t.t3, Align::Center);
+    let bw = c.text_width(action.0, Font::BodyBold) + 36.0;
+    button(app, c, rect(x + (w - bw) / 2.0, y + 116.0, bw, 36.0), action.0, Style::Accent, action.1);
+}
+
+/// Height an empty state takes.
+const EMPTY_H: f32 = 160.0;
 
 fn paint_head(app: &mut App, c: &mut Canvas, cx: &PaintCx) {
     let t = app.theme.clone();
@@ -167,8 +192,10 @@ fn paint_head(app: &mut App, c: &mut Canvas, cx: &PaintCx) {
 }
 
 /// The QR code, black on white with its quiet zone.
-fn paint_qr(c: &mut Canvas, r: Rect, text: Option<&str>, faded: Color) {
+fn paint_qr(c: &mut Canvas, r: Rect, text: Option<&str>, faded: Color, edge: Color) {
     c.fill_round(r, 16.0, Color::hex(0xffffff));
+    // the white square stays visible on a white card (light theme)
+    c.stroke_round(r, 16.0, edge, 1.0);
     let Some(text) = text else {
         c.fill_round(r, 16.0, faded);
         return;
@@ -200,10 +227,10 @@ fn paint_qr(c: &mut Canvas, r: Rect, text: Option<&str>, faded: Color) {
 /// The card with the QR code. Returns its height.
 fn paint_connect(app: &mut App, c: &mut Canvas, x: f32, y: f32, w: f32) -> f32 {
     let t = app.theme.clone();
-    let pad = 22.0;
+    let pad = 24.0;
     let inner = w - 2.0 * pad;
     let link = app.link();
-    let mut yy = y + 20.0;
+    let mut yy = y + 24.0;
     // state first, so it can be measured
     let (state, ink) = match (app.port, app.ip) {
         (None, _) => (tr("Can't start"), t.red),
@@ -220,7 +247,7 @@ fn paint_connect(app: &mut App, c: &mut Canvas, x: f32, y: f32, w: f32) -> f32 {
         tr("The first time, Windows Firewall may ask whether Plume Drop can use the network: allow it on private networks.")
     };
     let note_h = c.text_height(note, inner, Font::Small);
-    let h = 20.0 + 22.0 + 12.0 + title_h + 4.0 + sub_h + 16.0 + qr + 16.0 + 18.0 + 22.0 + 12.0 + 32.0 + 16.0 + 1.0 + 12.0 + note_h + 20.0;
+    let h = 24.0 + 22.0 + 12.0 + title_h + 4.0 + sub_h + 16.0 + qr + 16.0 + 18.0 + 22.0 + 12.0 + 32.0 + 16.0 + 1.0 + 12.0 + note_h + 24.0;
     card(app, c, rect(x, y, w, h));
     pill(c, x + pad, yy, state, ink);
     yy += 22.0 + 12.0;
@@ -228,7 +255,7 @@ fn paint_connect(app: &mut App, c: &mut Canvas, x: f32, y: f32, w: f32) -> f32 {
     yy += title_h + 4.0;
     c.text_block(sub, rect(x + pad, yy, inner, sub_h), Font::Body, t.t2);
     yy += sub_h + 16.0;
-    paint_qr(c, rect(x + (w - qr) / 2.0, yy, qr, qr), link.as_deref(), t.fill2);
+    paint_qr(c, rect(x + (w - qr) / 2.0, yy, qr, qr), link.as_deref(), t.fill2, t.sep);
     yy += qr + 16.0;
     c.text(tr("Address"), rect(x + pad, yy, inner, 18.0), Font::Small, t.t3, Align::Left);
     yy += 18.0;
@@ -242,7 +269,7 @@ fn paint_connect(app: &mut App, c: &mut Canvas, x: f32, y: f32, w: f32) -> f32 {
     let bw = c.text_width(copy, Font::BodyBold) + 32.0;
     button(app, c, rect(x + pad, yy, bw, 32.0), copy, Style::Plain, Id::CopyLink);
     let nw = c.text_width(tr("New code"), Font::BodyBold) + 32.0;
-    button(app, c, rect(x + pad + bw + 10.0, yy, nw, 32.0), tr("New code"), Style::Plain, Id::NewCode);
+    button(app, c, rect(x + pad + bw + 8.0, yy, nw, 32.0), tr("New code"), Style::Plain, Id::NewCode);
     yy += 32.0 + 16.0;
     c.hline(x + pad, yy, inner, t.sep);
     yy += 13.0;
@@ -253,11 +280,11 @@ fn paint_connect(app: &mut App, c: &mut Canvas, x: f32, y: f32, w: f32) -> f32 {
 /// Drop zone, or the text being written. Returns its height.
 fn paint_send(app: &mut App, c: &mut Canvas, x: f32, y: f32, w: f32) -> f32 {
     let t = app.theme.clone();
-    let pad = 22.0;
+    let pad = 24.0;
     if app.composing {
-        let h = 214.0;
+        let h = 216.0;
         card(app, c, rect(x, y, w, h));
-        c.text(tr("Text or link for your phone"), rect(x + pad, y + 18.0, w - 2.0 * pad, 24.0), Font::Title, t.t1, Align::Left);
+        c.text(tr("Text or link for your phone"), rect(x + pad, y + 20.0, w - 2.0 * pad, 24.0), Font::Title, t.t1, Align::Left);
         let field = rect(x + pad, y + 52.0, w - 2.0 * pad, 100.0);
         let bg = t.fill.over(t.card);
         c.fill_round(field, 12.0, bg);
@@ -271,63 +298,61 @@ fn paint_send(app: &mut App, c: &mut Canvas, x: f32, y: f32, w: f32) -> f32 {
         } else {
             app.win.edit_place(inner);
         }
-        let by = y + h - 50.0;
-        let left = button_left_of(app, c, (x + w - pad, by), 34.0, tr("Send"), Style::Accent, Id::ComposeSend);
-        button_left_of(app, c, (left - 10.0, by), 34.0, tr("Cancel"), Style::Plain, Id::ComposeCancel);
-        c.text("Ctrl+Enter", rect(x + pad, by, 160.0, 34.0), Font::Small, t.t4, Align::Left);
+        let by = y + h - 56.0;
+        let left = button_left_of(app, c, (x + w - pad, by), 36.0, tr("Send"), Style::Accent, Id::ComposeSend);
+        button_left_of(app, c, (left - 8.0, by), 36.0, tr("Cancel"), Style::Plain, Id::ComposeCancel);
+        c.text("Ctrl+Enter", rect(x + pad, by, 160.0, 36.0), Font::Small, t.t3, Align::Left);
         return h;
     }
     let h = 168.0;
-    let r = rect(x, y, w, h);
-    c.fill_round(r, 18.0, t.accent.fade(if t.dark { 0.1 } else { 0.07 }));
-    c.stroke_round(r.inset(0.5), 18.0, t.accent.fade(0.45), 1.5);
-    let circle = rect(x + pad, y + 26.0, 56.0, 56.0);
+    card(app, c, rect(x, y, w, h));
+    let circle = rect(x + pad, y + 24.0, 56.0, 56.0);
     c.fill_round(circle, 28.0, t.accent);
     c.icon_stroke(&ARROW_UP, circle.centered(26.0, 26.0), Color::hex(0xffffff), 2.2);
     let tx = circle.right() + 18.0;
     let tw = x + w - pad - tx;
     c.text(tr("Drop files here"), rect(tx, y + 28.0, tw, 26.0), Font::Large, t.t1, Align::Left);
-    c.text(tr("Phones that are connected can save them."), rect(tx, y + 56.0, tw, 20.0), Font::Body, t.t2, Align::Left);
-    let by = y + h - 56.0;
+    c.text(tr("Phones that are connected can save them."), rect(tx, y + 56.0, tw, 20.0), Font::Body, t.t3, Align::Left);
+    let by = y + h - 60.0;
     let fw = c.text_width(tr("Send files…"), Font::BodyBold) + 36.0;
     button(app, c, rect(x + pad, by, fw, 36.0), tr("Send files…"), Style::Accent, Id::SendFiles);
     let sw = c.text_width(tr("Send text…"), Font::BodyBold) + 36.0;
-    button(app, c, rect(x + pad + fw + 10.0, by, sw, 36.0), tr("Send text…"), Style::Plain, Id::SendText);
+    button(app, c, rect(x + pad + fw + 8.0, by, sw, 36.0), tr("Send text…"), Style::Plain, Id::SendText);
     h
 }
 
 fn paint_devices(app: &mut App, c: &mut Canvas, x: f32, y: f32, w: f32) -> f32 {
     let t = app.theme.clone();
-    let pad = 22.0;
+    let pad = 24.0;
     let rows = app.devices.len();
-    let row_h = 52.0;
-    let h = 60.0 + if rows == 0 { 34.0 } else { rows as f32 * row_h } + 12.0;
+    let row_h = 48.0;
+    let h = 60.0 + if rows == 0 { EMPTY_H } else { rows as f32 * row_h } + 16.0;
     card(app, c, rect(x, y, w, h));
-    c.text(tr("Devices"), rect(x + pad, y + 18.0, w - 2.0 * pad, 24.0), Font::Title, t.t1, Align::Left);
-    let mut yy = y + 54.0;
+    c.text(tr("Devices"), rect(x + pad, y + 20.0, w - 2.0 * pad, 24.0), Font::Title, t.t1, Align::Left);
+    let mut yy = y + 60.0;
     if rows == 0 {
-        c.text(tr("No device yet. Scan the code to connect one."), rect(x + pad, yy, w - 2.0 * pad, 24.0), Font::Body, t.t3, Align::Left);
+        let text = (tr("No device yet"), tr("Scan the code with your phone's camera to connect it."));
+        let label = if app.copied_recently() { tr("Copied") } else { tr("Copy link") };
+        empty_state(app, c, (x + pad, yy + 4.0, w - 2.0 * pad), &PHONE, text, (label, Id::EmptyCopyLink));
         return h;
     }
     for i in 0..rows {
         let d = app.devices[i].clone();
-        if i > 0 {
-            c.hline(x + pad + 46.0, yy, w - 2.0 * pad - 46.0, t.sep);
-        }
-        let icon_r = rect(x + pad, yy + 8.0, 36.0, 36.0);
+        row_hover(app, c, rect(x + pad - 8.0, yy, w - 2.0 * pad + 16.0, row_h), Id::DevRow(i));
+        let icon_r = rect(x + pad, yy + 8.0, 32.0, 32.0);
         let (status, ink) = match (d.state, d.connected) {
             (DevState::Pending, _) => (tr("Waiting for your OK"), t.orange),
             (_, true) => (tr("Connected"), t.accent),
             _ => (tr("Not connected"), t.t3),
         };
-        c.fill_round(icon_r, 10.0, ink.fade(0.16));
+        c.fill_round(icon_r, 16.0, ink.fade(0.16));
         c.icon(&PHONE, icon_r.centered(18.0, 18.0), ink);
         let label = if !d.connected && d.known { tr("Forget") } else { tr("Disconnect") };
-        let left = button_left_of(app, c, (x + w - pad, yy + 12.0), 28.0, label, Style::Plain, Id::Disconnect(i));
+        let left = button_left_of(app, c, (x + w - pad, yy + 8.0), 32.0, label, Style::Plain, Id::Disconnect(i));
         let tx = icon_r.right() + 12.0;
-        let tw = left - tx - 10.0;
-        c.text(&d.name, rect(tx, yy + 7.0, tw, 20.0), Font::BodyBold, t.t1, Align::Left);
-        c.text(status, rect(tx, yy + 26.0, tw, 18.0), Font::Small, ink, Align::Left);
+        let tw = left - tx - 12.0;
+        c.text(&d.name, rect(tx, yy + 5.0, tw, 20.0), Font::BodyBold, t.t1, Align::Left);
+        c.text(status, rect(tx, yy + 25.0, tw, 18.0), Font::Small, ink, Align::Left);
         yy += row_h;
     }
     h
@@ -370,36 +395,35 @@ fn entry_sub(e: &Entry, t: &plume_ui::Theme) -> (String, Color) {
 
 fn paint_history(app: &mut App, c: &mut Canvas, x: f32, y: f32, w: f32) -> f32 {
     let t = app.theme.clone();
-    let pad = 22.0;
+    let pad = 24.0;
     let rows = app.history.len().min(200);
-    let row_h = 58.0;
-    let h = 60.0 + if rows == 0 { 34.0 } else { rows as f32 * row_h } + 12.0;
+    let row_h = 48.0;
+    let h = 60.0 + if rows == 0 { EMPTY_H } else { rows as f32 * row_h } + 16.0;
     card(app, c, rect(x, y, w, h));
-    c.text(tr("History"), rect(x + pad, y + 18.0, w - 2.0 * pad, 24.0), Font::Title, t.t1, Align::Left);
+    c.text(tr("History"), rect(x + pad, y + 20.0, w - 2.0 * pad, 24.0), Font::Title, t.t1, Align::Left);
     if rows > 0 {
-        button_left_of(app, c, (x + w - pad, y + 16.0), 28.0, tr("Clear"), Style::Plain, Id::ClearHistory);
+        button_left_of(app, c, (x + w - pad, y + 16.0), 32.0, tr("Clear"), Style::Plain, Id::ClearHistory);
     }
-    let mut yy = y + 54.0;
+    let mut yy = y + 60.0;
     if rows == 0 {
-        c.text(tr("Nothing sent or received yet."), rect(x + pad, yy, w - 2.0 * pad, 24.0), Font::Body, t.t3, Align::Left);
+        let text = (tr("Nothing yet"), tr("Files, text and links you send or receive show up here."));
+        empty_state(app, c, (x + pad, yy + 4.0, w - 2.0 * pad), &ARROW_UP, text, (tr("Send files…"), Id::EmptySendFiles));
         return h;
     }
     for i in 0..rows {
         let e = app.history[i].clone();
-        if i > 0 {
-            c.hline(x + pad + 48.0, yy, w - 2.0 * pad - 48.0, t.sep);
-        }
-        let icon_r = rect(x + pad, yy + 11.0, 36.0, 36.0);
+        row_hover(app, c, rect(x + pad - 8.0, yy, w - 2.0 * pad + 16.0, row_h), Id::Row(e.id));
+        let icon_r = rect(x + pad, yy + 8.0, 32.0, 32.0);
         let ink = match (e.state, e.dir) {
             (State::Failed, _) => t.red,
             (_, Dir::In) => t.accent,
             _ => t.t2,
         };
-        c.fill_round(icon_r, 18.0, ink.fade(0.16));
+        c.fill_round(icon_r, 16.0, ink.fade(0.16));
         c.icon(entry_icon(&e), icon_r.centered(18.0, 18.0), ink);
         // actions, from the right
         let mut right = x + w - pad;
-        let by = yy + 15.0;
+        let by = yy + 8.0;
         let acts: Vec<(&str, Id)> = match (e.dir, e.kind, e.state) {
             (_, _, State::Running) | (Dir::In, _, State::Failed) => vec![],
             (Dir::In, Kind::File, _) if e.path.is_some() => vec![(tr("Show in folder"), Id::Folder(e.id)), (tr("Open"), Id::Open(e.id))],
@@ -410,21 +434,21 @@ fn paint_history(app: &mut App, c: &mut Canvas, x: f32, y: f32, w: f32) -> f32 {
             _ => vec![],
         };
         for (label, id) in acts {
-            right = button_left_of(app, c, (right, by), 28.0, label, Style::Plain, id) - 8.0;
+            right = button_left_of(app, c, (right, by), 32.0, label, Style::Plain, id) - 8.0;
         }
         let tx = icon_r.right() + 12.0;
-        let tw = right - tx - 6.0;
+        let tw = right - tx - 4.0;
         let name = if e.kind == Kind::File { e.name.clone() } else { e.name.lines().next().unwrap_or("").chars().take(200).collect() };
-        c.text(&name, rect(tx, yy + 10.0, tw, 20.0), Font::BodyBold, t.t1, Align::Left);
+        c.text(&name, rect(tx, yy + 5.0, tw, 20.0), Font::BodyBold, t.t1, Align::Left);
         let (sub, sub_ink) = entry_sub(&e, &t);
         if e.state == State::Running {
-            let bar = rect(tx, yy + 36.0, (tw * 0.55).min(220.0), 5.0);
+            let bar = rect(tx, yy + 31.0, (tw * 0.55).min(220.0), 5.0);
             c.fill_round(bar, 2.5, t.fill2);
             let k = if e.size > 0 { (e.done as f32 / e.size as f32).clamp(0.0, 1.0) } else { 0.0 };
             c.fill_round(rect(bar.x, bar.y, (bar.w * k).max(5.0), bar.h), 2.5, t.accent);
-            c.text(&sub, rect(bar.right() + 10.0, yy + 29.0, tw - bar.w - 10.0, 18.0), Font::Small, sub_ink, Align::Left);
+            c.text(&sub, rect(bar.right() + 12.0, yy + 24.0, tw - bar.w - 12.0, 18.0), Font::Small, sub_ink, Align::Left);
         } else {
-            c.text(&sub, rect(tx, yy + 30.0, tw, 18.0), Font::Small, sub_ink, Align::Left);
+            c.text(&sub, rect(tx, yy + 25.0, tw, 18.0), Font::Small, sub_ink, Align::Left);
         }
         yy += row_h;
     }
@@ -434,21 +458,23 @@ fn paint_history(app: &mut App, c: &mut Canvas, x: f32, y: f32, w: f32) -> f32 {
 fn paint_home(app: &mut App, c: &mut Canvas, cx: &PaintCx, top: f32) -> f32 {
     let cw = (cx.w - 48.0).clamp(300.0, 1180.0);
     let x = (cx.w - cw) / 2.0;
-    let mut y = top + 20.0;
+    let mut y = top + 24.0;
+    // the same gap between cards everywhere
+    const GAP: f32 = 14.0;
     if cw >= 820.0 {
-        let left_w = 330.0;
-        let rx = x + left_w + 20.0;
-        let rw = cw - left_w - 20.0;
+        let left_w = 332.0;
+        let rx = x + left_w + GAP;
+        let rw = cw - left_w - GAP;
         let lh = paint_connect(app, c, x, y, left_w);
         let mut ry = y;
-        ry += paint_send(app, c, rx, ry, rw) + 16.0;
-        ry += paint_devices(app, c, rx, ry, rw) + 16.0;
+        ry += paint_send(app, c, rx, ry, rw) + GAP;
+        ry += paint_devices(app, c, rx, ry, rw) + GAP;
         ry += paint_history(app, c, rx, ry, rw);
         return (y + lh).max(ry) + 24.0;
     }
-    y += paint_connect(app, c, x, y, cw) + 16.0;
-    y += paint_send(app, c, x, y, cw) + 16.0;
-    y += paint_devices(app, c, x, y, cw) + 16.0;
+    y += paint_connect(app, c, x, y, cw) + GAP;
+    y += paint_send(app, c, x, y, cw) + GAP;
+    y += paint_devices(app, c, x, y, cw) + GAP;
     y += paint_history(app, c, x, y, cw);
     y + 24.0
 }
@@ -458,14 +484,14 @@ fn paint_home(app: &mut App, c: &mut Canvas, cx: &PaintCx, top: f32) -> f32 {
 fn setting_row(app: &App, c: &mut Canvas, at: (f32, f32, f32), title: &str, sub: &str, right_w: f32) -> f32 {
     let (x, y, w) = at;
     let t = &app.theme;
-    let tw = w - 44.0 - right_w - 16.0;
+    let tw = w - 48.0 - right_w - 16.0;
     // a row with no text under its title is just its title, centered
     let sub_h = if sub.is_empty() { -4.0 } else { c.text_height(sub, tw, Font::Body) };
-    let h = (18.0 + 22.0 + 4.0 + sub_h + 18.0).max(64.0);
+    let h = (20.0 + 22.0 + 4.0 + sub_h + 20.0).max(64.0);
     card(app, c, rect(x, y, w, h));
-    let title_y = if sub.is_empty() { y + (h - 22.0) / 2.0 } else { y + 18.0 };
-    c.text(title, rect(x + 22.0, title_y, tw, 22.0), Font::Title, t.t1, Align::Left);
-    c.text_block(sub, rect(x + 22.0, y + 44.0, tw, sub_h), Font::Body, t.t2);
+    let title_y = if sub.is_empty() { y + (h - 22.0) / 2.0 } else { y + 20.0 };
+    c.text(title, rect(x + 24.0, title_y, tw, 22.0), Font::Title, t.t1, Align::Left);
+    c.text_block(sub, rect(x + 24.0, y + 46.0, tw, sub_h), Font::Body, t.t3);
     h
 }
 
@@ -473,48 +499,52 @@ fn paint_settings(app: &mut App, c: &mut Canvas, cx: &PaintCx, top: f32) -> f32 
     let t = app.theme.clone();
     let cw = (cx.w - 48.0).clamp(300.0, 760.0);
     let x = (cx.w - cw) / 2.0;
-    let mut y = top + 22.0;
+    let mut y = top + 24.0;
     c.text(tr("Settings"), rect(x, y, cw, 34.0), Font::Hero, t.t1, Align::Left);
-    y += 52.0;
+    y += 40.0;
+    c.text(tr("Where files go, what happens to text and links, and the language."), rect(x, y, cw, 20.0), Font::Body, t.t3, Align::Left);
+    y += 36.0;
     // received files
     let folder = app.settings.folder.to_string_lossy().to_string();
     let bw1 = c.text_width(tr("Change…"), Font::BodyBold) + 32.0;
     let bw2 = c.text_width(tr("Open folder"), Font::BodyBold) + 32.0;
     let h = setting_row(app, c, (x, y, cw), tr("Received files"), &folder, bw1 + bw2 + 10.0);
     let by = y + (h - 32.0) / 2.0;
-    let left = button_left_of(app, c, (x + cw - 22.0, by), 32.0, tr("Change…"), Style::Plain, Id::ChangeFolder);
-    button_left_of(app, c, (left - 10.0, by), 32.0, tr("Open folder"), Style::Plain, Id::OpenFolder);
-    y += h + 12.0;
+    let left = button_left_of(app, c, (x + cw - 24.0, by), 32.0, tr("Change…"), Style::Plain, Id::ChangeFolder);
+    button_left_of(app, c, (left - 8.0, by), 32.0, tr("Open folder"), Style::Plain, Id::OpenFolder);
+    y += h + 14.0;
     // received text and links
-    let h = setting_row(app, c, (x, y, cw), tr("Received text"), tr("Copy it to the clipboard"), 50.0);
+    let h = setting_row(app, c, (x, y, cw), tr("Received text"), tr("Copy it to the clipboard"), 52.0);
     let on = app.settings.copy_text;
-    switch(app, c, rect(x + cw - 22.0 - 44.0, y + (h - 24.0) / 2.0, 44.0, 24.0), on, Id::CopyTextSwitch);
-    y += h + 12.0;
-    let h = setting_row(app, c, (x, y, cw), tr("Received links"), tr("Open them in the browser"), 50.0);
+    switch(app, c, rect(x + cw - 24.0 - 48.0, y + (h - 28.0) / 2.0, 48.0, 28.0), on, Id::CopyTextSwitch);
+    y += h + 14.0;
+    let h = setting_row(app, c, (x, y, cw), tr("Received links"), tr("Open them in the browser"), 52.0);
     let on = app.settings.open_links;
-    switch(app, c, rect(x + cw - 22.0 - 44.0, y + (h - 24.0) / 2.0, 44.0, 24.0), on, Id::OpenLinksSwitch);
-    y += h + 12.0;
+    switch(app, c, rect(x + cw - 24.0 - 48.0, y + (h - 28.0) / 2.0, 48.0, 28.0), on, Id::OpenLinksSwitch);
+    y += h + 14.0;
     // language
     let langs = [(tr("System"), "system"), ("English", "en"), ("Français", "fr")];
     let widths: Vec<f32> = langs.iter().map(|(l, _)| c.text_width(l, Font::BodyBold) + 28.0).collect();
     let total: f32 = widths.iter().sum::<f32>() + 8.0;
     let h = setting_row(app, c, (x, y, cw), tr("Language"), "", total);
-    let seg = rect(x + cw - 22.0 - total, y + (h - 34.0) / 2.0, total, 34.0);
-    c.fill_round(seg, 17.0, t.fill);
+    // segmented control: a pill track, the chosen segment raised
+    let seg = rect(x + cw - 24.0 - total, y + (h - 36.0) / 2.0, total, 36.0);
+    c.fill_round(seg, 18.0, t.fill);
     let mut sx = seg.x + 4.0;
     for (k, ((label, code), bw)) in langs.iter().zip(&widths).enumerate() {
-        let r = rect(sx, seg.y + 3.0, *bw, 28.0);
+        let r = rect(sx, seg.y + 4.0, *bw, 28.0);
         let on = app.settings.lang == *code;
         if on {
-            c.fill_round(r, 14.0, t.accent);
+            c.fill_round(r, 14.0, t.fill2);
+            c.stroke_round(r, 14.0, t.ring, 1.0);
         } else if app.hover == Some(Id::Lang(k as u8)) {
             c.fill_round(r, 14.0, t.hover);
         }
-        c.text(label, r, Font::BodyBold, if on { Color::hex(0xffffff) } else { t.t1 }, Align::Center);
+        c.text(label, r, Font::BodyBold, if on { t.t1 } else { t.t2 }, Align::Center);
         app.hits.add(r, Id::Lang(k as u8));
         sx += bw;
     }
-    y += h + 12.0;
+    y += h + 14.0;
     let h = setting_row(
         app,
         c,
@@ -523,7 +553,7 @@ fn paint_settings(app: &mut App, c: &mut Canvas, cx: &PaintCx, top: f32) -> f32 
         tr("Phones need the code in the QR code, and your OK the first time. New code makes every phone scan again."),
         0.0,
     );
-    y += h + 12.0;
+    y += h + 14.0;
     let about = format!("Plume Drop {}", plume_update::VERSION);
     let h = setting_row(app, c, (x, y, cw), &about, tr("Phones talk straight to this PC on your Wi-Fi. Nothing goes through the internet, no account."), 0.0);
     y += h;
@@ -538,19 +568,19 @@ fn paint_ask(app: &mut App, c: &mut Canvas, cx: &PaintCx) {
     c.fill(rect(0.0, m::TITLE_H, cx.w, cx.h - m::TITLE_H), Color::hex(0).fade(0.45));
     let w = (cx.w - 80.0).min(480.0);
     let sub_h = c.text_height(sub, w - 64.0, Font::Body);
-    let h = 22.0 + 52.0 + 14.0 + 26.0 + 10.0 + sub_h + 22.0 + 38.0 + 22.0;
+    let h = 24.0 + 52.0 + 12.0 + 26.0 + 12.0 + sub_h + 24.0 + 36.0 + 24.0;
     let card_r = rect((cx.w - w) / 2.0, (cx.h - h) / 2.0 + 10.0, w, h);
     c.fill_round(card_r, 20.0, t.solid2);
     c.stroke_round(card_r, 20.0, t.ring, 1.0);
-    let icon_r = rect(card_r.x + (w - 52.0) / 2.0, card_r.y + 22.0, 52.0, 52.0);
-    c.fill_round(icon_r, 16.0, t.accent.fade(0.18));
-    c.icon(&PHONE, icon_r.centered(28.0, 28.0), t.accent);
+    let icon_r = rect(card_r.x + (w - 52.0) / 2.0, card_r.y + 24.0, 52.0, 52.0);
+    c.fill_round(icon_r, 26.0, t.accent.fade(0.16));
+    c.icon(&PHONE, icon_r.centered(24.0, 24.0), t.accent);
     c.text(&title, rect(card_r.x + 24.0, card_r.y + 88.0, w - 48.0, 26.0), Font::Large, t.t1, Align::Center);
-    c.text_block(sub, rect(card_r.x + 32.0, card_r.y + 124.0, w - 64.0, sub_h), Font::Body, t.t2);
+    c.text_block(sub, rect(card_r.x + 32.0, card_r.y + 126.0, w - 64.0, sub_h), Font::Body, t.t2);
     let bw = (w - 48.0 - 12.0) / 2.0;
     let by = card_r.bottom() - 60.0;
-    button(app, c, rect(card_r.x + 24.0, by, bw, 38.0), tr("Refuse"), Style::Plain, Id::Refuse);
-    button(app, c, rect(card_r.x + 24.0 + bw + 12.0, by, bw, 38.0), tr("Allow"), Style::Accent, Id::Allow);
+    button(app, c, rect(card_r.x + 24.0, by, bw, 36.0), tr("Refuse"), Style::Plain, Id::Refuse);
+    button(app, c, rect(card_r.x + 24.0 + bw + 12.0, by, bw, 36.0), tr("Allow"), Style::Accent, Id::Allow);
 }
 
 fn paint_toast(app: &App, c: &mut Canvas, cx: &PaintCx) {

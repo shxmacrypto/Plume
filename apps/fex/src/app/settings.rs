@@ -13,6 +13,23 @@ use windows::{
 
 pub use crate::ui::window::Placement;
 
+/// Une catégorie de la barre latérale : un groupe de dossiers choisi par l'utilisateur (« Travail », « Jeux »…).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Category {
+    pub name: String,
+    /// Pastille de couleur : 0 aucune, sinon une couleur de `CAT_COLORS` (à partir de 1).
+    pub color: u8,
+    /// Ses dossiers sont affichés (sinon la catégorie est repliée).
+    pub open: bool,
+    pub folders: Vec<PathBuf>,
+}
+
+/// Les couleurs des pastilles de catégorie (orange, rouge, vert, bleu, violet, rose, gris).
+pub const CAT_COLORS: [u32; 7] = [0xff9f0a, 0xff453a, 0x30d158, 0x0a84ff, 0xbf5af2, 0xff375f, 0x8e8e93];
+
+/// Combien de dossiers récents sont gardés et montrés.
+pub const RECENT_MAX: usize = 8;
+
 #[derive(Clone, Debug)]
 pub struct Settings {
     /// Dossier des données de Plume FEx.
@@ -45,6 +62,14 @@ pub struct Settings {
     pub icon_size: u8,
     pub win: Option<Placement>,
     pub pinned: Vec<PathBuf>,
+    /// L'ordre choisi des dossiers du haut de la barre latérale (dossiers personnels et épinglés).
+    pub quick_order: Vec<PathBuf>,
+    /// Les derniers dossiers ouverts, le plus récent d'abord.
+    pub recent: Vec<PathBuf>,
+    /// La section « Récents » de la barre latérale : affichée, et dépliée.
+    pub show_recent: bool,
+    pub recent_open: bool,
+    pub categories: Vec<Category>,
     /// Les serveurs SFTP déjà visités (« utilisateur@hôte ») : jamais leur mot de passe.
     pub servers: Vec<String>,
     /// La recherche porte sur tout le PC (sinon sur le dossier ouvert et ses sous-dossiers).
@@ -112,6 +137,11 @@ impl Settings {
             icon_size: 1,
             win: None,
             pinned: vec![],
+            quick_order: vec![],
+            recent: vec![],
+            show_recent: true,
+            recent_open: true,
+            categories: vec![],
             servers: vec![],
             search_everywhere: false,
             explorer_backup: None,
@@ -121,6 +151,8 @@ impl Settings {
             && let Some(cfg) = plume.get("cfg")
         {
             s.apply_look(cfg);
+            // la langue et le thème suivent Plume ; l'accent reste celui de Plume FEx (la couleur de son icône)
+            s.accent = None;
         }
         if let Some(v) = read_json(&s.file()) {
             s.apply_look(&v);
@@ -151,8 +183,32 @@ impl Settings {
                     s.win = Some(Placement { x, y, w: ww, h, maximized: w.get("max").and_then(Value::as_bool).unwrap_or(false) });
                 }
             }
-            if let Some(p) = v.get("pinned").and_then(Value::as_array) {
-                s.pinned = p.iter().filter_map(Value::as_str).map(PathBuf::from).collect();
+            let paths = |k: &str| -> Vec<PathBuf> {
+                v.get(k).and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(PathBuf::from).collect()).unwrap_or_default()
+            };
+            s.pinned = paths("pinned");
+            s.quick_order = paths("quick_order");
+            s.recent = paths("recent");
+            s.recent.truncate(RECENT_MAX);
+            s.show_recent = b("show_recent", s.show_recent);
+            s.recent_open = b("recent_open", s.recent_open);
+            if let Some(list) = v.get("categories").and_then(Value::as_array) {
+                s.categories = list
+                    .iter()
+                    .filter_map(|c| {
+                        let name = c.get("name").and_then(Value::as_str)?.trim().to_string();
+                        Some(Category {
+                            color: c.get("color").and_then(Value::as_u64).map_or(0, |k| if k as usize <= CAT_COLORS.len() { k as u8 } else { 0 }),
+                            open: c.get("open").and_then(Value::as_bool).unwrap_or(true),
+                            folders: c
+                                .get("folders")
+                                .and_then(Value::as_array)
+                                .map(|a| a.iter().filter_map(Value::as_str).map(PathBuf::from).collect())
+                                .unwrap_or_default(),
+                            name: if name.is_empty() { "?".into() } else { name },
+                        })
+                    })
+                    .collect();
             }
             if let Some(list) = v.get("servers").and_then(Value::as_array) {
                 // relus par le même contrôle que ce qui est tapé : rien d'autre qu'une adresse n'ira vers sftp.exe
@@ -190,6 +246,11 @@ impl Settings {
         Lang::parse(&self.lang)
     }
 
+    /// L'accent : l'orange de l'icône de Plume FEx (plus soutenu sur fond clair), sauf s'il est choisi dans ses réglages.
+    pub fn accent_color(&self) -> Color {
+        self.accent.unwrap_or_else(|| Color::hex(if self.dark() { 0xff9f0a } else { 0xd97a00 }))
+    }
+
     pub fn dark(&self) -> bool {
         match self.theme.as_str() {
             "dark" => true,
@@ -214,6 +275,16 @@ impl Settings {
             "icon_size": self.icon_size,
             "search_everywhere": self.search_everywhere,
             "pinned": self.pinned.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
+            "quick_order": self.quick_order.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
+            "recent": self.recent.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
+            "show_recent": self.show_recent,
+            "recent_open": self.recent_open,
+            "categories": self.categories.iter().map(|c| json!({
+                "name": c.name,
+                "color": c.color,
+                "open": c.open,
+                "folders": c.folders.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
             "servers": self.servers,
         });
         if self.own_lang {

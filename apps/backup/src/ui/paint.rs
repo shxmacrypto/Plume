@@ -145,6 +145,12 @@ impl App {
         c.text_width(label, Font::BodyBold) + if icon { 54.0 } else { 32.0 }
     }
 
+    /// The accent for text and small icons on a selection: lighter in dark mode, where the emerald itself is too dim to read.
+    fn accent_ink(&self) -> Color {
+        let t = &self.theme;
+        if t.dark { t.accent.mix(Color::hex(0xffffff), 0.35) } else { t.accent }
+    }
+
     fn card(&self, c: &mut Canvas, r: Rect) {
         c.fill_round(r, 18.0, self.theme.card);
         c.stroke_round(r, 18.0, self.theme.sep, 1.0);
@@ -165,7 +171,7 @@ impl App {
         let h = if sub.is_empty() { 48.0 } else { 62.0 };
         let r = rect(x, y, w, h);
         if self.hover == Some(id) {
-            c.fill_round(r.inset_xy(6.0, 3.0), 12.0, t.hover);
+            c.fill_round(r.inset_xy(6.0, 3.0), 10.0, t.hover);
         }
         self.switch(c, r.right() - 22.0 - 44.0, y + (h - 24.0) / 2.0, on);
         let tw = w - 22.0 - 44.0 - 40.0;
@@ -182,14 +188,15 @@ impl App {
     /// Choices side by side, the chosen one raised.
     fn segments(&mut self, c: &mut Canvas, r: Rect, items: &[(String, Id, bool)]) {
         let t = self.theme.clone();
-        c.fill_round(r, 10.0, t.fill);
+        c.fill_round(r, r.h / 2.0, t.fill);
         let w = r.w / items.len() as f32;
         for (k, (label, id, on)) in items.iter().enumerate() {
             let cell = rect(r.x + k as f32 * w, r.y, w, r.h).inset(3.0);
             if *on {
-                c.fill_round(cell, 8.0, if t.dark { t.solid2 } else { t.solid });
+                c.fill_round(cell, cell.h / 2.0, t.fill2);
+                c.stroke_round(cell, cell.h / 2.0, t.ring, 1.0);
             } else if self.hover == Some(*id) {
-                c.fill_round(cell, 8.0, t.hover);
+                c.fill_round(cell, cell.h / 2.0, t.hover);
             }
             c.text(label, cell.inset_xy(6.0, 0.0), if *on { Font::SmallBold } else { Font::Small }, if *on { t.t1 } else { t.t2 }, Align::Center);
             self.hit(cell, *id);
@@ -295,26 +302,26 @@ impl App {
             [(View::Plans, &I_BACKUP, tr("Backups")), (View::Restore, &I_HISTORY, tr("Restore")), (View::Settings, &icons::GEAR, tr("Settings"))];
         let mut y = m::TITLE_H + 16.0;
         for (v, ic, label) in items {
-            let r = rect(12.0, y, SIDE - 24.0, 38.0);
+            let r = rect(12.0, y, SIDE - 24.0, 40.0);
             let on = self.view == v || (v == View::Plans && self.view == View::Edit);
             let id = Id::Nav(v);
             if on {
-                c.fill_round(r, 10.0, t.accent.fade(if t.dark { 0.2 } else { 0.14 }));
+                c.fill_round(r, 10.0, t.accent.fade(0.16));
             } else if self.hover == Some(id) {
                 c.fill_round(r, 10.0, t.hover);
             }
-            c.icon(ic, rect(r.x + 12.0, r.y + 11.0, 16.0, 16.0), if on { t.accent } else { t.t2 });
+            c.icon(ic, rect(r.x + 12.0, r.y + 12.0, 16.0, 16.0), if on { t.accent } else { t.t2 });
             c.text(label, rect(r.x + 40.0, r.y, r.w - 48.0, r.h), if on { Font::BodyBold } else { Font::Body }, t.t1, Align::Left);
             self.hit(r, id);
-            y += 42.0;
+            y += 44.0;
         }
         // the backup in progress, wherever one is
         if let Some(run) = &self.running {
             let name = self.store.plan(run.id).map(|p| p.name.clone()).unwrap_or_default();
             let pc = percent(&run.prog);
             let r = rect(12.0, cx.h - 84.0, SIDE - 24.0, 68.0);
-            c.fill_round(r, 14.0, t.card);
-            c.stroke_round(r, 14.0, t.sep, 1.0);
+            c.fill_round(r, 16.0, t.card);
+            c.stroke_round(r, 16.0, t.sep, 1.0);
             c.text(&fill(tr("Backing up {}"), &[&name]), rect(r.x + 14.0, r.y + 10.0, r.w - 28.0, 20.0), Font::SmallBold, t.t1, Align::Left);
             c.text(&format!("{pc} %"), rect(r.x + 14.0, r.y + 30.0, r.w - 28.0, 18.0), Font::Small, t.t3, Align::Left);
             let bar = rect(r.x + 14.0, r.y + 52.0, r.w - 28.0, 5.0);
@@ -469,8 +476,8 @@ impl App {
     // ───────────────────────── the editor ─────────────────────────
 
     fn section(&self, c: &mut Canvas, x: f32, y: f32, title: &str) -> f32 {
-        c.text(title, rect(x + 4.0, y, 600.0, 20.0), Font::SmallBold, self.theme.t3, Align::Left);
-        y + 26.0
+        c.text(title, rect(x + 4.0, y, 600.0, 24.0), Font::Title, self.theme.t1, Align::Left);
+        y + 32.0
     }
 
     fn paint_edit(&mut self, c: &mut Canvas, cx: &PaintCx, x0: f32, cw: f32) {
@@ -487,7 +494,7 @@ impl App {
         y = self.section(c, x, y, tr("Name"));
         let card = rect(x, y, w, 64.0);
         self.card(c, card);
-        self.field(c, rect(x + 16.0, y + 15.0, w - 32.0, 34.0), Field::Name, tr("Name of the plan"));
+        self.field(c, rect(x + 20.0, y + 15.0, w - 40.0, 34.0), Field::Name, tr("Name of the plan"));
         y += 64.0 + 20.0;
 
         // sources
@@ -502,7 +509,7 @@ impl App {
         for (k, s) in plan.sources.iter().enumerate() {
             c.icon(&icons::FOLDER, rect(x + 20.0, ry + 12.0, 16.0, 16.0), t.accent);
             c.text(&s.display().to_string(), rect(x + 46.0, ry, w - 46.0 - 64.0, 40.0), Font::Body, t.t1, Align::Left);
-            self.button_icon(c, rect(x + w - 20.0 - 30.0, ry + 5.0, 30.0, 30.0), Some(&icons::CLOSE), "", Style::Plain, Id::RemoveSource(k));
+            self.button_icon(c, rect(x + w - 20.0 - 32.0, ry + 4.0, 32.0, 32.0), Some(&icons::CLOSE), "", Style::Plain, Id::RemoveSource(k));
             if k + 1 < n {
                 c.hline(x + 46.0, ry + 40.0, w - 66.0, t.sep);
             }
@@ -510,7 +517,7 @@ impl App {
         }
         let label = tr("Add a folder…");
         let bw = Self::btn_w(c, label, true);
-        self.button_icon(c, rect(x + 16.0, ry + 10.0, bw, 32.0), Some(&icons::PLUS), label, Style::Plain, Id::AddSource);
+        self.button_icon(c, rect(x + 20.0, ry + 10.0, bw, 32.0), Some(&icons::PLUS), label, Style::Plain, Id::AddSource);
         y += h + 20.0;
 
         // destination
@@ -530,16 +537,16 @@ impl App {
         self.card(c, rect(x, y, w, h));
         let label = tr("Choose…");
         let bw = Self::btn_w(c, label, false);
-        self.button(c, rect(x + w - 16.0 - bw, y + 16.0, bw, 32.0), label, Style::Plain, Id::ChooseDest);
-        let mut fw = w - 32.0 - bw - 10.0;
+        self.button(c, rect(x + w - 20.0 - bw, y + 16.0, bw, 32.0), label, Style::Plain, Id::ChooseDest);
+        let mut fw = w - 40.0 - bw - 10.0;
         if !place.is_empty() {
             let pw = c.text_width(place, Font::SmallBold) + 20.0;
             fw -= pw + 8.0;
-            let pr = rect(x + 16.0 + fw + 8.0, y + 21.0, pw, 24.0);
+            let pr = rect(x + 20.0 + fw + 8.0, y + 21.0, pw, 24.0);
             c.fill_round(pr, 12.0, t.accent.fade(0.16));
             c.text(place, pr, Font::SmallBold, t.accent, Align::Center);
         }
-        self.field(c, rect(x + 16.0, y + 15.0, fw, 34.0), Field::Dest, r"E:\Backups");
+        self.field(c, rect(x + 20.0, y + 15.0, fw, 34.0), Field::Dest, r"E:\Backups");
         c.text_block(hint, rect(x + 20.0, y + 15.0 + 34.0 + 10.0, w - 40.0, hint_h), Font::Small, t.t3);
         y += h + 20.0;
 
@@ -557,7 +564,7 @@ impl App {
         .into_iter()
         .map(|(l, s)| (l.to_string(), Id::Sched(s), plan.schedule == s))
         .collect();
-        self.segments(c, rect(x + 16.0, y + 16.0, w - 32.0, 38.0), &items);
+        self.segments(c, rect(x + 20.0, y + 16.0, w - 40.0, 38.0), &items);
         if daily {
             self.stepper_row(c, rect(x, y + 62.0, w, 0.0), tr("From"), &format!("{:02}:00", plan.hour), Id::HourDown, Id::HourUp);
         }
@@ -581,7 +588,7 @@ impl App {
             (tr("Versions").to_string(), Id::SetMode(Mode::Versions), plan.mode == Mode::Versions),
             (tr("Mirror").to_string(), Id::SetMode(Mode::Mirror), plan.mode == Mode::Mirror),
         ];
-        self.segments(c, rect(x + 16.0, y + 16.0, w - 32.0, 38.0), &items);
+        self.segments(c, rect(x + 20.0, y + 16.0, w - 40.0, 38.0), &items);
         c.text_block(explain, rect(x + 20.0, y + 64.0, w - 40.0, eh), Font::Small, t.t3);
         let mut ry = y + 64.0 + eh + 8.0;
         if plan.mode == Mode::Versions {
@@ -596,7 +603,7 @@ impl App {
         y = self.section(c, x, y, tr("Leave out"));
         let h = 15.0 + 34.0 + 8.0 + 62.0 * 2.0 + 6.0;
         self.card(c, rect(x, y, w, h));
-        self.field(c, rect(x + 16.0, y + 15.0, w - 32.0, 34.0), Field::Excludes, tr("Patterns, for example *.iso, node_modules, Videos/Raw"));
+        self.field(c, rect(x + 20.0, y + 15.0, w - 40.0, 34.0), Field::Excludes, tr("Patterns, for example *.iso, node_modules, Videos/Raw"));
         let mut ry = y + 15.0 + 34.0 + 8.0;
         ry += self.switch_row(
             c,
@@ -673,33 +680,30 @@ impl App {
             if px + w > x0 + cw {
                 break;
             }
-            let r = rect(px, top, w, 30.0);
+            let r = rect(px, top, w, 32.0);
             let on = i == self.rplan;
             let id = Id::RPlan(i);
-            c.fill_round(
-                r,
-                15.0,
-                if on {
-                    t.accent
-                } else if self.hover == Some(id) {
-                    t.fill2
-                } else {
-                    t.fill
-                },
-            );
-            c.text(&name, r, Font::BodyBold, if on { Color::hex(0xffffff) } else { t.t1 }, Align::Center);
+            let fill = if on {
+                t.accent.fade(0.16)
+            } else if self.hover == Some(id) {
+                t.fill2
+            } else {
+                t.fill
+            };
+            c.fill_round(r, 16.0, fill);
+            c.text(&name, r, Font::BodyBold, if on { self.accent_ink() } else { t.t1 }, Align::Center);
             self.hit(r, id);
             px += w + 8.0;
         }
-        top += 46.0;
-        let h = cx.h - top - 20.0;
+        top += 48.0;
+        let h = cx.h - top - 24.0;
 
         // the dates
         let lw = 252.0;
         let left = rect(x0, top, lw, h);
         self.card(c, left);
-        c.text(tr("Backups"), rect(left.x + 18.0, left.y + 12.0, lw - 36.0, 20.0), Font::SmallBold, t.t3, Align::Left);
-        let la = rect(left.x + 6.0, left.y + 40.0, lw - 12.0, h - 46.0);
+        c.text(tr("Backups"), rect(left.x + 20.0, left.y + 14.0, lw - 40.0, 24.0), Font::Title, t.t1, Align::Left);
+        let la = rect(left.x + 8.0, left.y + 48.0, lw - 16.0, h - 56.0);
         let msg = match self.browse {
             Browse::Loading if self.snaps.is_empty() => Some(tr("Looking for the backups…")),
             Browse::Missing => Some(tr("The destination is not available: plug in the drive or check the network share.")),
@@ -712,24 +716,31 @@ impl App {
         } else {
             let mut y = self.begin_zone(c, Zone::Snaps, la);
             for i in 0..self.snaps.len() {
-                let r = rect(la.x, y, la.w, 52.0);
+                let r = rect(la.x, y, la.w, 48.0);
                 let s = self.snaps[i].clone();
                 let id = Id::Snap(i);
-                if i == self.snap {
-                    c.fill_round(r, 10.0, t.selection(true));
+                let on = i == self.snap;
+                if on {
+                    c.fill_round(r, 10.0, t.accent.fade(0.16));
                 } else if self.hover == Some(id) {
                     c.fill_round(r, 10.0, t.hover);
                 }
-                c.text(&self.snap_title(i), rect(r.x + 12.0, r.y + 7.0, r.w - 24.0, 20.0), Font::BodyBold, t.t1, Align::Left);
+                c.text(
+                    &self.snap_title(i),
+                    rect(r.x + 12.0, r.y + 5.0, r.w - 24.0, 20.0),
+                    Font::BodyBold,
+                    if on { self.accent_ink() } else { t.t1 },
+                    Align::Left,
+                );
                 let kind = match s.kind {
                     Kind::Version => tr("Version"),
                     Kind::Mirror => tr("Mirror (latest)"),
                     Kind::Deleted => tr("Removed from the sources"),
                 };
                 let sub = if s.files > 0 { format!("{kind} · {}", i18n::files(s.files)) } else { kind.to_string() };
-                c.text(&sub, rect(r.x + 12.0, r.y + 27.0, r.w - 24.0, 18.0), Font::Small, if s.kind == Kind::Deleted { t.orange } else { t.t3 }, Align::Left);
+                c.text(&sub, rect(r.x + 12.0, r.y + 25.0, r.w - 24.0, 18.0), Font::Small, if s.kind == Kind::Deleted { t.orange } else { t.t3 }, Align::Left);
                 self.hit(r, id);
-                y += 54.0;
+                y += 50.0;
             }
             self.end_zone(c, Zone::Snaps, y);
         }
@@ -740,11 +751,11 @@ impl App {
         if self.snaps.get(self.snap).is_none() {
             return;
         }
-        let rx = right.x + 14.0;
-        let rw = right.w - 28.0;
-        self.button_icon(c, rect(rx, right.y + 10.0, 30.0, 30.0), Some(&icons::BACK), "", Style::Plain, Id::Up);
+        let rx = right.x + 16.0;
+        let rw = right.w - 32.0;
+        self.button_icon(c, rect(rx, right.y + 12.0, 32.0, 32.0), Some(&icons::BACK), "", Style::Plain, Id::Up);
         // crumbs: the date, then the folders
-        let mut cx_ = rx + 40.0;
+        let mut cx_ = rx + 42.0;
         let mut crumbs = vec![self.snap_title(self.snap)];
         crumbs.extend(self.path.iter().cloned());
         let count = crumbs.len();
@@ -754,20 +765,20 @@ impl App {
             if cx_ + w > right.right() - 14.0 {
                 break;
             }
-            let r = rect(cx_, right.y + 10.0, w, 30.0);
+            let r = rect(cx_, right.y + 12.0, w, 32.0);
             let id = Id::Crumb(k);
             if self.hover == Some(id) && !last {
-                c.fill_round(r, 8.0, t.hover);
+                c.fill_round(r, 10.0, t.hover);
             }
             c.text(&name, r, Font::BodyBold, if last { t.t1 } else { t.t3 }, Align::Center);
             if !last {
                 self.hit(r, id);
-                c.icon(&icons::CHEVRON_RIGHT, rect(r.right() + 1.0, r.y + 9.0, 12.0, 12.0), t.t4);
+                c.icon(&icons::CHEVRON_RIGHT, rect(r.right() + 1.0, r.y + 10.0, 12.0, 12.0), t.t3);
             }
             cx_ += w + 14.0;
         }
         // columns
-        let hy = right.y + 50.0;
+        let hy = right.y + 56.0;
         let (size_w, date_w) = (90.0, 150.0);
         let name_w = rw - size_w - date_w - 40.0;
         c.text(tr("Name"), rect(rx + 40.0, hy, name_w, 22.0), Font::Small, t.t3, Align::Left);
@@ -782,24 +793,26 @@ impl App {
             c.text(tr("This folder is empty."), rect(rx + 40.0, y + 8.0, rw, 24.0), Font::Body, t.t3, Align::Left);
         }
         for i in 0..self.rows.len() {
-            let r = rect(ra.x, y, ra.w, 30.0);
+            let r = rect(ra.x, y, ra.w, 40.0);
             if r.bottom() > ra.y && r.y < ra.bottom() {
                 let e = self.rows[i].clone();
                 let id = Id::Row(i);
-                if self.sel == Some(i) {
-                    c.fill_round(r, 7.0, t.selection(true));
+                let on = self.sel == Some(i);
+                if on {
+                    c.fill_round(r, 10.0, t.accent.fade(0.16));
                 } else if self.hover == Some(id) {
-                    c.fill_round(r, 7.0, t.hover);
+                    c.fill_round(r, 10.0, t.hover);
                 }
-                c.icon(if e.dir { &icons::FOLDER } else { &icons::FILE }, rect(rx + 14.0, r.y + 7.0, 16.0, 16.0), if e.dir { t.accent } else { t.t2 });
-                c.text(&e.name, rect(rx + 40.0, r.y, name_w - 8.0, 30.0), Font::Body, t.t1, Align::Left);
+                let ink = if e.dir || on { self.accent_ink() } else { t.t2 };
+                c.icon(if e.dir { &icons::FOLDER } else { &icons::FILE }, rect(rx + 12.0, r.y + 12.0, 16.0, 16.0), ink);
+                c.text(&e.name, rect(rx + 40.0, r.y, name_w - 8.0, 40.0), Font::Body, t.t1, Align::Left);
                 if !e.dir {
-                    c.text(&i18n::size(e.size), rect(rx + 40.0 + name_w, r.y, size_w, 30.0), Font::Small, t.t2, Align::Right);
+                    c.text(&i18n::size(e.size), rect(rx + 40.0 + name_w, r.y, size_w, 40.0), Font::Small, t.t2, Align::Right);
                 }
-                c.text(&i18n::when(e.modified, now), rect(rx + 40.0 + name_w + size_w + 16.0, r.y, date_w, 30.0), Font::Small, t.t2, Align::Left);
+                c.text(&i18n::when(e.modified, now), rect(rx + 40.0 + name_w + size_w + 16.0, r.y, date_w, 40.0), Font::Small, t.t2, Align::Left);
                 self.hit(r, id);
             }
-            y += 30.0;
+            y += 40.0;
         }
         self.end_zone(c, Zone::Rows, y);
         // what will be restored, and how
@@ -807,7 +820,7 @@ impl App {
         c.hline(rx, by, rw, t.sep);
         let (l1, l2) = (tr("Restore to its place"), tr("Restore to…"));
         let (w1, w2) = (Self::btn_w(c, l1, false), Self::btn_w(c, l2, false));
-        let bx = right.right() - 14.0 - w2;
+        let bx = right.right() - 16.0 - w2;
         self.button(c, rect(bx, by + 15.0, w2, 34.0), l2, Style::Plain, Id::RestoreTo);
         self.button(c, rect(bx - 10.0 - w1, by + 15.0, w1, 34.0), l1, Style::Accent, Id::RestoreHere);
         let what = match (self.restoring, self.restore_rel()) {
@@ -894,8 +907,9 @@ impl App {
         let one = c.text_width(text, Font::Body) + 40.0;
         let (tw, th) = if one <= max { (one, 40.0) } else { (max, c.text_height(text, max - 40.0, Font::Body) + 20.0) };
         let r = rect(SIDE + (cx.w - SIDE - tw) / 2.0, cx.h - th - 84.0, tw, th);
-        c.fill_round(r, 16.0, t.solid2);
-        c.stroke_round(r, 16.0, t.ring, 1.0);
+        let rad = (th / 2.0).min(20.0);
+        c.fill_round(r, rad, t.solid2);
+        c.stroke_round(r, rad, t.ring, 1.0);
         if one <= max {
             c.text(text, r.inset_xy(16.0, 0.0), Font::Body, t.t1, Align::Center);
         } else {
@@ -912,16 +926,16 @@ impl App {
         let w = (cx.w - 80.0).min(460.0);
         let sub = tr("The plan goes away. Its backups stay on the destination, where you can still open them.");
         let sh = c.text_height(sub, w - 64.0, Font::Body);
-        let h = 30.0 + 26.0 + 12.0 + sh + 30.0 + 38.0 + 24.0;
+        let h = 28.0 + 26.0 + 12.0 + sh + 28.0 + 36.0 + 24.0;
         let card = rect((cx.w - w) / 2.0, (cx.h - h) / 2.0, w, h);
-        c.fill_round(card, 20.0, t.solid2);
+        c.fill_round(card, 20.0, if t.dark { t.solid2 } else { t.solid });
         c.stroke_round(card, 20.0, t.ring, 1.0);
         c.text(&fill(tr("Delete the plan “{}”?"), &[&name]), rect(card.x + 24.0, card.y + 28.0, w - 48.0, 26.0), Font::Large, t.t1, Align::Center);
         c.text_block(sub, rect(card.x + 32.0, card.y + 66.0, w - 64.0, sh), Font::Body, t.t2);
         let bw = (w - 48.0 - 12.0) / 2.0;
-        let by = card.bottom() - 24.0 - 38.0;
-        self.button(c, rect(card.x + 24.0, by, bw, 38.0), tr("Cancel"), Style::Plain, Id::DeleteNo);
-        self.button(c, rect(card.x + 24.0 + bw + 12.0, by, bw, 38.0), tr("Delete"), Style::Red, Id::DeleteYes);
+        let by = card.bottom() - 24.0 - 36.0;
+        self.button(c, rect(card.x + 24.0, by, bw, 36.0), tr("Cancel"), Style::Plain, Id::DeleteNo);
+        self.button(c, rect(card.x + 24.0 + bw + 12.0, by, bw, 36.0), tr("Delete"), Style::Red, Id::DeleteYes);
         let cap_x = cx.w - 3.0 * m::CAPTION_W;
         for (k, id) in [Id::Min, Id::Max, Id::Close].into_iter().enumerate() {
             self.hits.add(rect(cap_x + k as f32 * m::CAPTION_W, 0.0, m::CAPTION_W, m::TITLE_H - 8.0), id);

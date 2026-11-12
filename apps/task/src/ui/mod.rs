@@ -27,7 +27,7 @@ use std::{
 };
 
 pub const SIDEBAR_W: f32 = 224.0;
-pub const ROW_H: f32 = 34.0;
+pub const ROW_H: f32 = 40.0;
 /// Seconds of history in the graphs.
 pub const HIST: usize = 60;
 const TOAST: usize = 2;
@@ -68,6 +68,8 @@ pub enum Hit {
     SummaryShow,
     SearchBox,
     SearchClear,
+    /// "Resume" in the empty list while refreshing is paused.
+    Resume,
     EndTask,
     Details,
     Header(Col),
@@ -131,13 +133,22 @@ pub enum Modal {
     Details { title: String, fields: Vec<(String, String)>, path: Option<String> },
 }
 
+/// The colours of the window: plume-ui's theme (the same as every Plume app) with Plume Task's accent, the purple
+/// of its icon. Only the graphs add hues of their own (one per part of the PC), never greys.
 #[derive(Clone, Debug)]
 pub struct Pal {
-    pub dark: bool,
     pub bg: Color,
+    /// The sidebar.
     pub side: Color,
     pub card: Color,
+    /// Dialogs, menus (opaque).
+    pub solid: Color,
+    pub solid2: Color,
+    pub fill: Color,
+    pub fill2: Color,
+    pub hover: Color,
     pub line: Color,
+    pub ring: Color,
     pub t1: Color,
     pub t2: Color,
     pub t3: Color,
@@ -146,48 +157,41 @@ pub struct Pal {
     pub red: Color,
     pub orange: Color,
     pub green: Color,
+    pub close_hover: Color,
     pub blue: Color,
     pub teal: Color,
 }
 
+/// Plume Task's icon colour.
+pub const ACCENT: u32 = 0xa855f7;
+
 impl Pal {
     pub fn new(dark: bool) -> Pal {
-        if dark {
-            Pal {
-                dark,
-                bg: Color::hex(0x131416),
-                side: Color::hex(0x0c0d0e),
-                card: Color::hex(0x1d1f22),
-                line: Color::hex(0xffffff).fade(0.08),
-                t1: Color::hex(0xffffff),
-                t2: Color::hex(0xb7bac0),
-                t3: Color::hex(0x7d8189),
-                accent: Color::hex(0xb07cff),
-                heat: Color::hex(0xf5b041),
-                red: Color::hex(0xff5a4e),
-                orange: Color::hex(0xffa53d),
-                green: Color::hex(0x4ade80),
-                blue: Color::hex(0x5aa9ff),
-                teal: Color::hex(0x2dd4bf),
-            }
-        } else {
-            Pal {
-                dark,
-                bg: Color::hex(0xf5f6f7),
-                side: Color::hex(0xeaecee),
-                card: Color::hex(0xffffff),
-                line: Color::hex(0x000000).fade(0.08),
-                t1: Color::hex(0x111315),
-                t2: Color::hex(0x51555c),
-                t3: Color::hex(0x878b93),
-                accent: Color::hex(0x8b3fe8),
-                heat: Color::hex(0xf0a020),
-                red: Color::hex(0xd92d20),
-                orange: Color::hex(0xd9730d),
-                green: Color::hex(0x16a34a),
-                blue: Color::hex(0x2563eb),
-                teal: Color::hex(0x0d9488),
-            }
+        let t = plume_ui::Theme::new(dark, Some(Color::hex(ACCENT)));
+        let base = if dark { plume_ui::Theme::dark() } else { plume_ui::Theme::light() };
+        Pal {
+            bg: t.bg,
+            side: t.bg2,
+            card: t.card,
+            solid: t.solid,
+            solid2: t.solid2,
+            fill: t.fill,
+            fill2: t.fill2,
+            hover: t.hover,
+            line: t.sep,
+            ring: t.ring,
+            t1: t.t1,
+            t2: t.t2,
+            t3: t.t3,
+            accent: t.accent,
+            heat: t.orange,
+            red: t.red,
+            orange: t.orange,
+            green: t.green,
+            close_hover: t.close_hover,
+            // graph hues: Plume's blue, and a teal for memory
+            blue: base.accent,
+            teal: if dark { Color::hex(0x40c8e0) } else { Color::hex(0x0e8fa8) },
         }
     }
 }
@@ -331,7 +335,7 @@ impl App {
         let t = text.into();
         self.note(format!("toast: {t}"));
         self.toast = Some((t, Instant::now()));
-        cx.timer(TOAST, Some(3500));
+        cx.timer(TOAST, Some(4500));
         cx.repaint();
     }
 
@@ -905,6 +909,10 @@ impl App {
             Hit::SearchBox => {
                 self.edit_for = Some("search");
                 self.edit_shown = None;
+            }
+            Hit::Resume => {
+                self.set.interval = 1000;
+                self.settings_changed(cx);
             }
             Hit::SearchClear => {
                 self.query.clear();

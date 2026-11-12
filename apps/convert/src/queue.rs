@@ -35,6 +35,8 @@ pub struct Spec {
     pub out_dir: Option<PathBuf>,
     pub keep_meta: bool,
     pub hw: bool,
+    /// GIF from photos: the other photos of the slideshow (empty: `src` alone).
+    pub extra: Vec<PathBuf>,
 }
 
 /// Cancels a running job: the flag, and FFmpeg killed.
@@ -64,7 +66,10 @@ pub fn run(spec: &Spec, ctl: &Ctl, report: &mut dyn FnMut(Msg)) -> Result<(PathB
         return run_picture(spec, ctl, report);
     }
     if ffmpeg::is_picture(&spec.src) {
-        return Err("This is a picture: use the Images preset".into());
+        if spec.preset == Preset::Gif {
+            return run_photo_gif(spec, ctl, report);
+        }
+        return Err("This is a picture: use the Images or GIF preset".into());
     }
     let info = ffmpeg::probe(&tools::ffprobe(), &spec.src)?;
     if ctl.cancelled() {
@@ -205,6 +210,40 @@ fn run_picture(spec: &Spec, ctl: &Ctl, report: &mut dyn FnMut(Msg)) -> Result<(P
     report(Msg::Progress(0.3));
     let webp = |png: &Path, dst: &Path, q: u32| -> Result<(), String> { run_ffmpeg(&ffmpeg::webp_args(png, dst, q), ctl, &mut |_| {}) };
     match image::convert(&spec.src, &output, fmt, o.img_quality, o.img_max, &webp) {
+        Ok(()) => {
+            report(Msg::Progress(1.0));
+            let size = std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0);
+            Ok((output, size))
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&output);
+            Err(if ctl.cancelled() { CANCELLED.into() } else { e })
+        }
+    }
+}
+
+/// Photos → GIF: one photo makes a still GIF, several make a slideshow in name order. WIC reads the photos (turned
+/// upright, any format Windows reads) into same-size PNG frames in a temporary folder; FFmpeg makes the GIF.
+fn run_photo_gif(spec: &Spec, ctl: &Ctl, report: &mut dyn FnMut(Msg)) -> Result<(PathBuf, u64), String> {
+    let o = &spec.opts;
+    let mut srcs: Vec<PathBuf> = std::iter::once(spec.src.clone()).chain(spec.extra.iter().cloned()).collect();
+    srcs.sort_by(|a, b| naming::by_name(a, b));
+    let n = srcs.len();
+    let dir = naming::out_dir(&srcs[0], spec.out_dir.as_deref());
+    let output = naming::reserve_file(&srcs[0], &dir, "gif").map_err(|e| e.to_string())?;
+    let frames = passlog_path().with_extension("frames");
+    let r = std::fs::create_dir_all(&frames).map_err(|e| e.to_string()).and_then(|_| {
+        image::gif_frames(&srcs, o.gif_width.max(16), &frames, &mut |i| {
+            report(Msg::Progress(0.5 * (i + 1) as f64 / n as f64));
+            !ctl.cancelled()
+        })?;
+        let total = n as f64 * o.gif_secs.max(0.02);
+        let args = ffmpeg::photo_gif_args(&frames, n, o.gif_secs, o.gif_loop, &output);
+        run_ffmpeg(&args, ctl, &mut |t| report(Msg::Progress(0.5 + 0.5 * (t / total).min(1.0))))
+    });
+    // the temporary frames are this job's own folder
+    let _ = std::fs::remove_dir_all(&frames);
+    match r {
         Ok(()) => {
             report(Msg::Progress(1.0));
             let size = std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0);

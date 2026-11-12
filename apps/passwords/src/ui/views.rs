@@ -7,42 +7,104 @@ use crate::{
     settings::{AUTOLOCK, CLEAR, HOTKEYS},
     sys,
 };
-use plume_ui::{Align, Canvas, Color, Cx, Font, Rect, dialogs, icons, rect};
+use plume_ui::{Align, Canvas, Color, Cx, Font, Rect, dialogs, icons, icons::Icon, rect};
 use zeroize::Zeroize;
 
 const SEPARATORS: [&str; 4] = ["-", ".", "_", " "];
+
+/// What sits on the right of a settings row.
+enum Ctl {
+    Toggle(bool, Hit),
+    Choices(Vec<String>, usize, &'static str),
+    Button(&'static str, Option<&'static Icon>, Hit),
+    Slider(f32, &'static str),
+}
+
+struct Row {
+    label: String,
+    sub: String,
+    ctl: Ctl,
+}
+
+fn row(label: &str, sub: &str, ctl: Ctl) -> Row {
+    Row { label: label.to_string(), sub: sub.to_string(), ctl }
+}
 
 impl App {
     fn page_title(&mut self, c: &mut Canvas, x: f32, y: f32, w: f32, title: &str, sub: &str) -> f32 {
         let t = self.t.clone();
         c.text(title, rect(x, y, w, 32.0), Font::Hero, t.t1, Align::Left);
         if sub.is_empty() {
-            return y + 46.0;
+            return y + 52.0;
         }
         let h = c.text_height(sub, w, Font::Body);
         c.text_block(sub, rect(x, y + 36.0, w, h), Font::Body, t.t3);
-        y + 48.0 + h
+        y + 56.0 + h
     }
 
     fn group(&mut self, c: &mut Canvas, x: f32, y: f32, w: f32, title: &str) -> f32 {
         let t = self.t.clone();
-        c.text(title, rect(x, y, w, 22.0), Font::Title, t.t1, Align::Left);
+        c.text(title, rect(x + 4.0, y, w - 4.0, 22.0), Font::Title, t.t1, Align::Left);
         y + 32.0
     }
 
-    /// A settings row: its label (and a line under it) on the left; returns the row for the control on the right.
-    fn row(&mut self, c: &mut Canvas, x: f32, y: f32, w: f32, label: &str, sub: &str) -> Rect {
+    fn card(&mut self, c: &mut Canvas, r: Rect) {
         let t = self.t.clone();
-        let h = if sub.is_empty() { 48.0 } else { 62.0 };
-        let lw = w * 0.56;
-        if sub.is_empty() {
-            c.text(label, rect(x, y, lw, h), Font::Body, t.t1, Align::Left);
-        } else {
-            c.text(label, rect(x, y + 9.0, lw, 22.0), Font::Body, t.t1, Align::Left);
-            c.text(sub, rect(x, y + 32.0, lw, 20.0), Font::Small, t.t3, Align::Left);
+        c.fill_round(r, 16.0, t.card);
+        c.stroke_round(r, 16.0, t.sep, 1.0);
+    }
+
+    /// Width of a row's control.
+    fn ctl_w(&mut self, c: &mut Canvas, ctl: &Ctl) -> f32 {
+        match ctl {
+            Ctl::Toggle(..) => 46.0,
+            Ctl::Choices(labels, ..) => {
+                let refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+                self.segmented_w(c, &refs, Font::Small)
+            }
+            Ctl::Button(label, icon, _) => c.text_width(label, Font::BodyBold) + if icon.is_some() { 52.0 } else { 36.0 },
+            Ctl::Slider(..) => 240.0,
         }
-        c.hline(x, y + h, w, t.sep);
-        rect(x, y, w, h)
+    }
+
+    /// Rows in a card: the label (and a line under it) on the left, the control on the right. Returns the y under the
+    /// card.
+    fn rows_card(&mut self, c: &mut Canvas, x: f32, y: f32, w: f32, rows: Vec<Row>) -> f32 {
+        let t = self.t.clone();
+        let hs: Vec<f32> = rows.iter().map(|r| if r.sub.is_empty() { 52.0 } else { 64.0 }).collect();
+        let total: f32 = hs.iter().sum::<f32>() + 8.0;
+        self.card(c, rect(x, y, w, total));
+        let (ix, iw) = (x + 20.0, w - 40.0);
+        let mut ry = y + 4.0;
+        let n = rows.len();
+        for (k, (r, h)) in rows.into_iter().zip(hs).enumerate() {
+            let cw = self.ctl_w(c, &r.ctl);
+            let lw = (iw - cw - 20.0).max(iw * 0.35);
+            if r.sub.is_empty() {
+                c.text(&r.label, rect(ix, ry, lw, h), Font::Body, t.t1, Align::Left);
+            } else {
+                c.text(&r.label, rect(ix, ry + 10.0, lw, 22.0), Font::Body, t.t1, Align::Left);
+                c.text(&r.sub, rect(ix, ry + 33.0, lw, 20.0), Font::Small, t.t3, Align::Left);
+            }
+            let line = rect(ix, ry, iw, h);
+            match r.ctl {
+                Ctl::Toggle(on, hit) => self.toggle(c, line, on, hit),
+                Ctl::Choices(labels, cur, name) => {
+                    let refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+                    self.segmented(c, line.right() - cw, ry + (h - 32.0) / 2.0, &refs, cur, Font::Small, |i| Hit::Choice(name, i));
+                }
+                Ctl::Button(label, Some(icon), hit) => {
+                    self.icon_pill(c, line.right() - cw, ry + (h - 34.0) / 2.0, 34.0, icon, label, 0, hit);
+                }
+                Ctl::Button(label, None, hit) => self.pill(c, rect(line.right() - cw, ry + (h - 34.0) / 2.0, cw, 34.0), label, 0, hit),
+                Ctl::Slider(v, name) => self.slider(c, rect(line.right() - cw + 9.0, ry + (h - 28.0) / 2.0, cw - 18.0, 28.0), v, name),
+            }
+            if k + 1 < n {
+                c.hline(ix, ry + h, iw, t.sep);
+            }
+            ry += h;
+        }
+        y + total + 14.0
     }
 
     fn toggle(&mut self, c: &mut Canvas, r: Rect, on: bool, hit: Hit) {
@@ -52,29 +114,6 @@ impl App {
         let k = if on { sw.right() - 23.0 } else { sw.x + 3.0 };
         c.fill_round(rect(k, sw.y + 3.0, 20.0, 20.0), 10.0, Color::hex(0xffffff));
         self.hits.add(r, hit);
-    }
-
-    /// Choices side by side on the right of a row.
-    fn choices(&mut self, c: &mut Canvas, r: Rect, labels: &[&str], cur: usize, name: &'static str) {
-        let t = self.t.clone();
-        let widths: Vec<f32> = labels.iter().map(|l| c.text_width(l, Font::Small) + 24.0).collect();
-        let total: f32 = widths.iter().sum::<f32>() + 6.0;
-        let mut x = r.right() - total;
-        let bg = rect(x, r.y + (r.h - 32.0) / 2.0, total, 32.0);
-        c.fill_round(bg, 16.0, t.fill);
-        x += 3.0;
-        for (i, (l, w)) in labels.iter().zip(widths).enumerate() {
-            let b = rect(x, bg.y + 3.0, w, 26.0);
-            let hit = Hit::Choice(name, i);
-            if i == cur {
-                c.fill_round(b, 13.0, t.accent);
-            } else if self.hovered(&hit) {
-                c.fill_round(b, 13.0, t.hover);
-            }
-            c.text(l, b, Font::Small, if i == cur { Color::hex(0xffffff) } else { t.t1 }, Align::Center);
-            self.hits.add(b, hit);
-            x += w;
-        }
     }
 
     fn slider(&mut self, c: &mut Canvas, r: Rect, v: f32, name: &'static str) {
@@ -109,13 +148,13 @@ impl App {
         let t = self.t.clone();
         let w = (r.w - 80.0).min(680.0);
         let x = r.x + 40.0;
-        let mut y = r.y + 30.0;
+        c.clip(r);
+        let mut y = r.y + 30.0 - self.page_scroll;
         y = self.page_title(c, x, y, w, tr("Generator"), tr("Strong passwords and passphrases, made on this PC."));
         let g = self.set.generator.clone();
         // the result
-        let card = rect(x, y, w, 132.0);
-        c.fill_round(card, 18.0, t.card);
-        c.stroke_round(card, 18.0, t.sep, 1.0);
+        let card = rect(x, y, w, 156.0);
+        self.card(c, card);
         let pw = self.generated.clone();
         let size = if pw.chars().count() > 40 {
             15.0
@@ -124,60 +163,71 @@ impl App {
         } else {
             22.0
         };
-        draw::text(c, &pw, rect(x + 24.0, y + 18.0, w - 48.0, 44.0), size, 600, t.t1, Align::Left, true);
-        let (s, bits) = generator::strength(&pw);
-        let _ = s;
+        draw::text(c, &pw, rect(x + 24.0, y + 20.0, w - 48.0, 40.0), size, 600, t.t1, Align::Left, true);
+        let (_, bits) = generator::strength(&pw);
         let gb = generator::generator_bits(&g);
-        self.strength_bar(c, x + 24.0, y + 70.0, 300.0, &pw);
+        self.strength_bar(c, x + 24.0, y + 66.0, 300.0, &pw);
         c.text(
             &fill(tr("{n} bits of randomness"), &[&format!("{:.0}", gb.min(bits.max(gb)))]),
-            rect(x + 340.0, y + 68.0, w - 364.0, 20.0),
+            rect(x + 340.0, y + 64.0, w - 364.0, 20.0),
             Font::Small,
             t.t3,
             Align::Left,
         );
-        let mut bx = x + 24.0;
-        let by = y + 92.0 - 2.0;
-        bx += self.icon_pill(c, bx, by, 34.0, &icons::RELOAD, tr("New"), 0, Hit::Gen("new")) + 8.0;
-        self.icon_pill(c, bx, by, 34.0, &icons::COPY, tr("Copy"), 1, Hit::Gen("copy"));
-        y += card.h + 24.0;
+        let by = y + 156.0 - 24.0 - 34.0;
+        let bw = self.icon_pill(c, x + 24.0, by, 34.0, &icons::RELOAD, tr("New"), 0, Hit::Gen("new"));
+        self.icon_pill(c, x + 24.0 + bw + 10.0, by, 34.0, &icons::COPY, tr("Copy"), 1, Hit::Gen("copy"));
+        y += card.h + 14.0;
         // the options
-        let row = self.row(c, x, y, w, tr("Kind"), "");
-        self.choices(c, row, &[tr("Password"), tr("Passphrase")], g.passphrase as usize, "genmode");
-        y += row.h;
+        let mut rows = vec![row(tr("Kind"), "", Ctl::Choices(vec![tr("Password").into(), tr("Passphrase").into()], g.passphrase as usize, "genmode"))];
         if g.passphrase {
-            let row = self.row(c, x, y, w, &fill(tr("Words: {n}"), &[&g.words.to_string()]), "");
-            self.slider(c, rect(row.right() - 260.0, row.y + 10.0, 250.0, 28.0), (g.words - MIN_WORDS) as f32 / (MAX_WORDS - MIN_WORDS) as f32, "words");
-            y += row.h;
-            let row = self.row(c, x, y, w, tr("Between the words"), "");
+            let v = (g.words - MIN_WORDS) as f32 / (MAX_WORDS - MIN_WORDS) as f32;
+            rows.push(row(&fill(tr("Words: {n}"), &[&g.words.to_string()]), "", Ctl::Slider(v, "words")));
             let cur = SEPARATORS.iter().position(|s| *s == g.separator).unwrap_or(0);
-            self.choices(c, row, &["-", ".", "_", tr("space")], cur, "sep");
-            y += row.h;
-            for (name, label, on) in [("capitalize", tr("Capital letters"), g.capitalize), ("number", tr("Add a digit"), g.number)] {
-                let row = self.row(c, x, y, w, label, "");
-                self.toggle(c, row, on, Hit::Gen(name));
-                y += row.h;
-            }
+            rows.push(row(tr("Between the words"), "", Ctl::Choices(vec!["-".into(), ".".into(), "_".into(), tr("space").into()], cur, "sep")));
+            rows.push(row(tr("Capital letters"), "", Ctl::Toggle(g.capitalize, Hit::Gen("capitalize"))));
+            rows.push(row(tr("Add a digit"), "", Ctl::Toggle(g.number, Hit::Gen("number"))));
         } else {
-            let row = self.row(c, x, y, w, &fill(tr("Length: {n}"), &[&g.length.to_string()]), "");
-            self.slider(c, rect(row.right() - 260.0, row.y + 10.0, 250.0, 28.0), (g.length - MIN_LEN) as f32 / (MAX_LEN - MIN_LEN) as f32, "length");
-            y += row.h;
-            for (name, label, on) in [
-                ("upper", tr("Capital letters (A-Z)"), g.upper),
-                ("lower", tr("Small letters (a-z)"), g.lower),
-                ("digits", tr("Digits (0-9)"), g.digits),
-                ("symbols", tr("Symbols (!@#$…)"), g.symbols),
-                ("lookalikes", tr("Leave out look-alikes (0 O, 1 l I)"), g.no_lookalikes),
-            ] {
-                let row = self.row(c, x, y, w, label, "");
-                self.toggle(c, row, on, Hit::Gen(name));
-                y += row.h;
-            }
+            let v = (g.length - MIN_LEN) as f32 / (MAX_LEN - MIN_LEN) as f32;
+            rows.push(row(&fill(tr("Length: {n}"), &[&g.length.to_string()]), "", Ctl::Slider(v, "length")));
+            rows.push(row(tr("Capital letters (A-Z)"), "", Ctl::Toggle(g.upper, Hit::Gen("upper"))));
+            rows.push(row(tr("Small letters (a-z)"), "", Ctl::Toggle(g.lower, Hit::Gen("lower"))));
+            rows.push(row(tr("Digits (0-9)"), "", Ctl::Toggle(g.digits, Hit::Gen("digits"))));
+            rows.push(row(tr("Symbols (!@#$…)"), "", Ctl::Toggle(g.symbols, Hit::Gen("symbols"))));
+            rows.push(row(tr("Leave out look-alikes (0 O, 1 l I)"), "", Ctl::Toggle(g.no_lookalikes, Hit::Gen("lookalikes"))));
         }
-        let _ = strength_name;
+        y = self.rows_card(c, x, y, w, rows) + 16.0;
+        self.page_h = y + self.page_scroll - r.y;
+        self.page_scroll = self.page_scroll.min((self.page_h - r.h).max(0.0));
+        c.unclip();
     }
 
     // ───────────────────────── report ─────────────────────────
+
+    /// A row of the report, inside its card: the item, its user name, and a word on the right.
+    #[allow(clippy::too_many_arguments)]
+    fn report_row(&mut self, c: &mut Canvas, x: f32, y: f32, w: f32, id: &str, right: Option<(&str, Color)>, last: bool) {
+        let t = self.t.clone();
+        let Some(e) = self.entry(id).cloned() else { return };
+        let row = rect(x + 6.0, y + 4.0, w - 12.0, 44.0);
+        let hit = Hit::Open(id.to_string());
+        if self.hovered(&hit) {
+            c.fill_round(row, 10.0, t.hover);
+        }
+        let (ix, iw) = (x + 20.0, w - 40.0);
+        c.text(&e.title, rect(ix, y, iw * 0.45, 52.0), Font::BodyBold, t.t1, Align::Left);
+        c.text(&e.username, rect(ix + iw * 0.45, y, iw * 0.3, 52.0), Font::Body, t.t3, Align::Left);
+        if let Some((word, col)) = right {
+            c.text(word, rect(ix + iw * 0.75, y, iw * 0.25 - 22.0, 52.0), Font::SmallBold, col, Align::Right);
+        }
+        c.icon(&icons::CHEVRON_RIGHT, rect(ix + iw - 14.0, y + 19.0, 14.0, 14.0), t.t3);
+        if !last {
+            c.hline(ix, y + 52.0, iw, t.sep);
+        }
+        self.hits.add(row, hit);
+        let mut e = e;
+        e.wipe();
+    }
 
     pub fn paint_report(&mut self, c: &mut Canvas, r: Rect) {
         let t = self.t.clone();
@@ -195,65 +245,47 @@ impl App {
         let tiles = [
             (weak.len(), tr("Weak passwords"), t.orange, &ic::WARN),
             (reused_n, tr("Reused passwords"), t.red, &ic::REPEAT),
-            (no_2fa, tr("Logins without 2FA"), t.t3, &ic::CLOCK),
+            (no_2fa, tr("Logins without 2FA"), t.t2, &ic::CLOCK),
         ];
-        let tw = (w - 24.0) / 3.0;
+        let tw = (w - 28.0) / 3.0;
         for (k, (n, label, col, icon)) in tiles.into_iter().enumerate() {
-            let tr_ = rect(x + k as f32 * (tw + 12.0), y, tw, 92.0);
-            c.fill_round(tr_, 16.0, t.card);
-            c.stroke_round(tr_, 16.0, t.sep, 1.0);
-            c.icon(icon, rect(tr_.x + 18.0, tr_.y + 18.0, 18.0, 18.0), if n == 0 { t.green } else { col });
-            draw::text(c, &n.to_string(), rect(tr_.x + 18.0, tr_.y + 40.0, tw - 36.0, 32.0), 26.0, 700, t.t1, Align::Left, false);
-            c.text(label, rect(tr_.x + 46.0, tr_.y + 14.0, tw - 60.0, 26.0), Font::SmallBold, t.t2, Align::Left);
+            let tile = rect(x + k as f32 * (tw + 14.0), y, tw, 96.0);
+            self.card(c, tile);
+            c.icon(icon, rect(tile.x + 20.0, tile.y + 20.0, 18.0, 18.0), if n == 0 { t.green } else { col });
+            c.text(label, rect(tile.x + 46.0, tile.y + 16.0, tw - 62.0, 26.0), Font::SmallBold, t.t2, Align::Left);
+            draw::text(c, &n.to_string(), rect(tile.x + 20.0, tile.y + 46.0, tw - 40.0, 32.0), 26.0, 700, t.t1, Align::Left, false);
         }
-        y += 116.0;
+        y += 96.0 + 28.0;
         if weak.is_empty() && reused.is_empty() {
-            c.icon(&ic::SHIELD, rect(x, y + 4.0, 20.0, 20.0), t.green);
-            c.text(tr("All good: no weak or reused passwords."), rect(x + 30.0, y, w - 30.0, 28.0), Font::Body, t.t1, Align::Left);
-            y += 40.0;
+            let card = rect(x, y, w, 64.0);
+            self.card(c, card);
+            c.icon(&ic::SHIELD, rect(x + 20.0, y + 22.0, 20.0, 20.0), t.green);
+            c.text(tr("All good: no weak or reused passwords."), rect(x + 50.0, y, w - 70.0, 64.0), Font::Body, t.t1, Align::Left);
+            y += 64.0 + 14.0;
         }
         if !weak.is_empty() {
             y = self.group(c, x, y, w, tr("Weak"));
-            for (id, s) in &weak {
-                let Some(e) = self.entry(id).cloned() else { continue };
-                let row = rect(x, y, w, 48.0);
-                let hit = Hit::Open(id.clone());
-                if self.hovered(&hit) {
-                    c.fill_round(row, 10.0, t.hover);
-                }
-                c.text(&e.title, rect(x + 14.0, y, w * 0.5, 48.0), Font::BodyBold, t.t1, Align::Left);
-                c.text(&e.username, rect(x + w * 0.5, y, w * 0.3, 48.0), Font::Small, t.t3, Align::Left);
-                let name = strength_name(generator::Strength(*s));
-                c.text(name, rect(x + w * 0.8, y, w * 0.2 - 14.0, 48.0), Font::SmallBold, if *s == 0 { t.red } else { t.orange }, Align::Right);
-                self.hits.add(row, hit);
-                y += 50.0;
-                let mut e = e;
-                e.wipe();
+            let h = weak.len() as f32 * 52.0;
+            self.card(c, rect(x, y, w, h));
+            let n = weak.len();
+            for (k, (id, s)) in weak.iter().enumerate() {
+                let word = strength_name(generator::Strength(*s));
+                self.report_row(c, x, y + k as f32 * 52.0, w, id, Some((word, if *s == 0 { t.red } else { t.orange })), k + 1 == n);
             }
-            y += 16.0;
+            y += h + 28.0;
         }
         if !reused.is_empty() {
             y = self.group(c, x, y, w, tr("Reused"));
-            for (k, group) in reused.iter().enumerate() {
-                c.text(&fill(tr("Same password, {n} items"), &[&group.len().to_string()]), rect(x, y, w, 22.0), Font::SmallBold, t.t3, Align::Left);
+            for group in &reused {
+                c.text(&fill(tr("Same password, {n} items"), &[&group.len().to_string()]), rect(x + 4.0, y, w, 20.0), Font::Small, t.t3, Align::Left);
                 y += 26.0;
-                for id in group {
-                    let Some(e) = self.entry(id).cloned() else { continue };
-                    let row = rect(x, y, w, 44.0);
-                    let hit = Hit::Open(id.clone());
-                    if self.hovered(&hit) {
-                        c.fill_round(row, 10.0, t.hover);
-                    }
-                    c.text(&e.title, rect(x + 14.0, y, w * 0.5, 44.0), Font::BodyBold, t.t1, Align::Left);
-                    c.text(&e.username, rect(x + w * 0.5, y, w * 0.5 - 14.0, 44.0), Font::Small, t.t3, Align::Left);
-                    self.hits.add(row, hit);
-                    y += 46.0;
-                    let mut e = e;
-                    e.wipe();
+                let h = group.len() as f32 * 52.0;
+                self.card(c, rect(x, y, w, h));
+                let n = group.len();
+                for (k, id) in group.iter().enumerate() {
+                    self.report_row(c, x, y + k as f32 * 52.0, w, id, None, k + 1 == n);
                 }
-                if k + 1 < reused.len() {
-                    y += 10.0;
-                }
+                y += h + 14.0;
             }
         }
         self.page_h = y + 30.0 + self.page_scroll - r.y;
@@ -273,8 +305,7 @@ impl App {
         let s = self.set.clone();
 
         y = self.group(c, x, y, w, tr("Security"));
-        let row = self.row(c, x, y, w, tr("Lock after"), tr("Without using Plume Passwords"));
-        let labels: Vec<String> = AUTOLOCK
+        let autolock: Vec<String> = AUTOLOCK
             .iter()
             .map(|m| {
                 if *m == 0 {
@@ -286,26 +317,24 @@ impl App {
                 }
             })
             .collect();
-        let refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
-        self.choices(c, row, &refs, AUTOLOCK.iter().position(|m| *m == s.autolock_min).unwrap_or(2), "autolock");
-        y += row.h;
-        let row = self.row(c, x, y, w, tr("Lock when Windows locks"), "");
-        self.toggle(c, row, s.lock_on_windows_lock, Hit::Toggle("winlock"));
-        y += row.h;
-        let row = self.row(c, x, y, w, tr("Clear the clipboard after"), tr("Copied secrets also stay out of the clipboard history"));
-        let labels: Vec<String> = CLEAR.iter().map(|s| if *s >= 60 { format!("{} min", s / 60) } else { format!("{s} s") }).collect();
-        let refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
-        self.choices(c, row, &refs, CLEAR.iter().position(|v| *v == s.clear_clipboard_s).unwrap_or(1), "clear");
-        y += row.h;
+        let clear: Vec<String> = CLEAR.iter().map(|s| if *s >= 60 { format!("{} min", s / 60) } else { format!("{s} s") }).collect();
         let hello_sub = if self.hello_ok { tr("Face, fingerprint or PIN instead of the master password") } else { tr("Not set up on this PC") };
-        let row = self.row(c, x, y, w, tr("Unlock with Windows Hello"), hello_sub);
-        self.toggle(c, row, self.hello_on, Hit::Toggle("hello"));
-        y += row.h;
-        let row = self.row(c, x, y, w, tr("Master password"), tr("It cannot be recovered if you forget it"));
-        let label = tr("Change…");
-        let bw = c.text_width(label, Font::BodyBold) + 36.0;
-        self.pill(c, rect(row.right() - bw, row.y + (row.h - 34.0) / 2.0, bw, 34.0), label, 0, Hit::Action("password"));
-        y += row.h + 28.0;
+        let rows = vec![
+            row(
+                tr("Lock after"),
+                tr("Without using Plume Passwords"),
+                Ctl::Choices(autolock, AUTOLOCK.iter().position(|m| *m == s.autolock_min).unwrap_or(2), "autolock"),
+            ),
+            row(tr("Lock when Windows locks"), "", Ctl::Toggle(s.lock_on_windows_lock, Hit::Toggle("winlock"))),
+            row(
+                tr("Clear the clipboard after"),
+                tr("Copied secrets also stay out of the clipboard history"),
+                Ctl::Choices(clear, CLEAR.iter().position(|v| *v == s.clear_clipboard_s).unwrap_or(1), "clear"),
+            ),
+            row(tr("Unlock with Windows Hello"), hello_sub, Ctl::Toggle(self.hello_on, Hit::Toggle("hello"))),
+            row(tr("Master password"), tr("It cannot be recovered if you forget it"), Ctl::Button(tr("Change…"), None, Hit::Action("password"))),
+        ];
+        y = self.rows_card(c, x, y, w, rows) + 14.0;
 
         y = self.group(c, x, y, w, tr("Auto-type"));
         let sub = if self.hotkey_ok || !s.autotype {
@@ -313,48 +342,57 @@ impl App {
         } else {
             tr("Another program uses this shortcut: choose another one")
         };
-        let row = self.row(c, x, y, w, tr("Auto-type shortcut"), sub);
-        self.toggle(c, row, s.autotype, Hit::Toggle("autotype"));
-        y += row.h;
-        let row = self.row(c, x, y, w, tr("Shortcut"), "");
-        let keys: Vec<&str> = HOTKEYS.iter().map(|h| h.0).collect();
-        self.choices(c, row, &keys, s.hotkey, "hotkey");
-        y += row.h;
-        let row = self.row(c, x, y, w, tr("Press Enter after the password"), "");
-        self.toggle(c, row, s.autotype_enter, Hit::Toggle("enter"));
-        y += row.h + 28.0;
+        let keys: Vec<String> = HOTKEYS.iter().map(|h| h.0.to_string()).collect();
+        let rows = vec![
+            row(tr("Auto-type shortcut"), sub, Ctl::Toggle(s.autotype, Hit::Toggle("autotype"))),
+            row(tr("Shortcut"), "", Ctl::Choices(keys, s.hotkey, "hotkey")),
+            row(tr("Press Enter after the password"), "", Ctl::Toggle(s.autotype_enter, Hit::Toggle("enter"))),
+        ];
+        y = self.rows_card(c, x, y, w, rows) + 14.0;
 
         y = self.group(c, x, y, w, tr("Your data"));
-        for (label, sub, button, id, icon) in [
-            (tr("Import passwords"), tr("A CSV file from Chrome, Edge, Firefox, Bitwarden or Plume Web"), tr("Import…"), "import", &ic::IMPORT),
-            (tr("Encrypted backup"), tr("A copy of the vault that opens with your master password"), tr("Export…"), "export", &ic::EXPORT),
-            (tr("Restore a backup"), tr("Adds the items of a backup to this vault"), tr("Restore…"), "restore", &ic::IMPORT),
-        ] {
-            let row = self.row(c, x, y, w, label, sub);
-            let bw = c.text_width(button, Font::BodyBold) + 52.0;
-            self.icon_pill(c, row.right() - bw, row.y + (row.h - 34.0) / 2.0, 34.0, icon, button, 0, Hit::Action(id));
-            y += row.h;
-        }
-        y += 28.0;
+        let rows = vec![
+            row(
+                tr("Import passwords"),
+                tr("A CSV file from Chrome, Edge, Firefox, Bitwarden or Plume Web"),
+                Ctl::Button(tr("Import…"), Some(&ic::IMPORT), Hit::Action("import")),
+            ),
+            row(
+                tr("Encrypted backup"),
+                tr("A copy of the vault that opens with your master password"),
+                Ctl::Button(tr("Export…"), Some(&ic::EXPORT), Hit::Action("export")),
+            ),
+            row(tr("Restore a backup"), tr("Adds the items of a backup to this vault"), Ctl::Button(tr("Restore…"), Some(&ic::IMPORT), Hit::Action("restore"))),
+        ];
+        y = self.rows_card(c, x, y, w, rows) + 14.0;
 
         y = self.group(c, x, y, w, tr("App"));
-        let row = self.row(c, x, y, w, tr("Keep running near the clock"), tr("Closing the window keeps auto-type working"));
-        self.toggle(c, row, s.keep_running, Hit::Toggle("keep"));
-        y += row.h;
-        let row = self.row(c, x, y, w, tr("Start with Windows"), "");
-        self.toggle(c, row, self.autostart, Hit::Toggle("autostart"));
-        y += row.h;
-        let row = self.row(c, x, y, w, tr("Theme"), "");
-        let cur = ["system", "dark", "light"].iter().position(|v| *v == s.theme).unwrap_or(0);
-        self.choices(c, row, &[tr("System"), tr("Dark"), tr("Light")], cur, "theme");
-        y += row.h;
-        let row = self.row(c, x, y, w, tr("Language"), "");
-        let cur = ["system", "en", "fr"].iter().position(|v| *v == s.lang).unwrap_or(0);
-        self.choices(c, row, &[tr("System"), "English", "Français"], cur, "lang");
-        y += row.h + 24.0;
-        c.text(&format!("Plume Passwords {}", plume_update::VERSION), rect(x, y, w, 20.0), Font::Small, t.t3, Align::Left);
+        let rows = vec![
+            row(tr("Keep running near the clock"), tr("Closing the window keeps auto-type working"), Ctl::Toggle(s.keep_running, Hit::Toggle("keep"))),
+            row(tr("Start with Windows"), "", Ctl::Toggle(self.autostart, Hit::Toggle("autostart"))),
+            row(
+                tr("Theme"),
+                "",
+                Ctl::Choices(
+                    vec![tr("System").into(), tr("Dark").into(), tr("Light").into()],
+                    ["system", "dark", "light"].iter().position(|v| *v == s.theme).unwrap_or(0),
+                    "theme",
+                ),
+            ),
+            row(
+                tr("Language"),
+                "",
+                Ctl::Choices(
+                    vec![tr("System").into(), "English".into(), "Français".into()],
+                    ["system", "en", "fr"].iter().position(|v| *v == s.lang).unwrap_or(0),
+                    "lang",
+                ),
+            ),
+        ];
+        y = self.rows_card(c, x, y, w, rows) + 10.0;
+        c.text(&format!("Plume Passwords {}", plume_update::VERSION), rect(x + 4.0, y, w, 20.0), Font::Small, t.t3, Align::Left);
         y += 22.0;
-        c.text(tr("Nothing is sent anywhere: the vault stays on this PC."), rect(x, y, w, 20.0), Font::Small, t.t3, Align::Left);
+        c.text(tr("Nothing is sent anywhere: the vault stays on this PC."), rect(x + 4.0, y, w, 20.0), Font::Small, t.t3, Align::Left);
         y += 40.0;
         self.page_h = y + self.page_scroll - r.y;
         self.page_scroll = self.page_scroll.min((self.page_h - r.h).max(0.0));

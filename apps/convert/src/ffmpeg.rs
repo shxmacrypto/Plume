@@ -431,6 +431,32 @@ fn out(a: &mut Vec<String>, p: &Path) {
     a.push(p.to_string_lossy().into_owned());
 }
 
+// ───────────────────────── photos → GIF ─────────────────────────
+
+/// How long a photo stays in a GIF, in hundredths of a second (the unit GIF delays are counted in).
+pub fn gif_delay_cs(secs: f64) -> u32 {
+    ((secs * 100.0).round() as u32).clamp(2, 6000)
+}
+
+/// A GIF from numbered PNG frames of one size (`frame_0001.png`…), one frame per photo, each shown `secs`. Every
+/// frame gets its own palette: photos differ too much to share 256 colours. One photo makes a still GIF.
+pub fn photo_gif_args(frames: &Path, count: usize, secs: f64, looped: bool, output: &Path) -> Vec<String> {
+    let cs = gif_delay_cs(secs);
+    let mut a = head(&frames.join("frame_%04d.png"));
+    let at = a.len() - 2;
+    a.splice(at..at, [s("-framerate"), format!("100/{cs}"), s("-start_number"), s("1")]);
+    let graph = "[0:v]split[a][b];[a]palettegen=max_colors=256:stats_mode=single[p];[b][p]paletteuse=new=1:dither=sierra2_4a[gif]";
+    push(&mut a, &["-filter_complex", graph, "-map", "[gif]", "-frames:v", &count.max(1).to_string()]);
+    if count > 1 {
+        push(&mut a, &["-loop", if looped { "0" } else { "-1" }, "-final_delay", &cs.to_string()]);
+    } else {
+        push(&mut a, &["-loop", "-1"]);
+    }
+    push(&mut a, &["-f", "gif"]);
+    out(&mut a, output);
+    a
+}
+
 fn need_video(info: &Info) -> Result<(), String> {
     if info.has_video { Ok(()) } else { Err("This needs a video".into()) }
 }
@@ -937,6 +963,28 @@ mod tests {
         assert!(
             has(a, "fps=12,scale=480:270:flags=lanczos") && has(a, "palettegen") && has(a, "paletteuse") && has(a, "-map [gif] -loop 0") && !has(a, "-map 0:v")
         );
+    }
+
+    #[test]
+    fn photo_gif() {
+        let dir = Path::new(r"C:\tmp\frames");
+        let out = Path::new(r"C:\out\pic (converted).gif");
+        // a slideshow: 3 photos, 2 s each, in a loop
+        let a = photo_gif_args(dir, 3, 2.0, true, out).join(" ");
+        assert!(has(&a, r"-framerate 100/200 -start_number 1 -i C:\tmp\frames\frame_%04d.png"), "{a}");
+        assert!(has(&a, "palettegen=max_colors=256:stats_mode=single") && has(&a, "paletteuse=new=1"));
+        assert!(has(&a, "-map [gif] -frames:v 3 -loop 0 -final_delay 200 -f gif"));
+        assert!(a.ends_with(r"C:\out\pic (converted).gif") && has(&a, "-progress pipe:1"));
+        // played once
+        assert!(has(&photo_gif_args(dir, 3, 0.5, false, out).join(" "), "-framerate 100/50 -start_number 1"));
+        assert!(has(&photo_gif_args(dir, 3, 0.5, false, out).join(" "), "-loop -1 -final_delay 50"));
+        // one photo: a still GIF, one frame, no loop and no final delay
+        let a = photo_gif_args(dir, 1, 1.0, true, out).join(" ");
+        assert!(has(&a, "-frames:v 1 -loop -1 -f gif") && !has(&a, "final_delay"));
+        // delays stay in what GIF can hold
+        assert_eq!(gif_delay_cs(0.0), 2);
+        assert_eq!(gif_delay_cs(1.25), 125);
+        assert_eq!(gif_delay_cs(1000.0), 6000);
     }
 
     #[test]

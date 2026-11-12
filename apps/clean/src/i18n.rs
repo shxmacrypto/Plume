@@ -133,8 +133,10 @@ pub fn tr(en: &'static str) -> &'static str {
         }
         "In this folder" => "Dans ce dossier",
         "Language" => "Langue",
-        "Large files and duplicates" => "Gros fichiers et doublons",
-        "Large files from, and duplicates looked for from:" => "Gros fichiers à partir de, et doublons cherchés à partir de :",
+        "Look" => "Apparence",
+        "From this size:" => "À partir de :",
+        "Looked for among files from:" => "Cherchés parmi les fichiers à partir de :",
+        "No scan yet" => "Pas encore d’analyse",
         "Last scan: {path}, {size}" => "Dernière analyse : {path}, {size}",
         "Light" => "Clair",
         "Looking at temporary files, caches and downloads…" => "Examen des fichiers temporaires, des caches et des téléchargements…",

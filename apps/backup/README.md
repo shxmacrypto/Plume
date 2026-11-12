@@ -70,7 +70,26 @@ plume-backup.exe                 the window
 plume-backup.exe --background    no window, only the icon near the clock (start with Windows)
 plume-backup.exe --run           backs up every plan now (the running Plume Backup does it if there is one)
 plume-backup.exe --unregister    no more start with Windows, and the running Plume Backup quits (uninstall)
+plume-backup.exe --ensure-plan "<name>" --source "<dir>" --dest "<dir>" [--keep <n>]
+plume-backup.exe --run-plan "<name>"
 ```
+
+`--ensure-plan` and `--run-plan` let other Plume apps keep a copy of their own files without a window (Plume Boost
+keeps its snapshots this way, plan "Plume Boost settings"):
+
+- `--ensure-plan` creates the plan (versions mode, "only when asked", `--keep` versions, 30 otherwise) or, when a plan
+  of that name exists, makes sure it backs up that folder. An existing plan keeps the destination, schedule and number
+  of versions chosen in Plume Backup. Running it twice changes nothing. The source must exist; the destination folder
+  is created when missing — after checking it isn't inside the source (the usual safety rules apply).
+- `--run-plan` backs up that one plan now and waits: exit code 0 when it worked (a summary on stdout), 1 with the
+  reason on stderr (unknown or paused plan, destination missing, …), 2 for incomplete arguments.
+- When a Plume Backup window is running, the request is handed to it (it owns plans.json and saves it after every
+  change); this process waits for its answer (`<data>\cli\<id>.json`), up to 20 s for a plan and 30 minutes for a run
+  (a run may be queued behind another). Otherwise the work is done in this process and plans.json is written the usual
+  way (a temporary file renamed over the old one); after a run only that plan's state is updated, read fresh.
+- A run asked for by another app shows no balloon when it works (a failure still does).
+- With `PLUME_BACKUP_DIR` set (tests), the window's mark includes the folder, so a test copy and the real Plume Backup
+  never answer each other.
 
 ## Tests
 
@@ -82,7 +101,9 @@ The engine's tests (`src/engine.rs`) run on fresh folders in the system's temp f
 the hash when only the date differs, versions and hard links, mirror and the `deleted` folder, retention by number and
 by age, expiry of removed files, resume after an interruption, no half-written file left under its real name,
 excludes and temporary files, a missing source, refused plans, restore to its place and elsewhere, browsing, two
-sources with the same name, verification. Also the schedules (`ui/mod.rs`), dates and drives (`sys.rs`), texts.
+sources with the same name, verification. Also the schedules (`ui/mod.rs`), dates and drives (`sys.rs`), texts,
+and the command line (`cli.rs`: options, messages to the window, a plan created once and left alone the second time,
+the user's destination and schedule kept, the safety rules, a run recorded, a paused plan refused).
 
 A `--features test-hook` build can be driven through a JSON socket on 127.0.0.1 (see `src/test_hook.rs`). Variables:
 

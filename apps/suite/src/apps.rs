@@ -40,10 +40,14 @@ pub enum App {
     Pdf,
     Calendar,
     Convert,
+    Notepad,
+    Cut,
+    Create,
+    Boost,
 }
 
 /// Nombre d'applications de la suite.
-pub const COUNT: usize = 16;
+pub const COUNT: usize = 20;
 
 /// Dans l'ordre des logos et des textes (l'ordre affiché est [`SHOWN`]).
 pub const ALL: [App; COUNT] = [
@@ -63,10 +67,14 @@ pub const ALL: [App; COUNT] = [
     App::Pdf,
     App::Calendar,
     App::Convert,
+    App::Notepad,
+    App::Cut,
+    App::Create,
+    App::Boost,
 ];
 /// L'ordre des cartes dans la fenêtre : le quotidien d'abord (navigateur, fichiers, musique, photos), puis le
 /// téléphone, les outils, l'entretien du PC, et « Bientôt » en dernier.
-pub const SHOWN: [usize; COUNT] = [0, 1, 4, 8, 3, 5, 6, 7, 12, 13, 14, 15, 9, 10, 11, 2];
+pub const SHOWN: [usize; COUNT] = [0, 1, 4, 8, 17, 18, 3, 5, 6, 7, 16, 12, 13, 14, 15, 9, 10, 19, 11, 2];
 
 /// Nom de la ligne de commande, nom affiché, programme, raccourci du menu Démarrer (dans l'ordre de [`ALL`]).
 const INFO: [(&str, &str, &str, &str); COUNT] = [
@@ -86,6 +94,10 @@ const INFO: [(&str, &str, &str, &str); COUNT] = [
     ("pdf", "Plume PDF", "plume-pdf.exe", "Plume PDF.lnk"),
     ("calendar", "Plume Calendar", "plume-calendar.exe", "Plume Calendar.lnk"),
     ("convert", "Plume Convert", "plume-convert.exe", "Plume Convert.lnk"),
+    ("notepad", "Plume Notepad", "plume-notepad.exe", "Plume Notepad.lnk"),
+    ("cut", "Plume Cut", "plume-cut.exe", "Plume Cut.lnk"),
+    ("create", "Plume Create", "plume-create.exe", "Plume Create.lnk"),
+    ("boost", "Plume Boost", "plume-boost.exe", "Plume Boost.lnk"),
 ];
 
 /// Plume Mail fait-il partie de cette version (`PLUME_WITH_MAIL=1` à la compilation, comme pour l'installeur) ?
@@ -120,6 +132,32 @@ impl App {
     /// Raccourci du menu Démarrer. Celui de Plume Web (« Plume.lnk ») est géré par le navigateur lui-même.
     fn shortcut(self) -> &'static str {
         INFO[self as usize].3
+    }
+    /// Les applications dont elle a besoin : PlumeSetup.exe les installe avec elle (Plume Boost garde une copie des
+    /// réglages qu'il change avec Plume Backup). Les liens facultatifs (« Ouvrir dans Plume Cut » de Plume Media…)
+    /// n'en font pas partie : ils se cachent quand l'autre application manque.
+    pub fn needs(self) -> &'static [App] {
+        match self {
+            App::Boost => &[App::Backup],
+            _ => &[],
+        }
+    }
+    /// Les applications installées qui ont besoin de celle-ci.
+    pub fn needed_by(self) -> Vec<App> {
+        ALL.iter().copied().filter(|a| a.needs().contains(&self) && a.installed()).collect()
+    }
+    /// Les types de fichiers que l'application peut ouvrir à la place des applications de Windows (« Set as
+    /// default »). Plume FEx ouvre les dossiers par son propre moyen (`--make-default`).
+    pub fn defaults(self) -> Option<&'static plume_defaults::Spec> {
+        match self {
+            App::Media => Some(&plume_defaults::MEDIA),
+            App::Music => Some(&plume_defaults::MUSIC),
+            App::Pdf => Some(&plume_defaults::PDF),
+            App::Notepad => Some(&plume_defaults::NOTEPAD),
+            App::Cut => Some(&plume_defaults::CUT),
+            App::Create => Some(&plume_defaults::CREATE),
+            _ => None,
+        }
     }
 }
 
@@ -161,6 +199,23 @@ pub fn run_setup(args: &[&str]) -> Result<i32, String> {
     }
     let st = Command::new(&setup).args(args).current_dir(install_dir()).creation_flags(NO_WINDOW).status().map_err(|e| e.to_string())?;
     Ok(st.code().unwrap_or(-1))
+}
+
+/// Lance une application installée avec ces arguments, sans fenêtre de console, et attend sa fin
+/// (`--register-defaults`). Rend son code de sortie.
+pub fn run_app(app: App, args: &[&str]) -> Result<i32, String> {
+    let st = Command::new(app.exe()).args(args).current_dir(install_dir()).creation_flags(NO_WINDOW).status().map_err(|e| e.to_string())?;
+    Ok(st.code().unwrap_or(-1))
+}
+
+/// L'explication de « Set as default » a été montrée une fois : elle ne revient plus.
+pub fn defaults_explained() -> bool {
+    data_dir().join("defaults-explained").is_file()
+}
+
+pub fn set_defaults_explained() {
+    let _ = std::fs::create_dir_all(data_dir());
+    let _ = std::fs::write(data_dir().join("defaults-explained"), b"1");
 }
 
 /// Ouvre une application installée.
@@ -294,6 +349,14 @@ mod tests {
         shown.sort();
         assert_eq!(shown, (0..COUNT).collect::<Vec<_>>());
         assert_eq!(App::Pdf.exe().file_name().unwrap(), "plume-pdf.exe");
+        // l'application qui s'enregistre est bien celle que la carte installe
+        for app in ALL {
+            if let Some(spec) = app.defaults() {
+                assert_eq!(spec.exe, app.exe_name());
+                assert_eq!(spec.app, app.name());
+            }
+        }
+        assert!(App::Fex.defaults().is_none() && App::Web.defaults().is_none());
         assert!(!running_installed()); // les essais tournent depuis target\
         assert!(uninstall_key().ends_with(r"\Uninstall\Plume") || std::env::var_os("PLUME_SUITE_TEST_KEY").is_some());
     }

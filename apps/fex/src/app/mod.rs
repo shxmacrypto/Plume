@@ -6,12 +6,15 @@ pub mod format;
 pub mod i18n;
 pub mod load;
 pub mod model;
+pub mod panel;
 pub mod preview;
 pub mod remote;
 mod search;
 pub mod settings;
 pub mod sheet;
+pub mod side;
 pub mod thumbs;
+pub mod transfer;
 pub mod undo;
 mod view;
 
@@ -112,6 +115,10 @@ pub enum Id {
     Search,
     SearchClear,
     Nav(usize),
+    /// Le « + » de la section Catégories.
+    NavAdd,
+    /// Le fond de la barre latérale.
+    NavBlank,
     NavSplit,
     Header(Col),
     /// Bord gauche d'une colonne : on le tire pour changer sa largeur.
@@ -135,6 +142,12 @@ pub enum Id {
     List,
     Thumb,
     Track,
+    /// Mini-panneau (désigné par son numéro) : la carte, son en-tête, son bouton fermer, une ligne, son fil d'Ariane.
+    Panel(usize),
+    PanelHead(usize),
+    PanelClose(usize),
+    PanelRow(usize, usize),
+    PanelCrumb(usize, usize),
 }
 
 /// Geste de souris en cours (bouton gauche enfoncé).
@@ -169,6 +182,34 @@ pub enum Drag {
         start: Pt,
         row: usize,
     },
+    /// Bouton enfoncé sur une ligne de la barre latérale : la ranger commencera si la souris bouge.
+    NavWait {
+        start: Pt,
+        row: usize,
+    },
+    /// Une ligne de la barre latérale est tirée vers sa nouvelle place.
+    NavMove {
+        row: usize,
+        drop: Option<side::NavDrop>,
+    },
+    /// Un mini-panneau tiré par son en-tête, attrapé à (dx, dy) de son coin.
+    PanelMove {
+        id: usize,
+        dx: f32,
+        dy: f32,
+    },
+    /// Bouton enfoncé sur une ligne d'un mini-panneau : un glisser commencera si la souris bouge.
+    PanelItem {
+        start: Pt,
+        id: usize,
+        row: usize,
+    },
+    /// Des fichiers glissés dans la fenêtre, et ce qui les recevrait.
+    Files {
+        paths: Vec<PathBuf>,
+        target: Option<transfer::Target>,
+        copy: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -182,18 +223,61 @@ pub enum EditKind {
     },
     /// Mot de passe d'une archive, dans la boîte de dialogue.
     Password,
+    /// Nom d'une catégorie de la barre latérale.
+    Category(usize),
+}
+
+/// Les sections repliables de la barre latérale.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sec {
+    Recent,
+    Categories,
+}
+
+/// Ce qu'est une ligne de la barre latérale.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NavKind {
+    /// Un dossier du haut (personnel ou épinglé), à sa place dans l'ordre choisi.
+    Quick(usize),
+    /// Ce PC, un lecteur.
+    Place,
+    Server,
+    /// Titre d'une section.
+    Section(Sec),
+    /// Un dossier récent (sa place dans la liste des récents).
+    Recent(usize),
+    /// Le titre d'une catégorie, un de ses dossiers.
+    CatHeader(usize),
+    CatFolder(usize, usize),
 }
 
 /// Une ligne de la barre latérale.
 #[derive(Clone, Debug)]
 pub struct NavRow {
-    pub loc: Location,
+    pub kind: NavKind,
+    /// Où mène un clic (rien pour un titre).
+    pub loc: Option<Location>,
     pub label: String,
     /// Icône de Windows (-1 : icône vectorielle).
     pub icon: i32,
     pub indent: f32,
     /// Espace au-dessus de la ligne (début d'un groupe).
     pub gap: f32,
+    /// Haut de la ligne dans la barre (avant défilement), et sa hauteur.
+    pub y: f32,
+    pub h: f32,
+    /// Le dossier n'existe plus (lecteur débranché…).
+    pub dim: bool,
+}
+
+impl NavRow {
+    pub fn new(kind: NavKind, loc: Option<Location>, label: &str, icon: i32) -> NavRow {
+        NavRow { kind, loc, label: label.to_string(), icon, indent: 0.0, gap: 0.0, y: 0.0, h: m::NAV_ROW_H, dim: false }
+    }
+
+    pub fn path(&self) -> Option<&Path> {
+        self.loc.as_ref().and_then(Location::path)
+    }
 }
 
 /// Les rectangles de la dernière image, pour comprendre les gestes de la souris.
@@ -272,10 +356,23 @@ pub struct App {
     pub sheet: Option<sheet::Sheet>,
     /// Réglages du bandeau de recherche ; ils valent pour tous les onglets, le temps de la session.
     pub search_opts: Options,
+    /// Filtres de date de modification et de taille (0 : aucun ; voir `actions::DATE_FILTERS`, `SIZE_FILTERS`).
+    pub search_date: usize,
+    pub search_size: usize,
     /// Version de l'index pour laquelle les tailles de dossiers affichées ont été demandées.
     sizes_seen: u64,
     /// Les serveurs SFTP auxquels la fenêtre est reliée.
     remotes: remote::Remotes,
+    /// Les mini-panneaux ouverts, du plus en arrière au plus en avant.
+    pub panels: Vec<panel::Panel>,
+    next_panel: usize,
+    /// Un clic dans le vide de la liste ferme les mini-panneaux (s'il ne devient pas un rectangle de sélection).
+    panel_close_on_up: bool,
+    /// Les dossiers retenus (récents, catégories) qui n'existent plus.
+    pub gone: Vec<PathBuf>,
+    /// Défilement de la barre latérale, et hauteur de son contenu.
+    pub nav_scroll: f32,
+    pub nav_h: f32,
 }
 
 /// L'ordre des résultats de recherche pour la colonne de tri choisie.
@@ -291,8 +388,7 @@ fn search_order(key: SortKey) -> Order {
 impl App {
     pub fn new(win: Window, gfx: Rc<Gfx>, set: Settings, start: Location) -> App {
         let s = i18n::strings(set.language());
-        let theme = Theme::new(set.dark(), set.accent);
-        load::spawn_places(win.sender(), set.pinned.clone());
+        let theme = Theme::new(set.dark(), Some(set.accent_color()));
         let mut app = App {
             update: None,
             preview: preview::Preview::new(gfx.clone()),
@@ -334,10 +430,19 @@ impl App {
             jobs: 0,
             sheet: None,
             search_opts: Options::default(),
+            search_date: 0,
+            search_size: 0,
             sizes_seen: 0,
             remotes: remote::Remotes::default(),
+            panels: vec![],
+            next_panel: 1,
+            panel_close_on_up: false,
+            gone: vec![],
+            nav_scroll: 0.0,
+            nav_h: 0.0,
             set,
         };
+        app.reload_places();
         app.rebuild_nav();
         app.new_tab(start, true);
         app.watch_updates();
@@ -388,25 +493,10 @@ impl App {
         self.win.set_title(&format!("{} - Plume FEx", self.title_of(&self.tab().loc)));
     }
 
-    fn rebuild_nav(&mut self) {
-        let mut rows: Vec<NavRow> =
-            self.places.iter().map(|p| NavRow { loc: Location::Path(p.path.clone()), label: p.name.clone(), icon: p.icon, indent: 0.0, gap: 0.0 }).collect();
-        rows.push(NavRow { loc: Location::ThisPc, label: self.s.this_pc.to_string(), icon: -1, indent: 0.0, gap: if rows.is_empty() { 0.0 } else { 12.0 } });
-        rows.extend(self.drives.iter().map(|d| NavRow { loc: Location::Path(d.root.clone()), label: d.label.clone(), icon: d.icon, indent: 14.0, gap: 0.0 }));
-        // les serveurs SFTP déjà visités
-        rows.extend(self.set.servers.iter().enumerate().map(|(k, s)| NavRow {
-            loc: Location::Remote { server: s.clone(), path: String::new() },
-            label: s.clone(),
-            icon: -1,
-            indent: 0.0,
-            gap: if k == 0 { 12.0 } else { 0.0 },
-        }));
-        self.nav_rows = rows;
-    }
-
-    pub fn on_places(&mut self, places: Vec<Place>, drives: Vec<Drive>, cx: &mut Cx) {
+    pub fn on_places(&mut self, places: Vec<Place>, drives: Vec<Drive>, gone: Vec<PathBuf>, cx: &mut Cx) {
         self.places = places;
         self.drives = drives;
+        self.gone = gone;
         self.rebuild_nav();
         self.update_title();
         cx.repaint();
@@ -525,10 +615,37 @@ impl App {
         Hist { loc: tab.loc.clone(), scroll: tab.target, focus: tab.focus.filter(|&r| r < tab.rows() && !tab.stale).map(|r| tab.item(r).name.clone()) }
     }
 
+    /// Le sous-dossier de `from` par lequel on revient dans `to` (un de ses parents) : celui qu'on y retrouve
+    /// sélectionné, quel que soit le chemin du retour (Précédent, dossier parent, barre d'adresse, bouton de souris).
+    fn came_from(from: &Location, to: &Location) -> Option<String> {
+        match (from, to) {
+            (Location::Path(child), Location::Path(parent)) if child != parent => {
+                let rest = child.strip_prefix(parent).ok()?;
+                rest.components().next().map(|c| c.as_os_str().to_string_lossy().into_owned())
+            }
+            (Location::Remote { server: a, path: child }, Location::Remote { server: b, path: parent }) if a == b => {
+                let parent = parent.trim_end_matches('/');
+                let rest = child.strip_prefix(parent)?.strip_prefix('/')?;
+                rest.split('/').find(|s| !s.is_empty()).map(String::from)
+            }
+            _ => None,
+        }
+    }
+
     fn go(&mut self, loc: Location, restore: Option<Restore>, push: bool) {
         self.end_edit(false);
         let i = self.cur;
         let tab = &mut self.tabs[i];
+        // revenir dans un dossier parent : le dossier qu'on quitte y reste sélectionné (comme dans l'Explorateur)
+        let restore = match Self::came_from(&tab.loc, &loc) {
+            Some(name) => {
+                let mut r = restore.unwrap_or(Restore { select: Vec::new(), focus: None, scroll: None, rename: false });
+                r.select = vec![name.clone()];
+                r.focus = Some(name);
+                Some(r)
+            }
+            None => restore,
+        };
         let same = tab.loc == loc;
         if push && !same {
             let h = Self::hist(tab);
@@ -556,7 +673,7 @@ impl App {
 
     /// Lance (ou relance) la recherche de l'onglet `i` dans l'index.
     fn run_search(&mut self, i: usize) {
-        let (everywhere, options) = (self.set.search_everywhere, self.search_opts);
+        let (everywhere, options, extra) = (self.set.search_everywhere, self.search_opts, self.search_extra());
         let (shared, sender) = (self.ix.clone(), self.win.sender());
         let tab = &mut self.tabs[i];
         let Location::Search { query, from } = &tab.loc else { return };
@@ -568,7 +685,7 @@ impl App {
         let req = search::Request {
             tab: tab.id,
             generation: tab.generation,
-            query: query.clone(),
+            query: format!("{query}{extra}"),
             scope: if everywhere { None } else { from.clone() },
             order: search_order(key),
             descending: !asc,
@@ -683,7 +800,8 @@ impl App {
         let loc = self.tab().loc.clone();
         let snap = self.tab().snapshot();
         self.go(loc, Some(snap), false);
-        load::spawn_places(self.win.sender(), self.set.pinned.clone());
+        self.reload_places();
+        self.refresh_panels();
     }
 
     pub fn on_loaded(&mut self, l: Loaded, cx: &mut Cx) {
@@ -717,6 +835,14 @@ impl App {
         tab.focus = None;
         tab.anchor = None;
         tab.shown = None;
+        // un dossier ouvert (pas une simple vérification) entre dans les récents
+        if !l.silent
+            && l.result.is_ok()
+            && let Location::Path(p) = tab.loc.clone()
+        {
+            self.note_recent(&p);
+        }
+        let tab = &mut self.tabs[i];
         let restore = tab.restore.take().unwrap_or_default();
         match l.result {
             Ok(listing) => {
@@ -880,6 +1006,29 @@ impl App {
             self.update_title();
         }
         self.load(at);
+    }
+
+    /// L'onglet `i` sélectionne `name` (un fichier de son dossier) dès qu'il est lu, et le montre.
+    fn select_when_loaded_at(&mut self, i: usize, name: String) {
+        self.tabs[i].restore = Some(Restore { select: vec![name.clone()], focus: Some(name), scroll: None, rename: false });
+        self.load(i);
+    }
+
+    /// L'onglet courant sélectionne `name` (un fichier de son dossier) dès qu'il est lu, et le montre.
+    pub fn select_when_loaded(&mut self, name: String) {
+        self.select_when_loaded_at(self.cur, name);
+    }
+
+    /// Ouvre un chemin reçu d'un autre programme dans un nouvel onglet : un dossier, ou un fichier (son dossier, le
+    /// fichier sélectionné). Faux si le chemin n'existe pas.
+    pub fn open_path_tab(&mut self, path: &Path, activate: bool) -> bool {
+        let Some((dir, name)) = model::open_target(path) else { return false };
+        let at = if self.tabs.is_empty() { 0 } else { self.cur + 1 };
+        self.new_tab(Location::Path(dir), activate);
+        if let Some(name) = name {
+            self.select_when_loaded_at(at, name);
+        }
+        true
     }
 
     pub fn close_tab(&mut self, i: usize, cx: &mut Cx) {
@@ -1083,7 +1232,7 @@ impl App {
     /// Message bref au bas de la fenêtre.
     pub fn toast(&mut self, text: String) {
         self.toast = Some((text, Instant::now()));
-        self.win.timer(TIMER_TOAST, Some(2600));
+        self.win.timer(TIMER_TOAST, Some(4500));
         self.win.repaint();
     }
 
@@ -1146,10 +1295,10 @@ impl App {
             // le champ du mot de passe ne va pas sans sa boîte de dialogue
             self.sheet = None;
         }
-        if let EditKind::Rename { tab, name } = kind
-            && commit
-        {
-            self.commit_rename(tab, &name, text.trim());
+        match kind {
+            EditKind::Rename { tab, name } if commit => self.commit_rename(tab, &name, text.trim()),
+            EditKind::Category(ci) => self.commit_cat_name(ci, if commit { &text } else { "" }),
+            _ => {}
         }
         self.win.repaint();
     }
@@ -1255,7 +1404,7 @@ impl App {
                 self.end_edit(false);
                 self.set_filter(String::new());
             }
-            (EditKind::Rename { .. }, K_RETURN) | (EditKind::Rename { .. }, K_TAB) => self.end_edit(true),
+            (EditKind::Rename { .. } | EditKind::Category(_), K_RETURN) | (EditKind::Rename { .. } | EditKind::Category(_), K_TAB) => self.end_edit(true),
             (_, K_ESCAPE) => self.end_edit(false),
             (EditKind::Address, K_F4) => self.end_edit(false),
             _ => {}
@@ -1266,7 +1415,7 @@ impl App {
     // ───────────────────────── réglages ─────────────────────────
 
     pub fn apply_theme(&mut self) {
-        self.theme = Theme::new(self.set.dark(), self.set.accent);
+        self.theme = Theme::new(self.set.dark(), Some(self.set.accent_color()));
         self.win.set_dark(self.theme.dark);
         shell::menu::set_dark_menus(self.theme.dark);
         self.win.repaint();
@@ -1366,11 +1515,33 @@ impl App {
         // tout clic dans la fenêtre termine la saisie en cours (un renommage est appliqué)
         self.end_edit(true);
         let id = self.hit(p);
+        // Ctrl+clic droit sur un dossier : il s'ouvre dans un mini-panneau
+        if button == Button::Right
+            && mods.ctrl
+            && let Some(dir) = self.panel_target(id)
+        {
+            self.open_panel(dir, p);
+            return cx.repaint();
+        }
+        // un clic hors des mini-panneaux les ferme (sauf sur un fichier de la liste, qu'on voudrait y faire glisser)
+        let on_panel = matches!(id, Some(Id::Panel(_) | Id::PanelHead(_) | Id::PanelClose(_) | Id::PanelRow(..) | Id::PanelCrumb(..)));
+        self.panel_close_on_up = false;
+        if !self.panels.is_empty() && !on_panel {
+            match id {
+                Some(Id::Row(_)) => {}
+                Some(Id::List) if button == Button::Left => self.panel_close_on_up = true,
+                _ => self.panels.clear(),
+            }
+        }
+        if on_panel {
+            return self.panel_down(id, p, button, clicks, mods, cx);
+        }
         match button {
             Button::Left => {
                 self.pressed = id;
                 self.collapse_on_up = None;
                 match id {
+                    Some(Id::Nav(i)) => self.nav_down(i, p),
                     Some(Id::Search) => self.start_search_edit(),
                     Some(Id::Tab(i)) => self.activate_tab(i),
                     Some(Id::Row(r)) => self.row_down(r, p, clicks, mods, cx),
@@ -1418,8 +1589,8 @@ impl App {
                     }
                 }
                 Some(Id::Nav(i)) => {
-                    if let Some(row) = self.nav_rows.get(i) {
-                        self.new_tab(row.loc.clone(), false);
+                    if let Some(loc) = self.nav_rows.get(i).filter(|r| !r.dim).and_then(|r| r.loc.clone()) {
+                        self.new_tab(loc, false);
                     }
                 }
                 Some(Id::Crumb(i)) => {
@@ -1473,11 +1644,42 @@ impl App {
         self.drag = if on_name { Drag::Item { start: p, row: r } } else { Drag::LassoWait { start: p, ctrl: mods.ctrl || mods.shift } };
     }
 
-    fn mouse_move(&mut self, p: Pt, cx: &mut Cx) {
+    fn mouse_move(&mut self, p: Pt, mods: Mods, cx: &mut Cx) {
         self.mouse = p;
         let far = |a: Pt| (a.x - p.x).abs() > 4.0 || (a.y - p.y).abs() > 4.0;
         match &self.drag {
             Drag::None => self.set_hover(p, cx),
+            Drag::Files { .. } => self.files_move(p, mods, cx),
+            Drag::NavWait { start, row } => {
+                if far(*start) {
+                    let row = *row;
+                    self.pressed = None;
+                    self.drag = Drag::NavMove { row, drop: self.nav_drop_at(row, p) };
+                    cx.repaint();
+                }
+            }
+            Drag::NavMove { row, .. } => {
+                let row = *row;
+                self.drag = Drag::NavMove { row, drop: self.nav_drop_at(row, p) };
+                cx.repaint();
+            }
+            Drag::PanelMove { id, dx, dy } => {
+                let (id, x, y) = (*id, p.x - dx, p.y - dy);
+                self.panel_move(id, x, y);
+            }
+            Drag::PanelItem { start, id, row } => {
+                if far(*start) {
+                    let (id, row) = (*id, *row);
+                    let paths = match self.panel(id) {
+                        Some(pn) if pn.items.get(row).is_some_and(|it| it.sel) => pn.selected_paths(),
+                        Some(pn) => pn.path_of(row).into_iter().collect(),
+                        None => vec![],
+                    };
+                    self.drag = Drag::None;
+                    self.start_files_drag(paths);
+                    self.files_move(p, mods, cx);
+                }
+            }
             Drag::Thumb { grab } => {
                 let (track, thumb, max) = (self.lay.track, self.lay.thumb, self.lay.max_scroll);
                 let room = (track.h - thumb.h).max(1.0);
@@ -1507,6 +1709,7 @@ impl App {
                     let base = if ctrl { tab.items.iter().map(|it| it.sel).collect() } else { vec![] };
                     self.drag = Drag::Lasso { x0: start.x - l.x, y0: start.y - l.y + tab.scroll, ctrl, base };
                     self.collapse_on_up = None;
+                    self.panel_close_on_up = false;
                     cx.timer(TIMER_LASSO, Some(30));
                     self.lasso_update();
                     cx.repaint();
@@ -1522,7 +1725,8 @@ impl App {
                     self.drag = Drag::None;
                     self.collapse_on_up = None;
                     self.pressed = None;
-                    self.start_item_drag(row, cx);
+                    self.start_item_drag(row);
+                    self.files_move(p, mods, cx);
                 }
             }
         }
@@ -1564,7 +1768,22 @@ impl App {
         match drag {
             Drag::Lasso { .. } => cx.timer(TIMER_LASSO, None),
             Drag::NavSplit | Drag::Col { .. } => self.set.save(),
+            Drag::Files { paths, .. } => self.files_drop(p, mods, paths),
+            // un clic sur un élément déjà sélectionné parmi d'autres : il reste seul sélectionné
+            Drag::PanelItem { id, row, .. } if !mods.ctrl && !mods.shift => {
+                if let Some(pn) = self.panel_mut(id) {
+                    pn.select_only(row);
+                }
+            }
+            Drag::NavMove { row, .. } => {
+                if let Some(d) = self.nav_drop_at(row, p) {
+                    self.nav_apply(row, d);
+                }
+            }
             _ => {}
+        }
+        if std::mem::take(&mut self.panel_close_on_up) {
+            self.panels.clear();
         }
         let pressed = self.pressed.take();
         let id = self.hit(p);
@@ -1610,9 +1829,12 @@ impl App {
             Id::ScopeAll => self.set_scope(true),
             Id::Filter => self.filter_menu(cx),
             Id::SheetOk | Id::SheetCancel | Id::SheetReveal | Id::SheetZip | Id::Sheet7z | Id::SheetRar => self.sheet_click(id),
-            Id::Nav(i) => {
-                if let Some(row) = self.nav_rows.get(i) {
-                    self.navigate(row.loc.clone());
+            Id::Nav(i) => self.nav_click(i),
+            Id::NavAdd => self.new_category(vec![]),
+            Id::PanelClose(id) => self.close_panel(id),
+            Id::PanelCrumb(id, c) => {
+                if let Some(dir) = self.panel(id).and_then(|pn| Location::Path(pn.dir.clone()).chain().get(c).cloned()) {
+                    self.panel_go(id, dir);
                 }
             }
             Id::Header(col) => {
@@ -1633,8 +1855,14 @@ impl App {
     }
 
     fn wheel(&mut self, p: Pt, dy: f32, ctrl: bool, cx: &mut Cx) {
-        if self.lay.nav.contains(p) || self.sheet.is_some() {
+        if self.sheet.is_some() {
             return;
+        }
+        if let Some(id) = self.panel_at(p) {
+            return self.panel_wheel(id, dy);
+        }
+        if self.lay.nav.contains(p) {
+            return self.nav_wheel(dy);
         }
         // Ctrl+molette, comme dans l'Explorateur : vers le haut, des icônes plus grandes ; tout en bas, les détails
         if ctrl && self.lay.list.contains(p) {
@@ -1654,42 +1882,26 @@ impl App {
         cx.repaint();
     }
 
-    /// Commence à faire glisser la sélection (ou la ligne attrapée, si elle n'est pas sélectionnée).
-    fn start_item_drag(&mut self, row: usize, cx: &mut Cx) {
+    /// Commence à faire glisser la sélection (ou la ligne attrapée, si elle n'est pas sélectionnée) : dans la
+    /// fenêtre d'abord, puis par Windows si la souris en sort (voir `transfer`).
+    fn start_item_drag(&mut self, row: usize) {
         let tab = self.tab();
         if tab.stale || row >= tab.rows() {
             return;
         }
         let paths: Vec<PathBuf> = if tab.item(row).sel { tab.selected_paths() } else { tab.path_of(row).into_iter().collect() };
-        if paths.is_empty() {
-            return;
-        }
-        cx.capture(false);
-        cx.after(move |win| {
-            shell::dnd::drag(win, &paths);
-            win.with(|h, _| {
-                if let Some(app) = h.as_any().downcast_mut::<App>() {
-                    app.drop_at(None);
-                    app.check_now();
-                }
-            });
-        });
+        self.start_files_drag(paths);
     }
 
     /// Un glisser-déposer survole le point `p` : renvoie le dossier qui recevrait les fichiers, et le met en
     /// évidence. `None` : le glisser est fini ou sorti de la fenêtre.
     pub fn drop_at(&mut self, p: Option<Pt>) -> Option<PathBuf> {
         let p = p.filter(|_| self.sheet.is_none());
-        let here = || self.tab().loc.path().map(Path::to_path_buf);
-        let (hl, path) = match p.and_then(|p| self.hit(p)) {
-            Some(Id::Row(r)) if self.tab().item(r).is_dir() => (Id::Row(r), self.tab().path_of(r)),
-            Some(Id::Row(_) | Id::List) => (Id::List, here()),
-            Some(Id::Nav(i)) => (Id::Nav(i), self.nav_rows.get(i).and_then(|n| n.loc.path().map(Path::to_path_buf))),
-            Some(Id::Tab(i)) => (Id::Tab(i), self.tabs.get(i).and_then(|t| t.loc.path().map(Path::to_path_buf))),
-            Some(Id::Crumb(i)) => (Id::Crumb(i), self.crumbs.get(i).and_then(|l| l.path().map(Path::to_path_buf))),
-            _ => (Id::List, None),
+        // seuls les dossiers reçoivent ce qui vient d'ailleurs (pas les catégories)
+        let (hl, path) = match p.and_then(|p| self.target_at(p, &[])) {
+            Some((hl, transfer::Target::Dir(d))) => (Some(hl), Some(d)),
+            _ => (None, None),
         };
-        let hl = path.as_ref().map(|_| hl);
         if hl != self.drop_hl {
             self.drop_hl = hl;
             self.win.repaint();
@@ -1740,6 +1952,10 @@ impl App {
             v if v == letter('A') && ctrl => self.tab_mut().select_all(),
             v if v == letter('H') && ctrl => self.set_show_hidden(!self.set.show_hidden),
             K_RETURN if !alt => self.open_selection(ctrl, cx),
+            // Échap ferme d'abord le mini-panneau du dessus
+            K_ESCAPE if !self.panels.is_empty() => {
+                self.panels.pop();
+            }
             K_ESCAPE => {
                 if !self.tab().filter.is_empty() {
                     self.set_filter(String::new());
@@ -1781,7 +1997,7 @@ impl Handler for App {
 
     fn event(&mut self, ev: Event, cx: &mut Cx) {
         match ev {
-            Event::MouseMove { p, .. } => self.mouse_move(p, cx),
+            Event::MouseMove { p, mods } => self.mouse_move(p, mods, cx),
             Event::MouseDown { p, button, clicks, mods } => self.mouse_down(p, button, clicks, mods, cx),
             Event::MouseUp { p, button, mods } => self.mouse_up(p, button, mods, cx),
             Event::MouseLeave => {
@@ -1800,22 +2016,27 @@ impl Handler for App {
                 self.active = on;
                 if on {
                     self.check_now();
+                    self.refresh_panels();
                 }
                 cx.repaint();
             }
             Event::Devices => {
-                load::spawn_places(self.win.sender(), self.set.pinned.clone());
+                self.reload_places();
                 self.check_now();
             }
-            Event::Timer(TIMER_POLL) => self.poll(),
+            Event::Timer(TIMER_POLL) => {
+                self.poll();
+                if self.active && matches!(self.drag, Drag::None) {
+                    self.poll_panels();
+                }
+            }
             Event::Opened(text) => {
                 // le programme a été relancé alors qu'il tournait déjà : ce qu'il devait ouvrir s'ouvre ici, dans
                 // de nouveaux onglets, et la fenêtre passe devant
                 let mut any = false;
                 for line in text.lines().filter(|l| !l.trim().is_empty()) {
-                    if let Some(p) = parse_address(line, None).filter(|p| p.is_dir()) {
-                        self.new_tab(Location::Path(p), true);
-                        any = true;
+                    if let Some(p) = parse_address(line, None) {
+                        any |= self.open_path_tab(&p, true);
                     }
                 }
                 if !any {
@@ -1909,5 +2130,27 @@ impl Handler for App {
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod back_to_parent {
+    use super::{App, Location};
+    use std::path::PathBuf;
+
+    #[test]
+    fn the_folder_you_left_is_named() {
+        let p = |s: &str| Location::Path(PathBuf::from(s));
+        assert_eq!(App::came_from(&p(r"C:\Users\Sam\Music"), &p(r"C:\Users\Sam")).as_deref(), Some("Music"));
+        // several levels up (Back after two steps in, or the address bar): the child on the way
+        assert_eq!(App::came_from(&p(r"C:\Users\Sam\Music\Rock"), &p(r"C:\Users")).as_deref(), Some("Sam"));
+        assert_eq!(App::came_from(&p(r"C:\Users"), &p(r"C:\")).as_deref(), Some("Users"));
+        // not a parent: nothing forced
+        assert_eq!(App::came_from(&p(r"C:\Users\Sam"), &p(r"D:\Games")), None);
+        assert_eq!(App::came_from(&p(r"C:\Users"), &p(r"C:\Users\Sam")), None);
+        assert_eq!(App::came_from(&p(r"C:\Users"), &p(r"C:\Users")), None);
+        let r = |s: &str, path: &str| Location::Remote { server: s.into(), path: path.into() };
+        assert_eq!(App::came_from(&r("me@host", "/srv/www/site"), &r("me@host", "/srv")).as_deref(), Some("www"));
+        assert_eq!(App::came_from(&r("me@host", "/srv/www"), &r("other@host", "/srv")), None);
     }
 }

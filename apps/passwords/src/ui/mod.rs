@@ -32,7 +32,7 @@ use zeroize::{Zeroize, Zeroizing};
 pub const TICK: usize = 1;
 pub const SIDEBAR_W: f32 = 214.0;
 pub const LIST_W: f32 = 330.0;
-pub const ROW_H: f32 = 58.0;
+pub const ROW_H: f32 = 52.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Screen {

@@ -218,6 +218,8 @@ pub struct App {
     pub pressed: Option<Id>,
     pub lay: Lay,
     pub toast: Option<(String, Instant)>,
+    /// Pour décoder le logo de la barre de titre.
+    pub wic: windows::Win32::Graphics::Imaging::IWICImagingFactory,
     pub active: bool,
 }
 
@@ -256,12 +258,12 @@ impl App {
         });
     }
 
-    pub fn new(win: Window, set: Settings, store: Store) -> App {
+    pub fn new(win: Window, set: Settings, store: Store, wic: windows::Win32::Graphics::Imaging::IWICImagingFactory) -> App {
         let s = i18n::strings(set.language());
         let mut app = App {
             update: None,
             win,
-            theme: Theme::new(set.dark(), set.accent),
+            theme: Theme::new(set.dark(), Some(set.accent_color())),
             s,
             set,
             store,
@@ -288,6 +290,7 @@ impl App {
             pressed: None,
             lay: Lay::default(),
             toast: None,
+            wic,
             active: true,
         };
         app.watch_updates();
@@ -525,7 +528,7 @@ impl App {
 
     pub fn toast(&mut self, text: String) {
         self.toast = Some((text, Instant::now()));
-        self.win.timer(TIMER_TOAST, Some(3600));
+        self.win.timer(TIMER_TOAST, Some(4500));
         self.win.repaint();
     }
 
@@ -800,7 +803,7 @@ impl App {
                 self.set.theme = theme.to_string();
                 self.set.own_theme = true;
                 self.set.save();
-                self.theme = Theme::new(self.set.dark(), self.set.accent);
+                self.theme = Theme::new(self.set.dark(), Some(self.set.accent_color()));
             }
             Action::Lang(lang) => {
                 self.set.lang = lang.to_string();
@@ -1069,7 +1072,7 @@ impl Handler for App {
                 cx.repaint();
             }
             Event::SystemTheme => {
-                self.theme = Theme::new(self.set.dark(), self.set.accent);
+                self.theme = Theme::new(self.set.dark(), Some(self.set.accent_color()));
                 cx.repaint();
             }
             Event::Timer(TIMER_SYNC) => self.sync(),

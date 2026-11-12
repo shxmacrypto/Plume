@@ -24,6 +24,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Emerald, the colour of the icon.
+pub const ACCENT: u32 = 0x059669;
+
 const TICK: usize = 1;
 const SCHED: usize = 2;
 /// After a failed attempt, a schedule waits this long before trying again.
@@ -174,6 +177,8 @@ pub struct App {
     pub quitting: bool,
     /// What happened, for the tests.
     pub log: Vec<String>,
+    /// Command-line requests waiting for a plan's run to end: (plan id, answer id).
+    pub cli_waits: Vec<(u64, String)>,
     tip: String,
 }
 
@@ -181,14 +186,14 @@ pub fn with_app(h: &mut dyn Handler) -> Option<&mut App> {
     h.as_any().downcast_mut::<App>()
 }
 
-/// The theme: the setting, otherwise Windows'; the accent is Plume Backup's green.
+/// The theme: the setting, otherwise Windows'; the accent is the emerald of Plume Backup's icon.
 pub fn theme(set: &Settings) -> Theme {
     let dark = match std::env::var("PLUME_SUITE_THEME").ok().as_deref().unwrap_or(set.theme.as_str()) {
         "dark" => true,
         "light" => false,
         _ => crate::system_dark(),
     };
-    Theme::new(dark, Some(Color::hex(if dark { 0x2fbf71 } else { 0x15803d })))
+    Theme::new(dark, Some(Color::hex(ACCENT)))
 }
 
 fn new_id() -> u64 {
@@ -241,6 +246,7 @@ impl App {
             keep,
             quitting: false,
             log: Vec::new(),
+            cli_waits: Vec::new(),
             tip: String::new(),
         };
         app.update_keep();
@@ -448,7 +454,21 @@ impl App {
             }
         }
         self.store.save();
-        self.notify(&name, &result);
+        // a command line waiting for this plan (`--run-plan`) gets its answer
+        let waits: Vec<String> = self.cli_waits.iter().filter(|w| w.0 == id).map(|w| w.1.clone()).collect();
+        self.cli_waits.retain(|w| w.0 != id);
+        let quiet = !waits.is_empty() && result.is_ok();
+        for nonce in waits {
+            let answer = match &result {
+                Ok(r) => crate::cli::Answer { ok: true, message: crate::cli::report_text(r) },
+                Err(f) => crate::cli::Answer { ok: false, message: crate::cli::fail_text(f) },
+            };
+            crate::cli::write_answer(&nonce, &answer);
+        }
+        // another app asked for it: a success needs no balloon (a failure still shows one)
+        if !quiet {
+            self.notify(&name, &result);
+        }
         // the restore view shows the new backup
         if self.view == View::Restore && self.store.plans.get(self.rplan).is_some_and(|p| p.id == id) {
             self.load_snaps();
@@ -456,6 +476,39 @@ impl App {
         self.start_next(cx);
         self.update_tip();
         cx.repaint();
+    }
+
+    /// A request of `plume-backup.exe --ensure-plan` / `--run-plan` handed to this window, which owns plans.json.
+    pub fn cli_request(&mut self, req: crate::cli::Cli, nonce: String, cx: &mut Cx) {
+        use crate::cli::{Answer, Cli};
+        match req {
+            Cli::Ensure(e) => {
+                let answer = match crate::cli::ensure(&mut self.store, &e, new_id()) {
+                    Ok((_, changed)) => {
+                        if changed {
+                            self.store.save();
+                        }
+                        self.note(format!("cli ensure {} changed={changed}", e.name));
+                        Answer { ok: true, message: if changed { "saved".into() } else { "up to date".into() } }
+                    }
+                    Err(m) => Answer { ok: false, message: m },
+                };
+                crate::cli::write_answer(&nonce, &answer);
+                cx.repaint();
+            }
+            Cli::Run(name) => match crate::cli::runnable(&self.store, &name) {
+                Ok(plan) => {
+                    self.note(format!("cli run {}", plan.name));
+                    self.cli_waits.push((plan.id, nonce));
+                    // already running: it runs once more afterwards, so the answer covers files written just now
+                    if !self.queue.contains(&plan.id) {
+                        self.queue.push(plan.id);
+                    }
+                    self.start_next(cx);
+                }
+                Err(m) => crate::cli::write_answer(&nonce, &Answer { ok: false, message: m }),
+            },
+        }
     }
 
     fn notify(&mut self, name: &str, result: &Result<Report, Fail>) {
@@ -1065,7 +1118,7 @@ impl Handler for App {
                 }
             }
             Event::Timer(TICK) => {
-                if self.toast.as_ref().is_some_and(|(_, at)| at.elapsed() > Duration::from_secs(6)) {
+                if self.toast.as_ref().is_some_and(|(_, at)| at.elapsed() > Duration::from_secs(5)) {
                     self.toast = None;
                 }
                 if self.toast.is_none() && self.running.is_none() {
@@ -1084,6 +1137,11 @@ impl Handler for App {
                 self.quitting = true;
                 self.update_keep();
                 cx.after(|w| w.close());
+            }
+            Event::Opened(text) if crate::cli::read_message(&text).is_some() => {
+                if let Some((req, nonce)) = crate::cli::read_message(&text) {
+                    self.cli_request(req, nonce, cx);
+                }
             }
             Event::Opened(text) if text == "run" => {
                 let ids: Vec<u64> = self.store.plans.iter().filter(|p| !p.paused).map(|p| p.id).collect();

@@ -28,7 +28,7 @@ fn main() {
     // un dossier d'essai ne reprend rien des réglages de l'utilisateur
     let set = Settings::load(store.dir.clone(), std::env::var_os("PLUME_MAIL_PROFILE").is_some());
     let gfx = Rc::new(Gfx::new().expect("Direct2D"));
-    let theme = Theme::new(set.dark(), set.accent);
+    let theme = Theme::new(set.dark(), Some(set.accent_color()));
     let o = window::Options {
         title: "Plume Mail".into(),
         size: (1180.0, 760.0),
@@ -38,7 +38,8 @@ fn main() {
         activate: std::env::var_os("PLUME_MAIL_NOACTIVATE").is_none(),
         placement: set.win,
     };
-    let win = window::create(&gfx, o, move |win| Box::new(App::new(win, set, store))).expect("fenêtre");
+    let wic = gfx.wic.clone();
+    let win = window::create(&gfx, o, move |win| Box::new(App::new(win, set, store, wic))).expect("fenêtre");
     #[cfg(feature = "test-hook")]
     test_hook::start(win);
     let _ = win;

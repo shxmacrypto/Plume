@@ -63,7 +63,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             theme: "system".into(),
-            accent: "cover".into(),
+            accent: "rose".into(),
             background: "cover".into(),
             gif: None,
             gif_everywhere: false,

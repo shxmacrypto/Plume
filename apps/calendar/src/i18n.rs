@@ -176,6 +176,7 @@ fn fr(en: &str) -> Option<&'static str> {
         "Subscriptions" => "Abonnements",
         "All day" => "Toute la journée",
         "all day" => "toute la journée",
+        "All-day" => "Journée",
         "At the start" => "Au début",
         "day" => "jour",
         "days" => "jours",

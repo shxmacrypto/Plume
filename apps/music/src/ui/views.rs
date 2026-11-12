@@ -1083,7 +1083,7 @@ impl App {
             }
             MenuAct::ShowFile(k) => {
                 if let Some(p) = self.lib.tracks.get(&k).and_then(|t| t.path.clone()) {
-                    let _ = std::process::Command::new("explorer.exe").arg(format!("/select,{}", p.display())).spawn();
+                    plume_ui::folder::show(&p);
                 }
             }
             MenuAct::CopyLink(k) => {

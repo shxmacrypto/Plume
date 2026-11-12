@@ -23,6 +23,19 @@ forever, snippets you type often, and a small panel that pastes them into any ap
 - Closing the window keeps it running with its icon near the clock (Open, Open the panel, Pause, Quit).
   It can start with Windows, in the background.
 
+## Sensitive copies
+
+- A copied text that looks sensitive is marked: a **password** (one word of 8 to 64 characters mixing at least three
+  of capitals, small letters, digits and symbols, and not a link, a path, an e-mail address, a name from code or a
+  file name), an **IP address** (IPv4 or IPv6, alone or with a port), or a **key** (API keys and tokens with a
+  well-known prefix such as `sk-`, `ghp_`, `xoxb-`, `AKIA`, JWTs, private-key blocks).
+- It shows as `••••••••••` with its kind, in the window and in the panel. The eye button shows it while it is held,
+  or for 5 seconds after a click. The search never looks at what it hides. Pasting it pastes the real value.
+- It is always sealed on disk with DPAPI (even when the history is not encrypted), without its formatting, kept only
+  a short time (1 hour by default, 5 minutes to 1 day), pinned only after a question, and never made into a snippet.
+- Settings: each kind on or off, the keep time, "Never keep sensitive items" (skipped like private content), and
+  "Clear sensitive items" (also in the icon's menu).
+
 ## What is never kept
 
 - Anything an app marks as private. Password managers add `ExcludeClipboardContentFromMonitorProcessing`, or set

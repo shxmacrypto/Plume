@@ -7,16 +7,62 @@ use crate::{
     sys::{self, Hotkey},
     ui::{Shared, theme_for},
 };
-use plume_ui::{Align, Area, Button, Canvas, Color, Cursor, Cx, Event, Font, Gfx, Handler, Hits, PaintCx, Pt, Rect, Theme, Window, rect, window};
+use plume_ui::{Align, Area, Button, Canvas, Color, Cursor, Cx, Event, Font, Gfx, Handler, Hits, PaintCx, Pt, Rect, Theme, Window, m, rect, window};
 use std::{any::Any, rc::Rc, sync::atomic::Ordering};
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_LWIN, VK_RWIN};
+use windows::{
+    Win32::{
+        Graphics::Imaging::{
+            GUID_WICPixelFormat32bppPBGRA, IWICBitmapSource, IWICImagingFactory, WICBitmapDitherTypeNone, WICBitmapPaletteTypeMedianCut,
+            WICDecodeMetadataCacheOnLoad,
+        },
+        UI::Input::KeyboardAndMouse::{GetKeyState, VK_LWIN, VK_RWIN},
+    },
+    core::Interface,
+};
 
-const TITLE_H: f32 = 46.0;
-const MARGIN: f32 = 26.0;
+const TITLE_H: f32 = m::TITLE_H;
+const MARGIN: f32 = 24.0;
+/// Inner padding of a card.
+const PAD: f32 = 20.0;
 const TIMER: usize = 1;
+const LOGO: &[u8] = include_bytes!("../../../assets/brand/plume-launcher-256.png");
+
+/// A PNG of the program, decoded for drawing.
+fn png(wic: &IWICImagingFactory, bytes: &'static [u8]) -> Option<IWICBitmapSource> {
+    unsafe {
+        let stream = wic.CreateStream().ok()?;
+        stream.InitializeFromMemory(bytes).ok()?;
+        let decoder = wic.CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnLoad).ok()?;
+        let frame = decoder.GetFrame(0).ok()?;
+        let conv = wic.CreateFormatConverter().ok()?;
+        conv.Initialize(&frame, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeMedianCut).ok()?;
+        conv.cast::<IWICBitmapSource>().ok()
+    }
+}
+
+/// What sits on the right of a settings row.
+enum Control {
+    Toggle(&'static str, bool),
+    Choice(&'static str, Vec<String>, usize),
+    /// A button: label, what it does, and whether it has the focus (the shortcut being recorded).
+    Pill(String, Hit, bool),
+}
+
+struct Row {
+    label: String,
+    sub: String,
+    sub_color: Option<Color>,
+    control: Control,
+}
+
+fn row(label: &str, sub: &str, control: Control) -> Row {
+    Row { label: label.into(), sub: sub.into(), sub_color: None, control }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Hit {
+    Min,
+    Max,
     Close,
     Hotkey,
     Toggle(&'static str),
@@ -31,6 +77,8 @@ pub struct SettingsApp {
     theme: Theme,
     pub hits: Hits<Hit>,
     hover: Option<Hit>,
+    pressed: Option<Hit>,
+    gfx: Rc<Gfx>,
     /// Waiting for the new shortcut to be pressed.
     pub capturing: bool,
     pub note: Option<String>,
@@ -47,16 +95,28 @@ pub fn open(gfx: &Rc<Gfx>, sh: &Rc<Shared>, activate: bool) {
     let theme = theme_for(&sh.set.borrow());
     let o = window::Options {
         title: tr("Plume Launcher settings").into(),
-        size: (540.0, 720.0),
+        size: (560.0, 740.0),
         min: (460.0, 420.0),
         dark: theme.dark,
         background: theme.bg,
         activate: activate && !sys::test_mode(),
         placement: None,
     };
-    let s = sh.clone();
+    let (s, g) = (sh.clone(), gfx.clone());
     if let Ok(w) = window::create(gfx, o, move |win| {
-        Box::new(SettingsApp { win, sh: s, theme, hits: Hits::default(), hover: None, capturing: false, note: None, scroll: 0.0, content_h: 0.0 })
+        Box::new(SettingsApp {
+            win,
+            sh: s,
+            theme,
+            hits: Hits::default(),
+            hover: None,
+            pressed: None,
+            gfx: g,
+            capturing: false,
+            note: None,
+            scroll: 0.0,
+            content_h: 0.0,
+        })
     }) {
         sh.settings_win.set(Some(w));
         w.timer(TIMER, Some(1000));
@@ -68,73 +128,94 @@ impl SettingsApp {
         self.sh.popup.get()
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn row(&mut self, c: &mut Canvas, x: f32, y: f32, w: f32, label: &str, sub: &str, sub_color: Option<Color>) -> Rect {
-        let t = self.theme.clone();
-        let h = if sub.is_empty() { 48.0 } else { 60.0 };
-        let r = rect(x, y, w, h);
-        if sub.is_empty() {
-            c.text(label, rect(x, y, w * 0.55, h), Font::Body, t.t1, Align::Left);
-        } else {
-            c.text(label, rect(x, y + 9.0, w * 0.6, 20.0), Font::Body, t.t1, Align::Left);
-            c.text(sub, rect(x, y + 31.0, w * 0.7, 18.0), Font::Small, sub_color.unwrap_or(t.t3), Align::Left);
-        }
-        c.hline(x, y + h, w, t.sep);
-        r
-    }
-
+    /// The iOS-style switch, on the right of `r`.
     fn toggle(&mut self, c: &mut Canvas, r: Rect, on: bool, name: &'static str) {
         let t = self.theme.clone();
-        let sw = rect(r.right() - 44.0, r.y + (r.h - 24.0) / 2.0, 44.0, 24.0);
-        c.fill_round(sw, 12.0, if on { t.accent } else { t.fill2 });
-        let k = if on { sw.right() - 21.0 } else { sw.x + 3.0 };
-        c.fill_round(rect(k, sw.y + 3.0, 18.0, 18.0), 9.0, Color::hex(0xffffff));
+        let sw = rect(r.right() - 48.0, r.y + (r.h - 28.0) / 2.0, 48.0, 28.0);
+        c.fill_round(sw, 14.0, if on { t.accent } else { t.fill2 });
+        let k = if on { sw.right() - 25.0 } else { sw.x + 3.0 };
+        c.fill_round(rect(k, sw.y + 3.0, 22.0, 22.0), 11.0, Color::hex(0xffffff));
         self.hits.add(r, Hit::Toggle(name));
     }
 
-    fn choices(&mut self, c: &mut Canvas, r: Rect, labels: &[&str], cur: usize, name: &'static str) {
+    /// The segmented control: a pill track, the chosen segment raised.
+    fn choices(&mut self, c: &mut Canvas, r: Rect, labels: &[String], cur: usize, name: &'static str) {
         let t = self.theme.clone();
-        let widths: Vec<f32> = labels.iter().map(|l| c.text_width(l, Font::Small) + 22.0).collect();
-        let total: f32 = widths.iter().sum::<f32>() + 6.0;
-        let bg = rect(r.right() - total, r.y + (r.h - 32.0) / 2.0, total, 32.0);
-        c.fill_round(bg, 16.0, t.fill);
-        let mut x = bg.x + 3.0;
+        let widths: Vec<f32> = labels.iter().map(|l| c.text_width(l, Font::SmallBold) + 24.0).collect();
+        let total: f32 = widths.iter().sum::<f32>() + 8.0;
+        let track = rect(r.right() - total, r.y + (r.h - 32.0) / 2.0, total, 32.0);
+        c.fill_round(track, 16.0, t.fill);
+        let mut x = track.x + 4.0;
         for (i, (l, w)) in labels.iter().zip(widths).enumerate() {
-            let b = rect(x, bg.y + 3.0, w, 26.0);
+            let b = rect(x, track.y + 4.0, w, 24.0);
             let hit = Hit::Choice(name, i);
             if i == cur {
-                c.fill_round(b, 13.0, t.accent);
+                c.fill_round(b, 12.0, t.fill2);
+                c.stroke_round(b, 12.0, t.ring, 1.0);
             } else if self.hover == Some(hit) {
-                c.fill_round(b, 13.0, t.hover);
+                c.fill_round(b, 12.0, t.hover);
             }
-            c.text(l, b, Font::Small, if i == cur { Color::hex(0xffffff) } else { t.t1 }, Align::Center);
+            let (font, ink) = if i == cur { (Font::SmallBold, t.t1) } else { (Font::Small, t.t2) };
+            c.text(l, b, font, ink, Align::Center);
             self.hits.add(b, hit);
             x += w;
         }
     }
 
-    fn pill(&mut self, c: &mut Canvas, r: Rect, label: &str, strong: bool, hit: Hit) {
+    /// A pill button on the right of `r`. `focus`: drawn with the accent (the shortcut being recorded).
+    fn pill(&mut self, c: &mut Canvas, r: Rect, label: &str, focus: bool, hit: Hit) {
         let t = self.theme.clone();
-        let w = c.text_width(label, Font::SmallBold) + 30.0;
-        let b = rect(r.right() - w, r.y + (r.h - 30.0) / 2.0, w, 30.0);
-        let bg = if strong {
-            t.accent.fade(0.22)
+        let w = c.text_width(label, Font::BodyBold) + 32.0;
+        let b = rect(r.right() - w, r.y + (r.h - 32.0) / 2.0, w, 32.0);
+        let bg = if focus {
+            t.accent.fade(0.16)
+        } else if self.pressed == Some(hit) {
+            t.fill2.mix(t.t1, 0.06)
         } else if self.hover == Some(hit) {
             t.fill2
         } else {
             t.fill
         };
-        c.fill_round(b, 15.0, bg);
-        if strong {
-            c.stroke_round(b, 15.0, t.accent, 1.5);
+        c.fill_round(b, 16.0, bg);
+        if focus {
+            c.stroke_round(b, 16.0, t.accent, 1.5);
         }
-        c.text(label, b, Font::SmallBold, if strong { t.accent } else { t.t1 }, Align::Center);
+        c.text(label, b, Font::BodyBold, if focus { t.accent } else { t.t1 }, Align::Center);
         self.hits.add(b, hit);
     }
 
-    fn group(&self, c: &mut Canvas, x: f32, y: f32, w: f32, title: &str) -> f32 {
-        c.text(title, rect(x, y, w, 24.0), Font::SmallBold, self.theme.t3, Align::Left);
-        y + 30.0
+    /// A titled card of rows; returns where the next one goes.
+    fn section(&mut self, c: &mut Canvas, x: f32, y: f32, w: f32, title: &str, rows: Vec<Row>) -> f32 {
+        let t = self.theme.clone();
+        c.text(title, rect(x + 4.0, y, w, 24.0), Font::Title, t.t1, Align::Left);
+        let top = y + 32.0;
+        let heights: Vec<f32> = rows.iter().map(|r| if r.sub.is_empty() { 52.0 } else { 64.0 }).collect();
+        let card = rect(x, top, w, heights.iter().sum());
+        c.fill_round(card, 16.0, t.card);
+        c.stroke_round(card, 16.0, t.sep, 1.0);
+        let (ix, iw) = (x + PAD, w - 2.0 * PAD);
+        let mut ry = top;
+        let n = rows.len();
+        for (k, (row, h)) in rows.into_iter().zip(heights).enumerate() {
+            let r = rect(ix, ry, iw, h);
+            let text_w = iw * 0.62;
+            if row.sub.is_empty() {
+                c.text(&row.label, rect(ix, ry, text_w, h), Font::Body, t.t1, Align::Left);
+            } else {
+                c.text(&row.label, rect(ix, ry + 12.0, text_w, 20.0), Font::Body, t.t1, Align::Left);
+                c.text(&row.sub, rect(ix, ry + 34.0, iw * 0.7, 18.0), Font::Small, row.sub_color.unwrap_or(t.t3), Align::Left);
+            }
+            match row.control {
+                Control::Toggle(name, on) => self.toggle(c, r, on, name),
+                Control::Choice(name, labels, cur) => self.choices(c, r, &labels, cur, name),
+                Control::Pill(label, hit, focus) => self.pill(c, r, &label, focus, hit),
+            }
+            if k + 1 < n {
+                c.hline(ix, ry + h, iw, t.sep);
+            }
+            ry += h;
+        }
+        card.bottom() + 28.0
     }
 
     fn index_line(&self) -> String {
@@ -159,66 +240,60 @@ impl SettingsApp {
     }
 
     fn paint_content(&mut self, c: &mut Canvas, x: f32, y: f32, w: f32) -> f32 {
+        let t = self.theme.clone();
         let set = self.sh.set.borrow().clone();
         let mut y = y;
+        c.text(tr("Settings"), rect(x + 4.0, y, w, 34.0), Font::Hero, t.t1, Align::Left);
+        c.text(tr("What the search box looks in, and how it opens"), rect(x + 4.0, y + 38.0, w, 20.0), Font::Body, t.t3, Align::Left);
+        y += 80.0;
 
-        y = self.group(c, x, y, w, tr("Shortcut"));
         let (sub, color) = if self.capturing {
             (tr("Press the new shortcut, or Esc to cancel").to_string(), None)
         } else if let Some(n) = &self.note {
-            (n.clone(), Some(self.theme.orange))
+            (n.clone(), Some(t.orange))
         } else if !self.sh.hotkey_ok.get() {
-            (tr("Another app already uses this shortcut: choose another one").to_string(), Some(self.theme.red))
+            (tr("Another app already uses this shortcut: choose another one").to_string(), Some(t.red))
         } else {
             (tr("Opens the search box from anywhere").to_string(), None)
         };
-        let r = self.row(c, x, y, w, tr("Open Plume Launcher"), &sub, color);
         let label = if self.capturing { tr("Press keys…").to_string() } else { Hotkey::parse(&set.hotkey).map_or(set.hotkey.clone(), |h| h.label()) };
-        let capturing = self.capturing;
-        self.pill(c, r, &label, capturing, Hit::Hotkey);
-        y += r.h + 26.0;
+        let mut shortcut = row(tr("Open Plume Launcher"), &sub, Control::Pill(label, Hit::Hotkey, self.capturing));
+        shortcut.sub_color = color;
+        y = self.section(c, x, y, w, tr("Shortcut"), vec![shortcut]);
 
-        y = self.group(c, x, y, w, tr("Search in"));
-        let rows: [(&'static str, &str, String, bool); 5] = [
-            ("apps", tr("Apps"), tr("Start menu and Store apps").into(), set.apps),
-            ("files", tr("Files and folders"), self.index_line(), set.files),
-            ("settings", tr("Windows settings"), String::new(), set.settings),
-            ("calc", tr("Calculator"), tr("Sums, percentages and units, like 15% of 80 or 5 km in mi").into(), set.calc),
-            ("web", tr("Web search"), tr("When nothing else matches, search the web").into(), set.web),
+        let engines: Vec<String> = ENGINES.iter().map(|e| e.1.to_string()).collect();
+        let engine = ENGINES.iter().position(|e| e.0 == set.engine).unwrap_or(0);
+        let rows = vec![
+            row(tr("Apps"), tr("Start menu and Store apps"), Control::Toggle("apps", set.apps)),
+            row(tr("Files and folders"), &self.index_line(), Control::Toggle("files", set.files)),
+            row(tr("Windows settings"), "", Control::Toggle("settings", set.settings)),
+            row(tr("Calculator"), tr("Sums, percentages and units, like 15% of 80 or 5 km in mi"), Control::Toggle("calc", set.calc)),
+            row(tr("Web search"), tr("When nothing else matches, search the web"), Control::Toggle("web", set.web)),
+            row(tr("Search engine"), "", Control::Choice("engine", engines, engine)),
+            row(
+                tr("File index"),
+                tr("Desktop, Documents, Downloads, Pictures, Music, Videos, OneDrive"),
+                Control::Pill(tr("Rebuild").into(), Hit::Rebuild, false),
+            ),
         ];
-        for (name, label, sub, on) in rows {
-            let r = self.row(c, x, y, w, label, &sub, None);
-            self.toggle(c, r, on, name);
-            y += r.h + 1.0;
-        }
-        let r = self.row(c, x, y, w, tr("Search engine"), "", None);
-        let cur = ENGINES.iter().position(|e| e.0 == set.engine).unwrap_or(0);
-        let names: Vec<&str> = ENGINES.iter().map(|e| e.1).collect();
-        self.choices(c, r, &names, cur, "engine");
-        y += r.h + 1.0;
-        let r = self.row(c, x, y, w, tr("File index"), tr("Desktop, Documents, Downloads, Pictures, Music, Videos, OneDrive"), None);
-        self.pill(c, r, tr("Rebuild"), false, Hit::Rebuild);
-        y += r.h + 26.0;
+        y = self.section(c, x, y, w, tr("Search in"), rows);
 
-        y = self.group(c, x, y, w, tr("General"));
-        let r = self.row(c, x, y, w, tr("Theme"), "", None);
-        let cur = ["system", "dark", "light"].iter().position(|t| *t == set.theme).unwrap_or(0);
-        self.choices(c, r, &[tr("System"), tr("Dark"), tr("Light")], cur, "theme");
-        y += r.h + 1.0;
-        let r = self.row(c, x, y, w, tr("Language"), "", None);
-        let cur = ["system", "en", "fr"].iter().position(|t| *t == set.lang).unwrap_or(0);
-        self.choices(c, r, &[tr("System"), "English", "Français"], cur, "lang");
-        y += r.h + 1.0;
-        let r = self.row(c, x, y, w, tr("Start with Windows"), tr("Runs in the background, with an icon near the clock"), None);
-        let on = sys::autostart();
-        self.toggle(c, r, on, "autostart");
-        y += r.h + 1.0;
+        let theme = ["system", "dark", "light"].iter().position(|t| *t == set.theme).unwrap_or(0);
+        let lang = ["system", "en", "fr"].iter().position(|t| *t == set.lang).unwrap_or(0);
         let n = self.sh.history.borrow().picks.len();
-        let r = self.row(c, x, y, w, tr("History"), &fill(tr("{n} results remembered, to put your picks first"), &[&n.to_string()]), None);
-        self.pill(c, r, tr("Clear"), false, Hit::ClearHistory);
-        y += r.h + 22.0;
-        c.text(&format!("Plume Launcher {}", plume_update::VERSION), rect(x, y, w, 20.0), Font::Small, self.theme.t4, Align::Left);
-        y + 40.0
+        let rows = vec![
+            row(tr("Theme"), "", Control::Choice("theme", vec![tr("System").into(), tr("Dark").into(), tr("Light").into()], theme)),
+            row(tr("Language"), "", Control::Choice("lang", vec![tr("System").into(), "English".into(), "Français".into()], lang)),
+            row(tr("Start with Windows"), tr("Runs in the background, with an icon near the clock"), Control::Toggle("autostart", sys::autostart())),
+            row(
+                tr("History"),
+                &fill(tr("{n} results remembered, to put your picks first"), &[&n.to_string()]),
+                Control::Pill(tr("Clear").into(), Hit::ClearHistory, false),
+            ),
+        ];
+        y = self.section(c, x, y, w, tr("General"), rows);
+        c.text(&format!("Plume Launcher {}", plume_update::VERSION), rect(x + 4.0, y - 8.0, w, 20.0), Font::Small, t.t3, Align::Left);
+        y + 32.0
     }
 
     fn start_capture(&mut self, cx: &mut Cx) {
@@ -268,6 +343,8 @@ impl SettingsApp {
     pub fn click(&mut self, hit: Hit, cx: &mut Cx) {
         match hit {
             Hit::Close => self.win.close(),
+            Hit::Min => self.win.minimize(),
+            Hit::Max => self.win.toggle_maximize(),
             Hit::Hotkey => {
                 if self.capturing {
                     self.end_capture(None, cx);
@@ -333,25 +410,37 @@ impl Handler for SettingsApp {
         let max = (self.content_h - (cx.h - TITLE_H)).max(0.0);
         self.scroll = self.scroll.clamp(0.0, max);
         c.clip(rect(0.0, TITLE_H, cx.w, cx.h - TITLE_H));
-        let w = (cx.w - 2.0 * MARGIN).min(620.0);
+        let w = (cx.w - 2.0 * MARGIN).min(640.0);
         let x = (cx.w - w) / 2.0;
-        let top = TITLE_H + 12.0 - self.scroll;
+        let top = TITLE_H + 16.0 - self.scroll;
         let end = self.paint_content(c, x, top, w);
-        self.content_h = end - top + 12.0;
+        self.content_h = end - top + 16.0;
         c.unclip();
-        // the title bar
-        c.fill(rect(0.0, 0.0, cx.w, TITLE_H), t.bg);
+        // the title bar: logo, name, the window's buttons
+        c.gradient_v(rect(0.0, 0.0, cx.w, TITLE_H), t.hdr1, t.hdr2);
         if self.scroll > 0.5 {
             c.hline(0.0, TITLE_H, cx.w, t.sep);
         }
-        c.text(tr("Plume Launcher settings"), rect(MARGIN - 6.0, 0.0, cx.w - 120.0, TITLE_H), Font::Title, if cx.active { t.t1 } else { t.t3 }, Align::Left);
-        let close = rect(cx.w - 46.0, 0.0, 46.0, TITLE_H - 6.0);
-        if self.hover == Some(Hit::Close) {
-            c.fill(close, t.close_hover);
+        let wic = self.gfx.wic.clone();
+        c.image(1, rect(14.0, (TITLE_H - 18.0) / 2.0, 18.0, 18.0), 1.0, || png(&wic, LOGO));
+        c.text("Plume Launcher", rect(40.0, 0.0, cx.w - 200.0, TITLE_H), Font::BodyBold, if cx.active { t.t1 } else { t.t3 }, Align::Left);
+        let cap_x = cx.w - 3.0 * m::CAPTION_W;
+        let glyphs = [(Hit::Min, '\u{E921}'), (Hit::Max, if cx.maximized { '\u{E923}' } else { '\u{E922}' }), (Hit::Close, '\u{E8BB}')];
+        for (k, (id, glyph)) in glyphs.into_iter().enumerate() {
+            let r = rect(cap_x + k as f32 * m::CAPTION_W, 0.0, m::CAPTION_W, TITLE_H - 8.0);
+            let hot = self.hover == Some(id) || self.pressed == Some(id);
+            if hot {
+                c.fill(r, if id == Hit::Close { t.close_hover } else { t.hover });
+            }
+            let ink = match (id == Hit::Close && hot, cx.active) {
+                (true, _) => Color::hex(0xffffff),
+                (false, true) => t.t1,
+                (false, false) => t.t3,
+            };
+            c.glyph(glyph, r, ink);
+            // added last: above the scrolled content
+            self.hits.add(r, id);
         }
-        c.glyph('\u{E8BB}', close, if self.hover == Some(Hit::Close) { Color::hex(0xffffff) } else { t.t2 });
-        // the title bar's hit is added last: it is above the scrolled content
-        self.hits.add(close, Hit::Close);
     }
 
     fn event(&mut self, ev: Event, cx: &mut Cx) {
@@ -362,7 +451,7 @@ impl Handler for SettingsApp {
             }
             Event::Key { vk: 0x1B, .. } => self.win.close(),
             Event::MouseMove { p, .. } => {
-                let h = if p.y < TITLE_H && p.x < self.win_w() - 46.0 { None } else { self.hits.at(p).copied() };
+                let h = self.hit_at(p);
                 if h != self.hover {
                     self.hover = h;
                     cx.repaint();
@@ -370,17 +459,27 @@ impl Handler for SettingsApp {
             }
             Event::MouseLeave => {
                 self.hover = None;
+                self.pressed = None;
                 cx.repaint();
             }
             Event::MouseDown { p, button: Button::Left, .. } => {
-                let close = p.y < TITLE_H && p.x >= self.win_w() - 46.0;
-                if close {
-                    self.click(Hit::Close, cx);
-                } else if p.y >= TITLE_H
-                    && let Some(h) = self.hits.at(p).copied()
+                if let Some(h) = self.hit_at(p) {
+                    self.pressed = Some(h);
+                    // the window's buttons act on release, like Windows'; the rest at once
+                    if !matches!(h, Hit::Min | Hit::Max | Hit::Close) {
+                        self.click(h, cx);
+                    }
+                    cx.repaint();
+                }
+            }
+            Event::MouseUp { p, button: Button::Left, .. } => {
+                let was = self.pressed.take();
+                if let Some(h) = was.filter(|h| matches!(h, Hit::Min | Hit::Max | Hit::Close))
+                    && self.hit_at(p) == Some(h)
                 {
                     self.click(h, cx);
                 }
+                cx.repaint();
             }
             Event::Wheel { dy, .. } => {
                 self.scroll -= dy * 60.0;
@@ -408,7 +507,14 @@ impl Handler for SettingsApp {
     }
 
     fn area(&self, p: Pt) -> Area {
-        if p.y < TITLE_H { if p.x >= self.win_w() - 46.0 { Area::Control } else { Area::Caption } } else { Area::Client }
+        if p.y >= TITLE_H {
+            return Area::Client;
+        }
+        match self.hits.at(p) {
+            Some(Hit::Max) => Area::MaxButton,
+            Some(Hit::Min | Hit::Close) => Area::Control,
+            _ => Area::Caption,
+        }
     }
 
     fn cursor(&self, p: Pt) -> Cursor {
@@ -421,11 +527,9 @@ impl Handler for SettingsApp {
 }
 
 impl SettingsApp {
-    fn win_w(&self) -> f32 {
-        let mut r = windows::Win32::Foundation::RECT::default();
-        unsafe {
-            let _ = windows::Win32::UI::WindowsAndMessaging::GetClientRect(self.win.hwnd, &mut r);
-        }
-        (r.right - r.left) as f32 / self.win.scale()
+    /// What is under the pointer: in the title bar only the window's buttons, below it the content.
+    fn hit_at(&self, p: Pt) -> Option<Hit> {
+        let h = self.hits.at(p).copied();
+        if p.y < TITLE_H { h.filter(|h| matches!(h, Hit::Min | Hit::Max | Hit::Close)) } else { h }
     }
 }

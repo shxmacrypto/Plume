@@ -168,15 +168,58 @@ pub fn flatten_white(p: &Pixels) -> (Vec<u8>, u32) {
 
 /// Centered in a transparent square of side `s` (the picture must already fit).
 pub fn pad_square(p: &Pixels, s: u32) -> Pixels {
-    let mut data = vec![0u8; (s * s * 4) as usize];
-    let (ox, oy) = ((s.saturating_sub(p.w)) / 2, (s.saturating_sub(p.h)) / 2);
-    for y in 0..p.h.min(s) {
-        let src = (y * p.w * 4) as usize;
-        let dst = (((y + oy) * s + ox) * 4) as usize;
-        let n = (p.w.min(s) * 4) as usize;
-        data[dst..dst + n].copy_from_slice(&p.data[src..src + n]);
+    pad_to(p, s, s, false)
+}
+
+/// The picture centred on a `w`×`h` canvas: transparent around it, or (`black`) laid on opaque black.
+pub fn pad_to(p: &Pixels, w: u32, h: u32, black: bool) -> Pixels {
+    let mut data = vec![0u8; (w * h * 4) as usize];
+    if black {
+        for px in data.as_chunks_mut::<4>().0 {
+            px[3] = 255;
+        }
     }
-    Pixels { w: s, h: s, data }
+    let (ox, oy) = ((w.saturating_sub(p.w)) / 2, (h.saturating_sub(p.h)) / 2);
+    let n = p.w.min(w) as usize;
+    for y in 0..p.h.min(h) {
+        let src = (y * p.w * 4) as usize;
+        let dst = (((y + oy) * w + ox) * 4) as usize;
+        let (from, to) = (&p.data[src..src + n * 4], &mut data[dst..dst + n * 4]);
+        if black {
+            for (s, d) in from.as_chunks::<4>().0.iter().zip(to.as_chunks_mut::<4>().0) {
+                let a = s[3] as u32;
+                for k in 0..3 {
+                    d[k] = (s[k] as u32 * a / 255) as u8;
+                }
+            }
+        } else {
+            to.copy_from_slice(from);
+        }
+    }
+    Pixels { w, h, data }
+}
+
+/// Photos → `frame_0001.png`… in `dir`, all one size, for a GIF. Each is turned upright and fit inside `long`
+/// pixels, then centred on the size of the largest one. Several photos are laid on black, so nothing of a photo
+/// shows behind the next; a single one keeps its transparency. `step(i)` after each photo; false stops.
+pub fn gif_frames(srcs: &[std::path::PathBuf], long: u32, dir: &Path, step: &mut dyn FnMut(usize) -> bool) -> Result<(u32, u32), String> {
+    let wic = factory()?;
+    let mut small = Vec::new();
+    for (i, src) in srcs.iter().enumerate() {
+        let p = load(&wic, src).map_err(|e| format!("{}: {e}", src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()))?;
+        let (w, h) = crate::ffmpeg::fit_long(p.w, p.h, long);
+        small.push(resize(&wic, &p, w, h)?);
+        if !step(i) {
+            return Err(crate::queue::CANCELLED.into());
+        }
+    }
+    let w = small.iter().map(|p| p.w).max().unwrap_or(1);
+    let h = small.iter().map(|p| p.h).max().unwrap_or(1);
+    let black = small.len() > 1;
+    for (i, p) in small.iter().enumerate() {
+        encode(&wic, &pad_to(p, w, h, black), Fmt::Png, 100, &dir.join(format!("frame_{:04}.png", i + 1)))?;
+    }
+    Ok((w, h))
 }
 
 /// Writes `p` as PNG, JPEG, BMP or TIFF.
@@ -347,6 +390,49 @@ mod tests {
         // row 1 (offset y = 1), x from 1
         assert_eq!(&s.data[(4 + 1) * 4..(4 + 3) * 4], &[1, 2, 3, 4, 5, 6, 7, 8]);
         assert!(s.data[..16].iter().all(|b| *b == 0));
+    }
+
+    #[test]
+    fn padding_on_black() {
+        // half-transparent blue pixel on a 3×1 black canvas
+        let p = Pixels { w: 1, h: 1, data: vec![200, 0, 0, 128] };
+        let s = pad_to(&p, 3, 1, true);
+        assert_eq!(s.data, vec![0, 0, 0, 255, 100, 0, 0, 255, 0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn gif_frames_share_one_size() {
+        com();
+        let wic = factory().unwrap();
+        let d = std::env::temp_dir().join(format!("plume-convert-gifframes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("f")).unwrap();
+        let srcs: Vec<std::path::PathBuf> = [(400, 300), (200, 400), (100, 100)]
+            .iter()
+            .enumerate()
+            .map(|(i, (w, h))| {
+                let p = d.join(format!("p{i}.png"));
+                encode(&wic, &sample(*w, *h), Fmt::Png, 100, &p).unwrap();
+                p
+            })
+            .collect();
+        let mut seen = 0;
+        let size = gif_frames(&srcs, 200, &d.join("f"), &mut |i| {
+            seen = i + 1;
+            true
+        })
+        .unwrap();
+        // 400×300 → 200×150, 200×400 → 100×200, 100×100 stays: the canvas is 200×200
+        assert_eq!(size, (200, 200));
+        assert_eq!(seen, 3);
+        for i in 1..=3 {
+            let f = load(&wic, &d.join("f").join(format!("frame_{i:04}.png"))).unwrap();
+            assert_eq!((f.w, f.h), (200, 200));
+            assert_eq!(f.data[3], 255, "laid on black");
+        }
+        // a stop asked for after the first photo
+        assert!(gif_frames(&srcs, 200, &d.join("f"), &mut |_| false).is_err());
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

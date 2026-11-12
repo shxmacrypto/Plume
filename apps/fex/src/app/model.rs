@@ -122,6 +122,19 @@ fn expand_env(t: &str) -> String {
 
 /// Comprend une adresse tapée par l'utilisateur : guillemets, `%VARIABLES%`, `~`, chemins relatifs au dossier
 /// ouvert (`base`), barres obliques, « .. ». Le chemin renvoyé est absolu et normalisé ; il n'existe pas forcément.
+/// Ce qu'un chemin de la ligne de commande demande d'ouvrir : un dossier tel quel, ou pour un fichier son dossier,
+/// avec le fichier sélectionné (« Afficher dans le dossier » d'un navigateur, d'un téléchargement).
+pub fn open_target(path: &Path) -> Option<(PathBuf, Option<String>)> {
+    if path.is_dir() {
+        return Some((path.to_path_buf(), None));
+    }
+    if !path.exists() {
+        return None;
+    }
+    let dir = path.parent().filter(|d| d.is_dir())?.to_path_buf();
+    Some((dir, path.file_name().map(|n| n.to_string_lossy().into_owned())))
+}
+
 pub fn parse_address(text: &str, base: Option<&Path>) -> Option<PathBuf> {
     let t = text.trim().trim_matches('"').trim();
     if t.is_empty() {

@@ -11,6 +11,7 @@
 //!   {"cmd":"cancel","id":3} / {"cmd":"cancel"}   cancels one file, or all
 //!   {"cmd":"retry","id":3}  {"cmd":"remove","id":3}  {"cmd":"clear"}
 //!   {"cmd":"go","view":"settings"|"main"}        {"cmd":"type","text":"0:02"}  {"cmd":"repaint"}
+//!   {"cmd":"scroll","y":120} / {"cmd":"scroll","left":400}   scrolls the queue, or the presets column
 
 use crate::{
     opts::Preset,
@@ -152,7 +153,11 @@ fn run(sender: &Sender, line: &str) -> String {
                     json!({ "ok": true })
                 }
                 "scroll" => {
-                    app.queue_scroll = cmd["y"].as_f64().unwrap_or(0.0) as f32;
+                    if let Some(y) = cmd["left"].as_f64() {
+                        app.left_scroll = y as f32;
+                    } else {
+                        app.queue_scroll = cmd["y"].as_f64().unwrap_or(0.0) as f32;
+                    }
                     cx.repaint();
                     json!({ "ok": true })
                 }

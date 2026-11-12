@@ -28,7 +28,7 @@ use std::{
 };
 
 /// Numéros de nos entrées de menu (au-dessus de ceux réservés au shell).
-mod cmd {
+pub(super) mod cmd {
     pub const OPEN: u32 = 0x7001;
     pub const OPEN_TAB: u32 = 0x7002;
     pub const COPY_PATH: u32 = 0x7003;
@@ -46,6 +46,15 @@ mod cmd {
     pub const HIDDEN: u32 = 0x700F;
     pub const PREVIEW: u32 = 0x7050;
     pub const UNDO: u32 = 0x7051;
+    pub const RENAME: u32 = 0x7053;
+    pub const ADD_TO_CATEGORY: u32 = 0x7054;
+    pub const SHOW_RECENT: u32 = 0x7055;
+    pub const SORT_CREATED: u32 = 0x7056;
+    pub const SORT_FOLDER: u32 = 0x7057;
+    pub const CLEAR_FILTERS: u32 = 0x7058;
+    /// Filtres de date de modification puis de taille, dans l'ordre de `DATE_FILTERS` et `SIZE_FILTERS`.
+    pub const DATE_FILTER: u32 = 0x7070;
+    pub const SIZE_FILTER: u32 = 0x7080;
     /// Taille des icônes : très grandes, grandes, moyennes, petites ; puis les détails.
     pub const VIEW_SIZE: u32 = 0x7060;
     pub const VIEW_DETAILS: u32 = 0x7064;
@@ -87,6 +96,11 @@ mod cmd {
     pub const FILTER_KIND: u32 = 0x7040;
 }
 
+/// Ce que les filtres de date ajoutent à la recherche (syntaxe d'Everything) ; le premier : aucun filtre.
+pub const DATE_FILTERS: [&str; 7] = ["", "dm:today", "dm:yesterday", "dm:thisweek", "dm:lastweek", "dm:thismonth", "dm:thisyear"];
+/// Les filtres de taille : ils ne gardent que des fichiers (la taille d'un dossier n'est pas dans l'index).
+pub const SIZE_FILTERS: [&str; 6] = ["", "size:empty file:", "size:<1mb file:", "size:1mb..100mb file:", "size:100mb..1gb file:", "size:>1gb file:"];
+
 const K_RETURN: u16 = 0x0D;
 const K_DELETE: u16 = 0x2E;
 const K_APPS: u16 = 0x5D;
@@ -116,7 +130,8 @@ impl App {
             Some(Id::Row(r)) => self.row_menu(r, at, mods.shift, cx),
             Some(Id::List) => self.background_menu(at, cx),
             Some(Id::Tab(i) | Id::TabClose(i)) => self.tab_menu(i, at, cx),
-            Some(Id::Nav(i)) => self.nav_menu(i, at, cx),
+            Some(Id::Nav(i)) => self.nav_menu(Some(i), at, cx),
+            Some(Id::NavBlank | Id::NavAdd) => self.nav_menu(None, at, cx),
             Some(Id::Crumb(i)) => {
                 let Some(Location::Path(path)) = self.crumbs.get(i).cloned() else { return };
                 let mut m = Menu::new();
@@ -171,10 +186,16 @@ impl App {
         let mut top: Vec<(u32, String)> = vec![];
         if single_dir {
             top.push((cmd::OPEN_TAB, s.open_new_tab.to_string()));
+            top.push((super::side::OPEN_MINI, s.open_mini.to_string()));
             if it.drive.is_none() {
                 let pinned = self.set.pinned.contains(&first);
                 top.push(if pinned { (cmd::UNPIN, s.unpin.to_string()) } else { (cmd::PIN, s.pin.to_string()) });
             }
+        }
+        // des dossiers : ils peuvent aller dans une catégorie de la barre latérale
+        let all_dirs = paths.iter().all(|p| tab.row_of(&leaf(p)).is_some_and(|r| tab.item(r).is_dir() && tab.item(r).drive.is_none()));
+        if all_dirs && !matches!(tab.loc, Location::ThisPc) {
+            top.push((cmd::ADD_TO_CATEGORY, s.add_to_category_dots.to_string()));
         }
         if matches!(tab.loc, Location::Search { .. }) && paths.len() == 1 {
             top.push((cmd::OPEN_LOCATION, s.open_location.to_string()));
@@ -188,14 +209,30 @@ impl App {
             top.push((cmd::COMPRESS_LOCKED, s.compress_password.to_string()));
         }
         top.push((cmd::COPY_PATH, s.copy_path.to_string()));
+        let cats = self.categories_menu();
         cx.after(move |win| {
             let picked = menu::shell_menu(win, &paths, at, extended, &top);
+            // « Ajouter à une catégorie… » : la liste des catégories s'ouvre au même endroit
+            if matches!(picked, Picked::Own(cmd::ADD_TO_CATEGORY)) {
+                if let Some(id) = cats.show(win, at, false) {
+                    with_app(win, |app, cx| {
+                        app.pick_category_for(id, paths);
+                        cx.repaint();
+                    });
+                }
+                return;
+            }
             with_app(win, |app, _| match picked {
                 Picked::Own(cmd::EXTRACT_HERE) => app.extract(first, false, None),
                 Picked::Own(cmd::EXTRACT_TO) => app.extract(first, true, None),
                 Picked::Own(cmd::COMPRESS) => app.compress(paths),
                 Picked::Own(cmd::COMPRESS_LOCKED) => app.ask_new_password(paths),
                 Picked::Own(cmd::OPEN_TAB) => app.new_tab(Location::Path(first), false),
+                Picked::Own(super::side::OPEN_MINI) => {
+                    let p = app.win.from_screen(at.0, at.1);
+                    app.open_panel(first, p);
+                }
+
                 Picked::Own(cmd::PIN) => app.pin(first, true),
                 Picked::Own(cmd::UNPIN) => app.pin(first, false),
                 Picked::Own(cmd::COPY_PATH) => app.copy_paths(&paths),
@@ -217,16 +254,10 @@ impl App {
         let in_folder = matches!(tab.loc, Location::Path(_));
         let mut m = Menu::new();
         m.item(cmd::REFRESH, s.refresh);
-        if in_folder {
-            let mut sort = Menu::new();
-            sort.check(cmd::SORT_NAME, s.col_name, tab.sort == SortKey::Name)
-                .check(cmd::SORT_DATE, s.col_date, tab.sort == SortKey::Modified)
-                .check(cmd::SORT_TYPE, s.col_type, tab.sort == SortKey::Type)
-                .check(cmd::SORT_SIZE, s.col_size, tab.sort == SortKey::Size)
-                .sep()
-                .check(cmd::ASC, s.ascending, tab.asc)
-                .check(cmd::DESC, s.descending, !tab.asc);
+        if let Some(sort) = self.sort_menu() {
             m.sub(s.sort_by, sort);
+        }
+        if in_folder {
             m.sep().item(cmd::PASTE, s.paste).item(cmd::NEW_FOLDER, s.new_folder);
             if !self.undo.is_empty() {
                 m.item(cmd::UNDO, s.undo);
@@ -278,39 +309,6 @@ impl App {
         });
     }
 
-    fn nav_menu(&mut self, i: usize, at: (i32, i32), cx: &mut Cx) {
-        let s = self.s;
-        let Some(row) = self.nav_rows.get(i) else { return };
-        let loc = row.loc.clone();
-        if let Location::Remote { server, .. } = loc {
-            return self.remote_nav_menu(server, at, cx);
-        }
-        let path = loc.path().map(|p| p.to_path_buf());
-        let pinned = path.as_ref().is_some_and(|p| self.set.pinned.contains(p));
-        let mut m = Menu::new();
-        m.item(cmd::OPEN, s.open).item(cmd::OPEN_TAB, s.open_new_tab);
-        if path.is_some() {
-            m.item(cmd::COPY_PATH, s.copy_path);
-            if pinned {
-                m.sep().item(cmd::UNPIN, s.unpin);
-            }
-            m.sep().item(cmd::PROPERTIES, s.properties);
-        }
-        cx.after(move |win| {
-            let picked = m.show(win, at, false);
-            with_app(win, |app, _| match (picked, path) {
-                (Some(cmd::OPEN), _) => app.navigate(loc),
-                (Some(cmd::OPEN_TAB), _) => app.new_tab(loc, false),
-                (Some(cmd::COPY_PATH), Some(p)) => app.copy_paths(&[p]),
-                (Some(cmd::UNPIN), Some(p)) => app.pin(p, false),
-                (Some(cmd::PROPERTIES), Some(p)) => app.later(move |win| {
-                    menu::invoke(win, &[p], "properties", false);
-                }),
-                _ => {}
-            });
-        });
-    }
-
     /// Menu « … » de la barre d'outils : affichage et réglages.
     pub(super) fn more_menu(&mut self, cx: &mut Cx) {
         let s = self.s;
@@ -333,6 +331,7 @@ impl App {
             .check(cmd::EXT, s.show_ext, !self.set.hide_ext)
             .check(cmd::FOLDER_SIZES, s.folder_sizes, self.set.folder_sizes)
             .check(cmd::PREVIEW, s.preview_pane, self.set.preview)
+            .check(cmd::SHOW_RECENT, s.show_recent, self.set.show_recent)
             .sep()
             .sub(s.view, self.view_items())
             .sub(s.theme, theme)
@@ -357,7 +356,39 @@ impl App {
             m.check(cmd::VIEW_SIZE + k as u32, label, self.set.thumbs && self.set.icon_size as usize == k);
         }
         m.check(cmd::VIEW_DETAILS, s.view_details, !self.set.thumbs);
+        // en icônes, il n'y a pas d'en-têtes de colonnes : le tri se choisit ici
+        if let Some(sort) = self.sort_menu() {
+            m.sep().sub(s.sort_by, sort);
+        }
         m
+    }
+
+    /// Le menu « Trier par » du dossier ouvert ou des résultats de recherche (rien ailleurs).
+    fn sort_menu(&self) -> Option<Menu> {
+        let s = self.s;
+        let tab = self.tab();
+        let mut sort = Menu::new();
+        let asc = match tab.loc {
+            Location::Path(_) | Location::Remote { .. } => {
+                sort.check(cmd::SORT_NAME, s.col_name, tab.sort == SortKey::Name)
+                    .check(cmd::SORT_DATE, s.col_date, tab.sort == SortKey::Modified)
+                    .check(cmd::SORT_CREATED, s.col_created, tab.sort == SortKey::Created)
+                    .check(cmd::SORT_TYPE, s.col_type, tab.sort == SortKey::Type)
+                    .check(cmd::SORT_SIZE, s.col_size, tab.sort == SortKey::Size);
+                tab.asc
+            }
+            Location::Search { .. } => {
+                let (key, asc) = tab.search_sort;
+                sort.check(cmd::SORT_NAME, s.col_name, key == SortKey::Name)
+                    .check(cmd::SORT_DATE, s.col_date, key == SortKey::Modified)
+                    .check(cmd::SORT_SIZE, s.col_size, key == SortKey::Size)
+                    .check(cmd::SORT_FOLDER, s.col_folder, key == SortKey::Path);
+                asc
+            }
+            Location::ThisPc => return None,
+        };
+        sort.sep().check(cmd::ASC, s.ascending, asc).check(cmd::DESC, s.descending, !asc);
+        Some(sort)
     }
 
     /// Le menu du bouton « Affichage ».
@@ -387,19 +418,66 @@ impl App {
             }
             m.check(cmd::FILTER_KIND + k as u32, s.kinds[k], o.kind == Kind::Files(k));
         }
+        let mut date = Menu::new();
+        for (k, label) in self.date_labels().into_iter().enumerate() {
+            date.check(cmd::DATE_FILTER + k as u32, label, self.search_date == k);
+        }
+        let mut size = Menu::new();
+        for (k, label) in self.size_labels().into_iter().enumerate() {
+            size.check(cmd::SIZE_FILTER + k as u32, label, self.search_size == k);
+        }
+        m.sep().sub(s.date_modified, date).sub(s.col_size, size);
         m.sep()
             .check(cmd::MATCH_CASE, s.match_case, o.case)
             .check(cmd::MATCH_WORD, s.match_word, o.word)
             .check(cmd::MATCH_PATH, s.match_path, o.path)
             .check(cmd::MATCH_REGEX, s.match_regex, o.regex)
-            .check(cmd::MATCH_CONTENT, s.match_content, o.content)
-            .sep()
-            .item(cmd::EXPORT, s.export_results);
+            .check(cmd::MATCH_CONTENT, s.match_content, o.content);
+        if self.filtered() {
+            m.sep().item(cmd::CLEAR_FILTERS, s.clear_filters);
+        }
+        m.sep().item(cmd::EXPORT, s.export_results);
         cx.after(move |win| {
             if let Some(id) = m.show(win, at, true) {
                 with_app(win, |app, cx| app.command(id, cx));
             }
         });
+    }
+
+    /// Les noms des filtres de date, dans l'ordre de `DATE_FILTERS`.
+    pub(super) fn date_labels(&self) -> [&'static str; 7] {
+        let s = self.s;
+        [s.any_time, s.today, s.yesterday, s.this_week, s.last_week, s.this_month, s.this_year]
+    }
+
+    /// Les noms des filtres de taille, dans l'ordre de `SIZE_FILTERS`.
+    pub(super) fn size_labels(&self) -> [&'static str; 6] {
+        let s = self.s;
+        [s.any_size, s.size_empty, s.size_small, s.size_medium, s.size_large, s.size_huge]
+    }
+
+    /// Ce que les filtres de date et de taille ajoutent au texte cherché.
+    pub(super) fn search_extra(&self) -> String {
+        let mut extra = String::new();
+        for f in [DATE_FILTERS.get(self.search_date), SIZE_FILTERS.get(self.search_size)].into_iter().flatten().filter(|f| !f.is_empty()) {
+            extra.push(' ');
+            extra.push_str(f);
+        }
+        extra
+    }
+
+    /// Un filtre est-il actif (type, date, taille, façon de comparer) ?
+    pub(super) fn filtered(&self) -> bool {
+        self.search_opts != Options::default() || self.search_date != 0 || self.search_size != 0
+    }
+
+    fn set_search_filters(&mut self, date: usize, size: usize) {
+        if (self.search_date, self.search_size) != (date, size) {
+            (self.search_date, self.search_size) = (date, size);
+            if matches!(self.tab().loc, Location::Search { .. }) {
+                self.run_search(self.cur);
+            }
+        }
     }
 
     /// Change les réglages du bandeau de recherche et relance la recherche en cours.
@@ -420,7 +498,7 @@ impl App {
         let req = search::Request {
             tab: tab.id,
             generation: tab.generation,
-            query: query.clone(),
+            query: format!("{query}{}", self.search_extra()),
             scope: if self.set.search_everywhere { None } else { from.clone() },
             order: search_order(key),
             descending: !asc,
@@ -460,6 +538,18 @@ impl App {
             cmd::MATCH_REGEX => self.set_search_opts(Options { regex: !o.regex, ..o }),
             cmd::MATCH_CONTENT => self.set_search_opts(Options { content: !o.content, ..o }),
             cmd::EXPORT => self.export_results(cx),
+            id if (cmd::DATE_FILTER..cmd::DATE_FILTER + DATE_FILTERS.len() as u32).contains(&id) => {
+                self.set_search_filters((id - cmd::DATE_FILTER) as usize, self.search_size)
+            }
+            id if (cmd::SIZE_FILTER..cmd::SIZE_FILTER + SIZE_FILTERS.len() as u32).contains(&id) => {
+                self.set_search_filters(self.search_date, (id - cmd::SIZE_FILTER) as usize)
+            }
+            cmd::CLEAR_FILTERS => {
+                (self.search_opts, self.search_date, self.search_size) = (Options::default(), 0, 0);
+                if matches!(self.tab().loc, Location::Search { .. }) {
+                    self.run_search(self.cur);
+                }
+            }
             cmd::FOLDER_SIZES => self.set_folder_sizes(!self.set.folder_sizes),
             cmd::CONNECT => self.ask_server(),
             cmd::REFRESH => self.refresh(),
@@ -467,6 +557,8 @@ impl App {
             cmd::SORT_DATE => self.set_sort(Some(SortKey::Modified), None),
             cmd::SORT_TYPE => self.set_sort(Some(SortKey::Type), None),
             cmd::SORT_SIZE => self.set_sort(Some(SortKey::Size), None),
+            cmd::SORT_CREATED => self.set_sort(Some(SortKey::Created), None),
+            cmd::SORT_FOLDER => self.set_sort(Some(SortKey::Path), None),
             cmd::ASC => self.set_sort(None, Some(true)),
             cmd::DESC => self.set_sort(None, Some(false)),
             cmd::PASTE => self.paste(),
@@ -474,6 +566,7 @@ impl App {
             cmd::SELECT_ALL => self.tab_mut().select_all(),
             cmd::HIDDEN => self.set_show_hidden(!self.set.show_hidden),
             cmd::PREVIEW => self.toggle_preview(),
+            cmd::SHOW_RECENT => self.show_recent(!self.set.show_recent),
             cmd::UNDO => self.undo_last(),
             id if (cmd::VIEW_SIZE..cmd::VIEW_SIZE + 4).contains(&id) => self.set_view(Some((id - cmd::VIEW_SIZE) as u8)),
             cmd::VIEW_DETAILS => self.set_view(None),
@@ -562,6 +655,13 @@ impl App {
 
     fn set_sort(&mut self, key: Option<SortKey>, asc: Option<bool>) {
         let tab = self.tab_mut();
+        // résultats de recherche : l'index les retrie tous
+        if matches!(tab.loc, Location::Search { .. }) {
+            let (k, a) = tab.search_sort;
+            tab.search_sort = (key.unwrap_or(k), asc.unwrap_or(a));
+            self.run_search(self.cur);
+            return;
+        }
         tab.sort = key.unwrap_or(tab.sort);
         tab.asc = asc.unwrap_or(tab.asc);
         tab.resort();
@@ -572,20 +672,20 @@ impl App {
 
     // ───────────────────────── actions sur la sélection ─────────────────────────
 
-    fn copy_paths(&mut self, paths: &[PathBuf]) {
+    pub(super) fn copy_paths(&mut self, paths: &[PathBuf]) {
         if !paths.is_empty() && ops::copy_text(self.win.hwnd, &ops::paths_text(paths)) {
             self.toast(self.s.copied_path.to_string());
         }
     }
 
     /// Ajoute ou retire un dossier de la barre latérale.
-    fn pin(&mut self, path: PathBuf, on: bool) {
+    pub(super) fn pin(&mut self, path: PathBuf, on: bool) {
         self.set.pinned.retain(|p| *p != path);
         if on {
             self.set.pinned.push(path);
         }
         self.set.save();
-        super::load::spawn_places(self.win.sender(), self.set.pinned.clone());
+        self.reload_places();
     }
 
     /// Ouvre le dossier d'un résultat de recherche, en y sélectionnant l'élément.

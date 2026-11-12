@@ -9,6 +9,10 @@ use crate::{
 };
 use plume_ui::{Align, Canvas, Color, EditStyle, Font, PaintCx, Rect, icons, icons::Icon, m, rect};
 
+/// Segmented controls: the space around a label inside its segment, and between the track and the segments.
+const SEG_PAD: f32 = 24.0;
+const SEG_INSET: f32 = 3.0;
+
 pub fn preset_icon(p: Preset) -> &'static Icon {
     match p {
         Preset::Phone => &ic::PHONE,
@@ -25,16 +29,16 @@ pub fn preset_icon(p: Preset) -> &'static Icon {
     }
 }
 
-fn kind_of(p: &std::path::Path) -> (&'static Icon, u32) {
+fn kind_of(p: &std::path::Path) -> &'static Icon {
     let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
     if ffmpeg::is_picture(p) {
-        (&ic::IMAGE, 0x22c3a6)
+        &ic::IMAGE
     } else if matches!(ext.as_str(), "mp3" | "m4a" | "aac" | "wav" | "flac" | "ogg" | "oga" | "opus" | "wma" | "aiff" | "aif" | "alac" | "amr") {
-        (&ic::NOTE, 0xa78bfa)
+        &ic::NOTE
     } else if ext == "gif" {
-        (&ic::GIF, 0xf5b83d)
+        &ic::GIF
     } else {
-        (&ic::VIDEO, 0xff7a45)
+        &ic::VIDEO
     }
 }
 
@@ -46,12 +50,19 @@ impl App {
     pub fn pill(&mut self, c: &mut Canvas, r: Rect, label: &str, primary: bool, hit: Hit, enabled: bool) {
         let p = self.pal.clone();
         let hot = enabled && self.hovered(&hit);
+        let down = hot && self.pressed.as_ref() == Some(&hit);
         let fill = if primary && enabled {
-            if hot { p.accent.mix(Color::hex(0xffffff), 0.12) } else { p.accent }
+            if down {
+                p.accent.mix(Color::hex(0x000000), 0.1)
+            } else if hot {
+                p.accent.mix(Color::hex(0xffffff), 0.12)
+            } else {
+                p.accent
+            }
         } else if hot {
-            p.t1.fade(0.16)
+            p.fill2
         } else {
-            p.t1.fade(0.09)
+            p.fill
         };
         c.fill_round(r, r.h / 2.0, fill);
         let ink = if primary && enabled {
@@ -70,54 +81,87 @@ impl App {
     pub fn icon_btn(&mut self, c: &mut Canvas, icon: &Icon, r: Rect, hit: Hit, color: Color) {
         let hot = self.hovered(&hit);
         if hot {
-            c.fill_round(r, r.h / 2.0, self.pal.t1.fade(0.1));
+            c.fill_round(r, r.h / 2.0, self.pal.hover);
         }
         let s = (r.w * 0.5).round();
         c.icon(icon, rect(r.x + (r.w - s) / 2.0, r.y + (r.h - s) / 2.0, s, s), if hot { self.pal.t1 } else { color });
         self.hits.add(r, hit);
     }
 
-    /// A row of chips under a small label, wrapping when needed. Returns the y below it.
+    /// A segmented control under a small label, as wide as `w`. Returns the y below it.
     pub fn chip_row(&mut self, c: &mut Canvas, x: f32, y: f32, w: f32, label: &str, key: &'static str) -> f32 {
         let p = self.pal.clone();
-        let (labels, cur) = self.chips_of(key);
         let mut y = y;
         if !label.is_empty() {
             draw::text(c, label, rect(x, y, w, 18.0), 12.0, 600, p.t2, Align::Left);
             y += 24.0;
         }
-        let (mut cx, h, gap) = (x, 30.0, 6.0);
-        for (i, l) in labels.iter().enumerate() {
-            let cw = draw::text_width(c, l, 12.5, 600) + 24.0;
-            if cx + cw > x + w && cx > x {
-                cx = x;
-                y += h + gap;
+        let r = self.segmented(c, x, y, Some(w), key);
+        r.bottom() + 16.0
+    }
+
+    /// The natural width of a segmented control (each choice as wide as its label).
+    pub fn segmented_width(&self, c: &mut Canvas, key: &str) -> f32 {
+        let (labels, _) = self.chips_of(key);
+        labels.iter().map(|l| draw::text_width(c, l, 12.0, 600) + SEG_PAD).sum::<f32>() + 2.0 * SEG_INSET
+    }
+
+    /// A segmented control: a pill track holding the choices, the chosen one raised (like the suite's settings). With `w`, the
+    /// choices share that width (on two lines or more when their labels do not fit); without, each is as wide as
+    /// its label.
+    pub fn segmented(&mut self, c: &mut Canvas, x: f32, y: f32, w: Option<f32>, key: &'static str) -> Rect {
+        let p = self.pal.clone();
+        let (labels, cur) = self.chips_of(key);
+        let n = labels.len().max(1);
+        let nat: Vec<f32> = labels.iter().map(|l| draw::text_width(c, l, 12.0, 600) + SEG_PAD).collect();
+        let (sh, gap) = (28.0, 2.0);
+        let equal = w.is_some();
+        let (w, per) = match w {
+            None => (nat.iter().sum::<f32>() + 2.0 * SEG_INSET, n),
+            Some(w) => {
+                let widest = nat.iter().copied().fold(0.0, f32::max);
+                let mut per = n;
+                while per > 1 && widest > (w - 2.0 * SEG_INSET) / per as f32 {
+                    per -= 1;
+                }
+                (w, n.div_ceil(n.div_ceil(per)))
             }
-            let r = rect(cx, y, cw, h);
+        };
+        let lines = n.div_ceil(per);
+        let h = lines as f32 * sh + (lines - 1) as f32 * gap + 2.0 * SEG_INSET;
+        let track = rect(x, y, w, h);
+        c.fill_round(track, if lines == 1 { h / 2.0 } else { 17.0 }, p.fill);
+        let mut sx = x + SEG_INSET;
+        for (i, l) in labels.iter().enumerate() {
+            let (line, col) = (i / per, i % per);
+            if col == 0 {
+                sx = x + SEG_INSET;
+            }
+            // one column width for every line, so a wrapped line sits under the first
+            let sw = if equal { (w - 2.0 * SEG_INSET) / per as f32 } else { nat[i] };
+            let r = rect(sx, y + SEG_INSET + line as f32 * (sh + gap), sw, sh);
             let hit = Hit::Chip(key, i);
             let on = i == cur;
-            let fill = if on {
-                p.accent
+            if on {
+                c.fill_round(r, sh / 2.0, if p.dark { p.solid2 } else { p.solid });
+                c.stroke_round(r, sh / 2.0, p.ring, 1.0);
             } else if self.hovered(&hit) {
-                p.t1.fade(0.14)
-            } else {
-                p.t1.fade(0.07)
-            };
-            c.fill_round(r, h / 2.0, fill);
-            draw::text(c, l, r, 12.5, 600, if on { p.on_accent } else { p.t1 }, Align::Center);
+                c.fill_round(r, sh / 2.0, p.hover);
+            }
+            draw::text(c, l, r, 12.0, if on { 600 } else { 400 }, if on { p.t1 } else { p.t2 }, Align::Center);
             self.hits.add(r, hit);
-            cx += cw + gap;
+            sx += sw;
         }
-        y + h + 16.0
+        track
     }
 
     /// A text field drawn by the app (the real edit control is placed on it when clicked).
     fn field(&mut self, c: &mut Canvas, r: Rect, key: &'static str, text: &str, placeholder: &str, fields: &mut Vec<(&'static str, Rect)>) {
         let p = self.pal.clone();
         let on = self.edit_for == Some(key);
-        c.fill_round(r, 9.0, p.t1.fade(if on { 0.1 } else { 0.06 }));
+        c.fill_round(r, 10.0, if on { p.fill2 } else { p.fill });
         if on {
-            c.stroke_round(r, 9.0, p.accent, 1.5);
+            c.stroke_round(r, 10.0, p.accent, 1.5);
         }
         let inner = rect(r.x + 12.0, r.y, r.w - 24.0, r.h);
         if text.is_empty() {
@@ -153,10 +197,10 @@ impl App {
         if self.view == View::Main {
             c.fill(rect(0.0, 0.0, LEFT_W, TOP_H), p.side);
         }
-        let logo = rect(18.0, 14.0, 28.0, 28.0);
+        let logo = rect(20.0, (TOP_H - 18.0) / 2.0, 18.0, 18.0);
         let wic = self.wic.clone();
         c.image(7, logo, 1.0, || crate::image::decode_bytes(&wic, crate::LOGO, 64));
-        draw::text(c, "Plume Convert", rect(56.0, 12.0, 240.0, 32.0), 17.0, 700, p.t1, Align::Left);
+        draw::text(c, "Plume Convert", rect(46.0, 0.0, 240.0, TOP_H), 13.0, 600, p.t1, Align::Left);
         let gx = w - 3.0 * m::CAPTION_W - 50.0;
         let hit = if self.view == View::Settings { Hit::Back } else { Hit::Gear };
         let icon = if self.view == View::Settings { &icons::CLOSE } else { &icons::GEAR };
@@ -171,7 +215,7 @@ impl App {
             let r = rect(cap_x + k as f32 * m::CAPTION_W, 0.0, m::CAPTION_W, 34.0);
             let hot = self.hovered(&id) || self.pressed.as_ref() == Some(&id);
             if hot {
-                c.fill(r, if id == Hit::Close { Color::hex(0xc42b1c) } else { p.t1.fade(0.1) });
+                c.fill(r, if id == Hit::Close { p.close_hover } else { p.hover });
             }
             let ink = if id == Hit::Close && hot { Color::hex(0xffffff) } else { p.t2 };
             c.glyph(glyph, r, ink);
@@ -189,7 +233,7 @@ impl App {
         let (x, w) = (r.x + pad, r.w - 2.0 * pad);
         let top = r.y + 6.0 - self.left_scroll;
         let mut y = top;
-        draw::text(c, tr("Presets"), rect(x, y, w, 20.0), 12.0, 700, p.t3, Align::Left);
+        draw::text(c, tr("Presets"), rect(x, y, w, 20.0), 12.0, 600, p.t3, Align::Left);
         y += 26.0;
         let gap = 8.0;
         let tw = (w - gap) / 2.0;
@@ -200,22 +244,21 @@ impl App {
             let hit = Hit::Preset(preset);
             let hot = self.hovered(&hit);
             let bg = if on {
-                p.accent.fade(if p.dark { 0.18 } else { 0.12 }).over(p.side)
+                p.accent.fade(0.16).over(p.side)
             } else if hot {
-                p.t1.fade(0.08).over(p.side)
+                p.hover.over(p.card.over(p.side))
             } else {
                 p.card
             };
-            c.fill_round(tr_, 12.0, bg);
-            if on {
-                c.stroke_round(tr_.inset(0.75), 11.5, p.accent, 1.5);
-            }
+            c.fill_round(tr_, 14.0, bg);
+            c.stroke_round(tr_.inset(0.5), 13.5, if on { p.accent.fade(0.3) } else { p.line }, 1.0);
+            // the accent only on the chosen one; the others stay quiet
             let badge = rect(tr_.x + 10.0, tr_.y + 14.0, 32.0, 32.0);
-            c.fill_round(badge, 10.0, if on { p.accent } else { p.accent.fade(0.16) });
-            c.icon(preset_icon(preset), badge.inset(8.0), if on { p.on_accent } else { p.accent });
+            c.fill_round(badge, 9.0, if on { p.accent } else { p.fill });
+            c.icon(preset_icon(preset), badge.inset(8.0), if on { p.on_accent } else { p.t2 });
             let tx = badge.right() + 10.0;
             draw::text(c, tr(preset.name()), rect(tx, tr_.y + 11.0, tr_.right() - tx - 8.0, 20.0), 13.0, 600, p.t1, Align::Left);
-            draw::text(c, tr(preset.sub()), rect(tx, tr_.y + 31.0, tr_.right() - tx - 8.0, 18.0), 11.0, 400, p.t3, Align::Left);
+            draw::text(c, tr(preset.sub()), rect(tx, tr_.y + 31.0, tr_.right() - tx - 8.0, 18.0), 12.0, 400, p.t3, Align::Left);
             self.hits.add(tr_, hit);
         }
         y += (Preset::ALL.len().div_ceil(2)) as f32 * (th + gap) + 14.0;
@@ -224,7 +267,7 @@ impl App {
         y = self.paint_options(c, x, y, w, fields);
         // the settings that matter for every video
         let label = if self.set.out_dir.is_some() { tr("Saved in the chosen folder") } else { tr("Saved next to the original") };
-        draw::text(c, label, rect(x, y, w, 18.0), 11.5, 400, p.t3, Align::Left);
+        draw::text(c, label, rect(x, y, w, 18.0), 12.0, 400, p.t3, Align::Left);
         y += 30.0;
         self.left_h = (y - top) - r.h;
         c.unclip();
@@ -232,7 +275,7 @@ impl App {
             self.left_scroll = self.left_scroll.min(self.left_h);
             let k = r.h / (r.h + self.left_h);
             let bar = rect(r.right() - 6.0, r.y + self.left_scroll * k + 4.0, 3.0, r.h * k - 8.0);
-            c.fill_round(bar, 1.5, p.t1.fade(0.2));
+            c.fill_round(bar, 1.5, p.t4);
         } else {
             self.left_scroll = 0.0;
         }
@@ -243,7 +286,7 @@ impl App {
         let p = self.pal.clone();
         let preset = self.set.preset;
         let mut y = y;
-        draw::text(c, tr(preset.name()), rect(x, y, w, 24.0), 16.0, 700, p.t1, Align::Left);
+        draw::text(c, tr(preset.name()), rect(x, y, w, 24.0), 17.0, 600, p.t1, Align::Left);
         y += 30.0;
         let line = |c: &mut Canvas, y: &mut f32, s: &str| {
             let h = draw::text_wrap(c, s, rect(x, *y, w, 100.0), 12.0, 400, p.t2, Align::Left);
@@ -258,9 +301,19 @@ impl App {
             Preset::Smaller => line(c, &mut y, tr("H.264 at a lower quality and at most 1080p. Often a third of the size.")),
             Preset::Audio => y = self.chip_row(c, x, y, w, tr("Format"), "audio_fmt"),
             Preset::Gif => {
+                y = self.chip_row(c, x, y, w, tr("Longest side"), "gif_width");
+                let head = |c: &mut Canvas, y: &mut f32, s: &str| {
+                    draw::text(c, s, rect(x, *y + 4.0, w, 20.0), 13.0, 600, p.t1, Align::Left);
+                    *y += 30.0;
+                };
+                head(c, &mut y, tr("From a video"));
                 y = self.chip_row(c, x, y, w, tr("Frames per second"), "gif_fps");
-                y = self.chip_row(c, x, y, w, tr("Width"), "gif_width");
-                line(c, &mut y, tr("Tip: trim the video first, GIFs grow fast."));
+                line(c, &mut y, tr("Trim the video first: GIFs grow fast."));
+                head(c, &mut y, tr("From photos"));
+                y = self.chip_row(c, x, y, w, tr("Each photo stays"), "gif_secs");
+                y = self.chip_row(c, x, y, w, tr("Several photos"), "gif_together");
+                y = self.chip_row(c, x, y, w, tr("Plays"), "gif_loop");
+                line(c, &mut y, tr("One photo makes a still GIF. Several play one after the other, in name order."));
             }
             Preset::Images => {
                 y = self.chip_row(c, x, y, w, tr("Format"), "img_fmt");
@@ -317,7 +370,7 @@ impl App {
                     Some(_) => tr("None found: the processor does it").to_string(),
                     None => tr("H.264, H.265 and AV1, when the PC has one").to_string(),
                 };
-                draw::text(c, &sub, rect(x, y + 20.0, w - 60.0, 18.0), 11.5, 400, p.t3, Align::Left);
+                draw::text(c, &sub, rect(x, y + 20.0, w - 60.0, 18.0), 12.0, 400, p.t3, Align::Left);
                 let on = self.set.hw;
                 self.switch(c, r, on, "hw");
                 y += 56.0;
@@ -328,10 +381,10 @@ impl App {
 
     pub fn switch(&mut self, c: &mut Canvas, r: Rect, on: bool, name: &'static str) {
         let p = self.pal.clone();
-        let sw = rect(r.right() - 44.0, r.y + (r.h - 24.0) / 2.0, 44.0, 24.0);
-        c.fill_round(sw, 12.0, if on { p.accent } else { p.t1.fade(0.22) });
-        let k = if on { sw.right() - 21.0 } else { sw.x + 3.0 };
-        c.fill_round(rect(k, sw.y + 3.0, 18.0, 18.0), 9.0, Color::hex(0xffffff));
+        let sw = rect(r.right() - 48.0, r.y + (r.h - 26.0) / 2.0, 48.0, 26.0);
+        c.fill_round(sw, 13.0, if on { p.accent } else { p.fill2 });
+        let k = if on { sw.right() - 23.0 } else { sw.x + 3.0 };
+        c.fill_round(rect(k, sw.y + 3.0, 20.0, 20.0), 10.0, Color::hex(0xffffff));
         self.hits.add(r, Hit::Toggle(name));
     }
 
@@ -358,10 +411,10 @@ impl App {
     fn paint_drop(&mut self, c: &mut Canvas, r: Rect, big: bool) {
         let p = self.pal.clone();
         let hot = self.hovered(&Hit::DropZone);
-        c.fill_round(r, 18.0, if hot { p.accent.fade(0.08) } else { p.t1.fade(0.03) });
+        c.fill_round(r, 18.0, if hot { p.accent.fade(0.08) } else { p.card });
         // a dashed edge
         let dash: f32 = 10.0;
-        let ink = if hot { p.accent } else { p.t1.fade(0.22) };
+        let ink = if hot { p.accent } else { p.t4 };
         let mut xx = r.x + 18.0;
         while xx < r.right() - 18.0 {
             let len = dash.min(r.right() - 18.0 - xx);
@@ -382,9 +435,9 @@ impl App {
         if big {
             let cy = r.y + r.h / 2.0;
             let badge = rect(r.x + (r.w - 72.0) / 2.0, cy - 110.0, 72.0, 72.0);
-            c.fill_round(badge, 22.0, p.accent.fade(0.16));
-            c.icon(&ic::DROP, badge.inset(20.0), p.accent);
-            draw::text(c, tr("Drop files here"), rect(r.x, cy - 24.0, r.w, 32.0), 22.0, 700, p.t1, Align::Center);
+            c.fill_round(badge, 20.0, p.fill);
+            c.icon(&ic::DROP, badge.inset(20.0), if hot { p.accent } else { p.t2 });
+            draw::text(c, tr("Drop files here"), rect(r.x, cy - 24.0, r.w, 32.0), 24.0, 700, p.t1, Align::Center);
             draw::text(
                 c,
                 tr("Videos, sounds and pictures. Nothing leaves this PC."),
@@ -397,10 +450,10 @@ impl App {
             self.pill(c, rect(r.x + (r.w - bw) / 2.0, cy + 46.0, bw, 38.0), add, true, Hit::AddFiles, true);
         } else {
             let badge = rect(r.x + 22.0, r.y + (r.h - 48.0) / 2.0, 48.0, 48.0);
-            c.fill_round(badge, 15.0, p.accent.fade(0.16));
-            c.icon(&ic::DROP, badge.inset(13.0), p.accent);
-            draw::text(c, tr("Drop more files here"), rect(badge.right() + 16.0, r.y + 24.0, r.w - 260.0, 24.0), 16.0, 700, p.t1, Align::Left);
-            draw::text(c, tr("or click to choose them"), rect(badge.right() + 16.0, r.y + 48.0, r.w - 260.0, 20.0), 12.5, 400, p.t3, Align::Left);
+            c.fill_round(badge, 14.0, p.fill);
+            c.icon(&ic::DROP, badge.inset(13.0), if hot { p.accent } else { p.t2 });
+            draw::text(c, tr("Drop more files here"), rect(badge.right() + 16.0, r.y + 24.0, r.w - 260.0, 24.0), 15.0, 600, p.t1, Align::Left);
+            draw::text(c, tr("or click to choose them"), rect(badge.right() + 16.0, r.y + 48.0, r.w - 260.0, 20.0), 12.0, 400, p.t3, Align::Left);
             self.pill(c, rect(r.right() - bw - 24.0, r.y + (r.h - 36.0) / 2.0, bw, 36.0), add, false, Hit::AddFiles, true);
         }
     }
@@ -442,7 +495,7 @@ impl App {
         let p = self.pal.clone();
         let n = self.items.len();
         let done = self.items.iter().filter(|i| matches!(i.state, State::Done | State::Failed(_) | State::Cancelled)).count();
-        draw::text(c, &fill(tr("Queue · {n}"), &[&n.to_string()]), rect(r.x, r.y, 300.0, 22.0), 15.0, 700, p.t1, Align::Left);
+        draw::text(c, &fill(tr("Queue · {n}"), &[&n.to_string()]), rect(r.x, r.y, 300.0, 22.0), 15.0, 600, p.t1, Align::Left);
         if done > 0 {
             let l = tr("Clear finished");
             let bw = draw::text_width(c, l, 13.0, 600) + 28.0;
@@ -468,18 +521,18 @@ impl App {
         if self.queue_h > 0.0 {
             let k = list.h / total;
             let bar = rect(list.right() - 3.0, list.y + self.queue_scroll * k, 3.0, list.h * k);
-            c.fill_round(bar, 1.5, p.t1.fade(0.2));
+            c.fill_round(bar, 1.5, p.t4);
         }
     }
 
     fn paint_item(&mut self, c: &mut Canvas, row: Rect, it: &Item) {
         let p = self.pal.clone();
-        c.fill_round(row, 14.0, p.card);
-        let (icon, hue) = kind_of(&it.src);
-        let tint = Color::hex(hue);
+        c.fill_round(row, 16.0, p.card);
+        c.stroke_round(row.inset(0.5), 15.5, p.line, 1.0);
+        let icon = kind_of(&it.src);
         let badge = rect(row.x + 14.0, row.y + 14.0, 40.0, 40.0);
-        c.fill_round(badge, 12.0, tint.fade(0.18));
-        c.icon(icon, badge.inset(11.0), tint);
+        c.fill_round(badge, 11.0, p.fill);
+        c.icon(icon, badge.inset(11.0), p.t2);
         // buttons on the right
         let mut bx = row.right() - 12.0;
         let mut btn = |app: &mut App, c: &mut Canvas, icon: &Icon, hit: Hit, color: Color| {
@@ -503,21 +556,24 @@ impl App {
         // the preset it was given
         if let Some(spec) = &it.spec {
             let tag = tr(spec.preset.name());
-            let tw = draw::text_width(c, tag, 11.5, 600) + 18.0;
+            let tw = draw::text_width(c, tag, 12.0, 600) + 20.0;
             bx -= tw + 10.0;
             let t = rect(bx, row.y + (row.h - 24.0) / 2.0, tw, 24.0);
-            c.fill_round(t, 12.0, p.t1.fade(0.07));
-            draw::text(c, tag, t, 11.5, 600, p.t2, Align::Center);
+            c.fill_round(t, 12.0, p.fill);
+            draw::text(c, tag, t, 12.0, 600, p.t2, Align::Center);
         }
         let tx = badge.right() + 14.0;
         let tw = bx - tx - 12.0;
-        let name = it.src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        draw::text(c, &name, rect(tx, row.y + 12.0, tw, 22.0), 13.5, 600, p.t1, Align::Left);
+        let name = match &it.spec {
+            Some(s) if !s.extra.is_empty() => fill(tr("Slideshow of {n} photos"), &[&(s.extra.len() + 1).to_string()]),
+            _ => it.src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+        };
+        draw::text(c, &name, rect(tx, row.y + 12.0, tw, 22.0), 13.0, 600, p.t1, Align::Left);
         let (line, color) = self.state_line(it);
         draw::text(c, &line, rect(tx, row.y + 34.0, tw, 18.0), 12.0, 400, color, Align::Left);
         if it.state == State::Running {
             let bar = rect(tx, row.bottom() - 11.0, tw, 4.0);
-            c.fill_round(bar, 2.0, p.t1.fade(0.1));
+            c.fill_round(bar, 2.0, p.fill);
             c.fill_round(rect(bar.x, bar.y, (bar.w * it.frac as f32).max(4.0), 4.0), 2.0, p.accent);
         }
     }
@@ -526,7 +582,7 @@ impl App {
         let p = self.pal.clone();
         c.hline(r.x, r.y, r.w, p.line);
         let cy = r.y + r.h / 2.0;
-        draw::text(c, tr("Save to"), rect(r.x, cy - 10.0, 70.0, 20.0), 12.5, 600, p.t3, Align::Left);
+        draw::text(c, tr("Save to"), rect(r.x, cy - 10.0, 70.0, 20.0), 12.0, 600, p.t3, Align::Left);
         let dest = match &self.set.out_dir {
             Some(d) => d.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| d.display().to_string()),
             None => tr("Next to the original").to_string(),
@@ -564,8 +620,9 @@ impl App {
         let p = self.pal.clone();
         let tw = (draw::text_width(c, &text, 13.0, 600) + 40.0).min(w - 40.0);
         let r = rect((w - tw) / 2.0, h - BOTTOM_H - 60.0, tw, 40.0);
-        c.fill_round(r, 20.0, if p.dark { Color::hex(0x2c2c32) } else { Color::hex(0x1c1c20) });
-        draw::text(c, &text, r, 13.0, 600, Color::hex(0xffffff), Align::Center);
+        c.fill_round(r, 20.0, p.solid2);
+        c.stroke_round(r, 20.0, p.ring, 1.0);
+        draw::text(c, &text, r, 13.0, 600, p.t1, Align::Center);
         self.hits.add(r, Hit::Toast);
     }
 
@@ -580,7 +637,7 @@ impl App {
                     let text = if k == "trim_start" { self.trim_text.0.clone() } else { self.trim_text.1.clone() };
                     let style = EditStyle {
                         fg: p.t1,
-                        bg: p.t1.fade(0.1).over(p.side),
+                        bg: p.fill2.over(p.side),
                         size: 13.0,
                         select: Some((0, text.encode_utf16().count())),
                         placeholder: String::new(),

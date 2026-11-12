@@ -77,6 +77,10 @@ pub fn split_args(s: &str) -> Vec<String> {
 
 fn main() {
     let raw: Vec<String> = std::env::args().skip(1).collect();
+    // --register-defaults / --unregister-defaults: Windows default app (run by Plume Suite and the installer)
+    if let Some(code) = plume_defaults::switch(&plume_defaults::PDF, &raw) {
+        std::process::exit(code);
+    }
     let line = raw.iter().map(|a| format!("\"{a}\"")).collect::<Vec<_>>().join(" ");
     // already open: it takes the files and comes forward
     if std::env::var_os("PLUME_PDF_TEST_PORT").is_none()

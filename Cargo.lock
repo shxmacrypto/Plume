@@ -238,6 +238,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
+name = "byteorder-lite"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
+
+[[package]]
 name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1482,6 +1488,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "image-webp"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "525e9ff3e1a4be2fbea1fdf0e98686a6d98b4d8f937e1bf7402245af1909e8c3"
+dependencies = [
+ "byteorder-lite",
+ "quick-error",
+]
+
+[[package]]
 name = "indexmap"
 version = "2.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2388,6 +2404,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "plume-boost"
+version = "1.1.0"
+dependencies = [
+ "plume-ui",
+ "plume-update",
+ "serde",
+ "serde_json",
+ "windows 0.61.3",
+ "windows-numerics 0.2.0",
+]
+
+[[package]]
 name = "plume-calendar"
 version = "1.1.0"
 dependencies = [
@@ -2435,6 +2463,40 @@ dependencies = [
  "serde_json",
  "windows 0.61.3",
  "windows-numerics 0.2.0",
+]
+
+[[package]]
+name = "plume-create"
+version = "1.1.0"
+dependencies = [
+ "image-webp",
+ "miniz_oxide 0.8.9",
+ "plume-defaults",
+ "plume-ui",
+ "serde",
+ "serde_json",
+ "windows 0.61.3",
+ "windows-numerics 0.2.0",
+]
+
+[[package]]
+name = "plume-cut"
+version = "1.1.0"
+dependencies = [
+ "miniz_oxide 0.8.9",
+ "plume-defaults",
+ "plume-ui",
+ "serde",
+ "serde_json",
+ "windows 0.61.3",
+ "windows-numerics 0.2.0",
+]
+
+[[package]]
+name = "plume-defaults"
+version = "1.1.0"
+dependencies = [
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -2493,6 +2555,7 @@ name = "plume-media"
 version = "1.1.0"
 dependencies = [
  "kamadak-exif",
+ "plume-defaults",
  "plume-ui",
  "plume-update",
  "serde",
@@ -2508,12 +2571,27 @@ version = "1.1.0"
 dependencies = [
  "lofty",
  "miniz_oxide 0.8.9",
+ "plume-defaults",
  "plume-ui",
  "plume-update",
  "rubato",
  "serde",
  "serde_json",
  "symphonia",
+ "windows 0.61.3",
+ "windows-numerics 0.2.0",
+]
+
+[[package]]
+name = "plume-notepad"
+version = "1.1.0"
+dependencies = [
+ "plume-defaults",
+ "plume-ui",
+ "plume-update",
+ "regex",
+ "serde",
+ "serde_json",
  "windows 0.61.3",
  "windows-numerics 0.2.0",
 ]
@@ -2544,6 +2622,7 @@ name = "plume-pdf"
 version = "1.1.0"
 dependencies = [
  "lopdf",
+ "plume-defaults",
  "plume-ui",
  "plume-update",
  "serde",
@@ -2556,6 +2635,7 @@ dependencies = [
 name = "plume-suite"
 version = "1.1.0"
 dependencies = [
+ "plume-defaults",
  "plume-ui",
  "plume-update",
  "serde_json",
@@ -2738,6 +2818,12 @@ name = "qrcode"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
+
+[[package]]
+name = "quick-error"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quote"
@@ -2925,6 +3011,18 @@ checksum = "60dc65c0ff1a7ae1294b0c67b9f14baf70b644404010370171787bfac1038fc0"
 dependencies = [
  "libredox",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "regex"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f020237b6c8eed93db2e2cb53c00c60a8e1bc73da7d073199a1180401450218d"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-automata",
+ "regex-syntax",
 ]
 
 [[package]]

@@ -58,6 +58,10 @@ pub fn system_dark() -> bool {
 
 fn main() {
     let raw: Vec<String> = std::env::args().skip(1).collect();
+    // --register-defaults / --unregister-defaults: Windows default app (run by Plume Suite and the installer)
+    if let Some(code) = plume_defaults::switch(&plume_defaults::MUSIC, &raw) {
+        std::process::exit(code);
+    }
     let line = raw.iter().map(|a| format!("\"{a}\"")).collect::<Vec<_>>().join(" ");
     // already open: it takes the files and comes forward
     if std::env::var_os("PLUME_MUSIC_TEST_PORT").is_none()
@@ -78,7 +82,7 @@ fn main() {
         size: (1240.0, 760.0),
         min: (860.0, 600.0),
         dark,
-        background: if dark { plume_ui::Color::hex(0x121214) } else { plume_ui::Color::hex(0xf6f6f8) },
+        background: plume_ui::Theme::new(dark, None).bg,
         activate: std::env::var_os("PLUME_MUSIC_NOACTIVATE").is_none(),
         placement: None,
     };

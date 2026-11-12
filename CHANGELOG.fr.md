@@ -2,6 +2,53 @@
 
 Toutes les nouveautés de Plume, version après version (en anglais : [CHANGELOG.md](CHANGELOG.md)). Le site les affiche sur sa page « Notes de version ».
 
+## 1.2.0
+
+Quatre nouvelles applications rejoignent Plume Suite : **Plume Notepad** remplace le Bloc-notes de Windows et ajoute des pense-bêtes, **Plume Cut** monte vos vidéos, **Plume Create** retouche vos photos et crée vos visuels, et **Plume Boost** applique des réglages de performance mesurés et annulables. Plume FEx gagne les dossiers récents, les catégories et les mini-panneaux, Plume Media les dossiers épinglés et une frise, et Plume Suite peut faire des applis Plume vos applications par défaut de Windows. Win+E ouvre de nouveau Plume FEx sur le dernier Windows 11, et Plume Viewer fonctionne depuis un iPhone.
+
+Déjà sur Plume Suite 1.1 ? Plume Suite et chaque application affichent la mise à jour : un clic l'installe. Les nouvelles applis sont ensuite à un clic dans Plume Suite.
+
+### Nouvelles applications
+- **Plume Notepad** : des onglets qui reviennent après un redémarrage, rechercher-remplacer avec expressions régulières, tous les encodages, d'énormes fichiers en un clin d'œil. Un interrupteur, et Windows l'ouvre à la place du Bloc-notes. Des **pense-bêtes** restent au-dessus de toutes les fenêtres (Ctrl+Alt+N).
+- **Plume Cut** : un éditeur vidéo avec une vraie frise (pistes vidéo, texte, incrustation, son et musique), coupes, textes, transitions, couleur et vitesse, et des exports en 9:16, 16:9 ou 1:1 avec votre carte graphique. Sans filigrane.
+- **Plume Create** : retouche photo et création graphique en une appli : calques, recadrage, réglages et looks, détourage en un clic, effets de texte, et des modèles de stories, posts et miniatures.
+- **Plume Boost** : les réglages de performance de Windows qui changent vraiment quelque chose, chacun expliqué (gain, coût, preuves, comment le vérifier), trois profils, des chiffres en direct avant et après, et un clic pour tout annuler. Pas de faux score, pas de « nettoyeur de RAM », et il ne coupe jamais Defender, l'UAC ni Windows Update.
+  - **Réglage de la carte graphique** NVIDIA, AMD et Intel Arc : décalage des fréquences et de la mémoire, tension (AMD, Arc), limite de puissance et ventilateurs, toujours dans les limites données par le pilote. Chaque changement est d'abord essayé et revient seul après 15 secondes si vous ne le gardez pas ; un test de stabilité le vérifie ; un plantage du pilote ou un redémarrage brutal remet les réglages d'avant. Profils, application à l'ouverture de session, et un moniteur toujours au premier plan.
+  - **Réglages du processeur** que Windows propose par mode d'alimentation : préférence énergie/performance, mode turbo, état minimum et maximum, mise en veille des cœurs.
+  - **Une copie de vos réglages avec Plume Backup** avant chaque changement, et chaque copie peut être restaurée. Installer Plume Boost installe aussi Plume Backup.
+
+### Plume Suite
+- **Définir par défaut** : Plume Media, Music, PDF, Notepad, Cut et Create peuvent devenir l'application par défaut de Windows pour leurs fichiers, depuis leur carte.
+- **Les applis amènent ce dont elles ont besoin** : installer une appli qui en demande une autre installe les deux (Plume Boost et Plume Backup), et retirer une appli dont une autre se sert le dit d'abord.
+
+### Plume FEx
+- **Dossiers récents** sous Ce PC, et des **catégories** de dossiers que vous créez, nommez et colorez.
+- **Réordonnez la barre latérale en glissant** : vos dossiers du haut, les catégories et les dossiers qu'elles contiennent.
+- **Ctrl+clic droit sur un dossier** l'ouvre dans un petit panneau par-dessus la barre latérale, pour glisser des fichiers d'un dossier à l'autre ; Ctrl+Z annule.
+- **Filtres de recherche** par date de modification et par taille, et *Trier par* dans le menu Affichage.
+- **Revenir en arrière garde votre place** : le dossier d'où vous venez reste sélectionné dans son parent.
+- **Win+E ouvre de nouveau Plume FEx** sur Windows 11 25H2, où Windows ne demande plus au registre quel explorateur ouvrir. Quand *Ouvrir les dossiers et Win+E avec Plume FEx* est activé, un tout petit assistant (lancé avec Windows) attrape Win+E et ouvre Plume FEx ; le menu Démarrer reste fermé.
+- **Retirer Plume FEx rend toujours tout à l'Explorateur de fichiers de Windows** : double-clic sur les dossiers et les lecteurs, Win+E et l'entrée du clic droit, même si Plume FEx n'a pas pu faire le ménage lui-même.
+
+### Plume Viewer
+- **Fonctionne depuis un iPhone (Safari)** : l'écran du téléphone reste allumé pendant qu'il attend l'accord du PC, la connexion ne tombe plus pendant que vous allez au PC.
+- Un téléphone qui a décroché ne laisse plus le PC « déjà connecté » : l'essai suivant prend sa place.
+- Depuis un ordinateur, votre pointeur reste visible sur l'écran du PC.
+
+### Plume Media
+- **Dossiers épinglés** dans la barre latérale, avec une **frise** par dossier (tri, filtres, sous-dossiers) et un rail de dates pour remonter les années.
+- **Ouvrir dans Plume Cut** envoie vos vidéos et photos directement dans un nouveau projet vidéo.
+
+### Plume Clipboard
+- **Les mots de passe, adresses IP, clés et jetons copiés sont masqués** dans l'historique, scellés sur ce PC et retirés après quelques minutes (chaque type peut être désactivé).
+
+### Plume Convert
+- **Photos en GIF** : une photo devient un GIF, plusieurs photos deviennent un GIF animé (durée par photo, boucle, taille).
+
+### Toutes les applications
+- **Un seul style** : les mêmes couleurs, cartes arrondies, boutons en pilule, interrupteurs, espacements et fenêtres de dialogue dans toutes les applications Plume, en clair et en sombre, avec la couleur de chaque application assortie à son icône.
+- **« Afficher dans le dossier » ouvre Plume FEx** : quand Plume FEx ouvre vos dossiers, un téléchargement de Plume Web (et « Afficher dans le dossier » dans Convert, Media, Music, Clean, Drop, Task et Launcher) ouvre Plume FEx sur le dossier, le fichier sélectionné, au lieu de l'Explorateur de fichiers de Windows.
+
 ## 1.1.0 - 2026-11-11
 
 Treize nouvelles applications rejoignent Plume Suite. **Plume Music** joue votre musique et YouTube Music, avec vos playlists Spotify et Apple Music. **Plume Viewer** vous permet de contrôler votre PC depuis votre téléphone. Onze outils du quotidien les accompagnent : Drop, Launcher, Passwords, Media, Task, Clean, Backup, Clipboard, PDF, Calendar et Convert.

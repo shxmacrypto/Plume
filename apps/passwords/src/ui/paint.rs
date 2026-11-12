@@ -63,29 +63,75 @@ pub fn card_masked(n: &str) -> String {
 }
 
 impl App {
+    /// Opaque (the native text field paints over it): the theme's field fill over a card.
     pub fn field_bg(&self) -> Color {
-        if self.t.dark { Color::hex(0x2c2c2e) } else { Color::hex(0xf4f4f7) }
+        self.t.fill.over(self.t.card.over(self.t.bg))
     }
 
+    /// Text and icons on the accent: near-black on a light accent (slate in dark mode), white otherwise.
     pub fn ink_on_accent(&self) -> Color {
-        Color::hex(0xffffff)
+        let a = self.t.accent;
+        if a.r * 0.299 + a.g * 0.587 + a.b * 0.114 > 0.55 { self.t.bg.mix(Color::hex(0), 0.6) } else { Color::hex(0xffffff) }
+    }
+
+    /// Width of a segmented control.
+    pub fn segmented_w(&mut self, c: &mut Canvas, labels: &[&str], font: Font) -> f32 {
+        labels.iter().map(|l| c.text_width(l, bold(font)) + 24.0).sum::<f32>() + 6.0
+    }
+
+    /// A segmented control: a pill track, the chosen segment raised. Returns its width.
+    #[allow(clippy::too_many_arguments)]
+    pub fn segmented(&mut self, c: &mut Canvas, x: f32, y: f32, labels: &[&str], cur: usize, font: Font, hit: impl Fn(usize) -> Hit) -> f32 {
+        let t = self.t.clone();
+        let total = self.segmented_w(c, labels, font);
+        let track = rect(x, y, total, 32.0);
+        c.fill_round(track, 16.0, t.fill);
+        let mut sx = x + 3.0;
+        for (i, l) in labels.iter().enumerate() {
+            let sw = c.text_width(l, bold(font)) + 24.0;
+            let b = rect(sx, y + 3.0, sw, 26.0);
+            let h = hit(i);
+            if i == cur {
+                c.fill_round(b, 13.0, if t.dark { t.fill2 } else { t.solid });
+                c.stroke_round(b, 13.0, t.ring, 1.0);
+            } else if self.hovered(&h) {
+                c.fill_round(b, 13.0, t.hover);
+            }
+            c.text(l, b, if i == cur { bold(font) } else { font }, if i == cur { t.t1 } else { t.t2 }, Align::Center);
+            self.hits.add(b, h);
+            sx += sw;
+        }
+        total
     }
 
     /// A round button: primary (accent), quiet, or red.
     pub fn pill(&mut self, c: &mut Canvas, r: Rect, label: &str, style: u8, hit: Hit) {
         let t = self.t.clone();
         let hot = self.hovered(&hit);
-        let fill = match style {
-            1 if hot => t.accent.mix(Color::hex(0xffffff), 0.12),
+        let down = hot && self.pressed.as_ref() == Some(&hit);
+        let base = match style {
             1 => t.accent,
-            2 if hot => t.red.mix(Color::hex(0xffffff), 0.12),
             2 => t.red,
-            _ if hot => t.fill2,
             _ => t.fill,
         };
+        let fill = match (style, hot, down) {
+            (_, _, true) if style == 0 => t.fill2.mix(t.t1, 0.06),
+            (_, _, true) => base.mix(Color::hex(0), 0.15),
+            (0, true, _) => t.fill2,
+            (_, true, _) => base.mix(Color::hex(0xffffff), 0.12),
+            _ => base,
+        };
         c.fill_round(r, r.h / 2.0, fill);
-        c.text(label, r, Font::BodyBold, if style == 0 { t.t1 } else { self.ink_on_accent() }, Align::Center);
+        c.text(label, r, Font::BodyBold, self.pill_ink(style), Align::Center);
         self.hits.add(r, hit);
+    }
+
+    pub fn pill_ink(&self, style: u8) -> Color {
+        match style {
+            0 => self.t.t1,
+            2 => Color::hex(0xffffff),
+            _ => self.ink_on_accent(),
+        }
     }
 
     /// A pill with an icon before its label; returns its width.
@@ -94,7 +140,7 @@ impl App {
         let w = c.text_width(label, Font::BodyBold) + 52.0;
         let r = rect(x, y, w, h);
         self.pill(c, r, "", style, hit);
-        let ink = if style == 0 { self.t.t1 } else { self.ink_on_accent() };
+        let ink = self.pill_ink(style);
         c.icon(icon, rect(x + 16.0, y + (h - 16.0) / 2.0, 16.0, 16.0), ink);
         c.text(label, rect(x + 38.0, y, w - 44.0, h), Font::BodyBold, ink, Align::Left);
         w
@@ -221,6 +267,7 @@ impl App {
 
     fn paint_caption(&mut self, c: &mut Canvas, w: f32, cx: &PaintCx) {
         let t = self.t.clone();
+        c.gradient_v(rect(0.0, 0.0, w, m::TITLE_H), t.hdr1, t.hdr2);
         let wic = self.gfx.wic.clone();
         c.image(1, rect(14.0, (m::TITLE_H - 18.0) / 2.0, 18.0, 18.0), 1.0, || png(&wic, LOGO));
         c.text("Plume Passwords", rect(40.0, 0.0, 200.0, m::TITLE_H), Font::BodyBold, if cx.active { t.t1 } else { t.t3 }, Align::Left);
@@ -228,9 +275,9 @@ impl App {
         if self.screen == Screen::Main {
             let label = tr("Lock");
             let bw = c.text_width(label, Font::BodyBold) + 46.0;
-            let r = rect(cap_x - bw - 10.0, 7.0, bw, 28.0);
+            let r = rect(cap_x - bw - 10.0, 5.0, bw, 32.0);
             self.pill(c, r, "", 0, Hit::Lock);
-            c.icon(&ic::LOCK, rect(r.x + 13.0, r.y + 6.0, 16.0, 16.0), t.t1);
+            c.icon(&ic::LOCK, rect(r.x + 13.0, r.y + 8.0, 16.0, 16.0), t.t1);
             c.text(label, rect(r.x + 34.0, r.y, bw - 38.0, r.h), Font::BodyBold, t.t1, Align::Left);
         }
         let glyphs = [(Hit::Min, '\u{E921}'), (Hit::Max, if cx.maximized { '\u{E923}' } else { '\u{E922}' }), (Hit::Close, '\u{E8BB}')];
@@ -260,14 +307,14 @@ impl App {
         let sub =
             if create { tr("Choose a master password. It opens your vault and cannot be recovered: keep it safe.") } else { tr("Enter your master password.") };
         let sub_h = c.text_height(sub, cw - 64.0, Font::Body);
-        let ch = 250.0
+        let ch = 268.0
             + sub_h
             + if create { 76.0 } else { 0.0 }
             + if self.hello_on && !create { 50.0 } else { 0.0 }
             + if self.error.is_empty() { 0.0 } else { 26.0 };
         let card = rect((w - cw) / 2.0, (m::TITLE_H + (h - m::TITLE_H - ch) / 2.0).max(m::TITLE_H + 12.0), cw, ch);
-        c.fill_round(card, 22.0, t.card);
-        c.stroke_round(card, 22.0, t.ring, 1.0);
+        c.fill_round(card, 18.0, t.card);
+        c.stroke_round(card, 18.0, t.sep, 1.0);
         let x = card.x + 32.0;
         let fw = cw - 64.0;
         let mut y = card.y + 28.0;
@@ -297,22 +344,20 @@ impl App {
             None if create => tr("Create vault"),
             None => tr("Unlock"),
         };
-        self.pill(c, rect(x, y, fw, 40.0), label, if self.busy.is_some() { 0 } else { 1 }, Hit::Submit);
+        self.pill(c, rect(x, y + 2.0, fw, 36.0), label, if self.busy.is_some() { 0 } else { 1 }, Hit::Submit);
         y += 50.0;
         if self.hello_on && !create {
             let label = tr("Unlock with Windows Hello");
             let bw = c.text_width(label, Font::BodyBold) + 52.0;
-            self.icon_pill(c, x + (fw - bw) / 2.0, y, 38.0, &ic::FINGER, label, 0, Hit::HelloUnlock);
-            y += 50.0;
+            self.icon_pill(c, x + (fw - bw) / 2.0, y, 36.0, &ic::FINGER, label, 0, Hit::HelloUnlock);
         }
-        c.text(tr("Your vault is encrypted and never leaves this PC."), rect(x, y, fw, 20.0), Font::Small, t.t3, Align::Center);
+        c.text(tr("Your vault is encrypted and never leaves this PC."), rect(x, card.bottom() + 14.0, fw, 20.0), Font::Small, t.t3, Align::Center);
     }
 
     // ───────────────────────── the vault ─────────────────────────
 
     fn paint_main(&mut self, c: &mut Canvas, w: f32, h: f32) {
         let t = self.t.clone();
-        c.fill(rect(0.0, 0.0, w, m::TITLE_H), t.bg2);
         self.paint_sidebar(c, rect(0.0, m::TITLE_H, SIDEBAR_W, h - m::TITLE_H));
         let rest = rect(SIDEBAR_W, m::TITLE_H, w - SIDEBAR_W, h - m::TITLE_H);
         match self.view.clone() {
@@ -334,12 +379,13 @@ impl App {
         let hit = Hit::Nav(v.clone());
         let on = self.view == v && self.pick.is_none();
         if on {
-            c.fill_round(r, 8.0, t.accent.fade(if t.dark { 0.24 } else { 0.14 }));
+            c.fill_round(r, 10.0, t.accent.fade(0.16));
         } else if self.hovered(&hit) {
-            c.fill_round(r, 8.0, t.hover);
+            c.fill_round(r, 10.0, t.hover);
         }
-        c.icon(icon, rect(r.x + 10.0, r.y + (r.h - 16.0) / 2.0, 16.0, 16.0), if on { t.accent.mix(t.t1, 0.25) } else { t.t2 });
-        c.text(label, rect(r.x + 36.0, r.y, r.w - 76.0, r.h), if on { Font::BodyBold } else { Font::Body }, t.t1, Align::Left);
+        c.icon(icon, rect(r.x + 12.0, r.y + (r.h - 18.0) / 2.0, 18.0, 18.0), if on { t.accent } else { t.t2 });
+        let lw = r.w - 52.0 - if count.is_some_and(|n| n > 0) { 36.0 } else { 0.0 };
+        c.text(label, rect(r.x + 40.0, r.y, lw, r.h), if on { Font::BodyBold } else { Font::Body }, t.t1, Align::Left);
         if let Some(n) = count.filter(|n| *n > 0) {
             c.text(&n.to_string(), rect(r.right() - 44.0, r.y, 34.0, r.h), Font::Small, t.t3, Align::Right);
         }
@@ -350,9 +396,9 @@ impl App {
         let t = self.t.clone();
         c.fill(r, t.bg2);
         c.vline(r.right() - 0.5, r.y, r.h, t.sep);
-        let x = r.x + 10.0;
-        let rw = r.w - 20.0;
-        let mut y = r.y + 10.0;
+        let x = r.x + 12.0;
+        let rw = r.w - 24.0;
+        let mut y = r.y + 12.0;
         let rows: [(&Icon, &str, View); 6] = [
             (&ic::GRID, tr("All items"), View::All),
             (&icons::STAR, tr("Favorites"), View::Favorites),
@@ -363,33 +409,33 @@ impl App {
         ];
         for (icon, label, v) in rows {
             let n = self.count(&v);
-            self.nav_row(c, rect(x, y, rw, 32.0), icon, label, Some(n), v);
-            y += 34.0;
+            self.nav_row(c, rect(x, y, rw, 36.0), icon, label, Some(n), v);
+            y += 38.0;
         }
         y += 14.0;
-        c.text(tr("FOLDERS"), rect(x + 10.0, y, rw - 40.0, 20.0), Font::SmallBold, t.t3, Align::Left);
-        self.icon_btn(c, &icons::PLUS, rect(x + rw - 28.0, y - 4.0, 28.0, 28.0), Hit::AddFolder, t.t3);
-        y += 24.0;
-        let bottom = r.bottom() - 3.0 * 34.0 - 14.0;
+        c.text(tr("FOLDERS"), rect(x + 12.0, y, rw - 44.0, 20.0), Font::SmallBold, t.t3, Align::Left);
+        self.icon_btn(c, &icons::PLUS, rect(x + rw - 32.0, y - 6.0, 32.0, 32.0), Hit::AddFolder, t.t2);
+        y += 26.0;
+        let bottom = r.bottom() - 3.0 * 38.0 - 16.0;
         let folders = self.folders();
         if folders.is_empty() {
-            c.text(tr("No folders yet"), rect(x + 10.0, y, rw - 10.0, 26.0), Font::Small, t.t4, Align::Left);
+            c.text(tr("No folders yet"), rect(x + 12.0, y, rw - 12.0, 26.0), Font::Small, t.t3, Align::Left);
         }
         for f in folders {
-            if y + 32.0 > bottom {
+            if y + 36.0 > bottom {
                 break;
             }
             let n = self.count(&View::Folder(f.clone()));
-            self.nav_row(c, rect(x, y, rw, 32.0), &icons::FOLDER, &f, Some(n), View::Folder(f.clone()));
-            y += 34.0;
+            self.nav_row(c, rect(x, y, rw, 36.0), &icons::FOLDER, &f, Some(n), View::Folder(f.clone()));
+            y += 38.0;
         }
-        let mut y = r.bottom() - 3.0 * 34.0 - 8.0;
-        c.hline(x, y - 6.0, rw, t.sep);
+        let mut y = r.bottom() - 3.0 * 38.0 - 10.0;
+        c.hline(x, y - 7.0, rw, t.sep);
         for (icon, label, v) in
             [(&ic::DICE, tr("Generator"), View::Generator), (&ic::SHIELD, tr("Security report"), View::Report), (&icons::GEAR, tr("Settings"), View::Settings)]
         {
-            self.nav_row(c, rect(x, y, rw, 32.0), icon, label, None, v);
-            y += 34.0;
+            self.nav_row(c, rect(x, y, rw, 36.0), icon, label, None, v);
+            y += 38.0;
         }
     }
 
@@ -416,25 +462,23 @@ impl App {
 
     fn paint_list(&mut self, c: &mut Canvas, r: Rect) {
         let t = self.t.clone();
-        let x = r.x + 14.0;
-        let mut y = r.y + 12.0;
-        self.field(c, rect(x, y, r.w - 28.0 - 46.0, 38.0), F::Search, tr("Search"), 0.0);
-        let nb = rect(r.right() - 14.0 - 38.0, y, 38.0, 38.0);
-        let hot = self.hovered(&Hit::New);
-        c.fill_round(nb, 19.0, if hot { t.accent.mix(Color::hex(0xffffff), 0.12) } else { t.accent });
-        c.icon(&icons::PLUS, rect(nb.x + 11.0, nb.y + 11.0, 16.0, 16.0), self.ink_on_accent());
-        self.hits.add(nb, Hit::New);
+        let x = r.x + 16.0;
+        let mut y = r.y + 16.0;
+        self.field(c, rect(x, y, r.w - 32.0 - 44.0, 36.0), F::Search, tr("Search"), 0.0);
+        let nb = rect(r.right() - 16.0 - 36.0, y, 36.0, 36.0);
+        self.pill(c, nb, "", 1, Hit::New);
+        c.icon(&icons::PLUS, rect(nb.x + 10.0, nb.y + 10.0, 16.0, 16.0), self.ink_on_accent());
         self.new_btn = nb;
         y += 50.0;
         if let Some((title, _)) = self.pick.clone() {
-            let card = rect(x, y, r.w - 28.0, 74.0);
-            c.fill_round(card, 12.0, t.accent.fade(0.16));
-            c.icon(&ic::KEYBOARD, rect(card.x + 12.0, card.y + 12.0, 16.0, 16.0), t.accent.mix(t.t1, 0.3));
+            let card = rect(x, y, r.w - 32.0, 74.0);
+            c.fill_round(card, 14.0, t.accent.fade(0.16));
+            c.icon(&ic::KEYBOARD, rect(card.x + 12.0, card.y + 12.0, 16.0, 16.0), t.accent);
             c.text(tr("Choose the login to type into:"), rect(card.x + 36.0, card.y + 6.0, card.w - 46.0, 26.0), Font::SmallBold, t.t1, Align::Left);
             c.text(&title, rect(card.x + 36.0, card.y + 28.0, card.w - 46.0, 18.0), Font::Small, t.t2, Align::Left);
             let lw = c.text_width(tr("Cancel"), Font::SmallBold) + 20.0;
             let cr = rect(card.right() - lw - 8.0, card.y + 48.0, lw, 22.0);
-            c.text(tr("Cancel"), cr, Font::SmallBold, t.accent.mix(t.t1, 0.2), Align::Center);
+            c.text(tr("Cancel"), cr, Font::SmallBold, t.t1, Align::Center);
             self.hits.add(cr, Hit::CancelPick);
             y += 84.0;
         }
@@ -443,15 +487,11 @@ impl App {
         let content = vis.len() as f32 * ROW_H + 10.0;
         self.list_scroll = self.list_scroll.min((content - area.h).max(0.0));
         if vis.is_empty() {
-            let msg = if !self.query.is_empty() {
-                tr("Nothing matches your search.")
-            } else if self.vault.data.entries.is_empty() {
-                tr("Your vault is empty. Add a login with +, or import a CSV file in Settings.")
-            } else {
-                tr("Nothing here yet.")
-            };
-            let mh = c.text_height(msg, r.w - 60.0, Font::Body);
-            c.text_block(msg, rect(r.x + 30.0, y + 30.0, r.w - 60.0, mh), Font::Body, t.t3);
+            // an empty vault: the details side says what to do
+            if !self.vault.data.entries.is_empty() || !self.query.is_empty() {
+                let msg = if self.query.is_empty() { tr("Nothing here yet.") } else { tr("Nothing matches your search.") };
+                c.text(msg, rect(r.x + 16.0, y + 24.0, r.w - 32.0, 22.0), Font::Body, t.t3, Align::Center);
+            }
             return;
         }
         c.clip(area);
@@ -466,17 +506,17 @@ impl App {
             let row = rect(r.x + 8.0, ry, r.w - 16.0, ROW_H - 4.0);
             let hit = Hit::Row(e.id.clone());
             if self.sel.as_deref() == Some(&e.id) {
-                c.fill_round(row, 10.0, t.accent.fade(if t.dark { 0.22 } else { 0.13 }));
+                c.fill_round(row, 10.0, t.accent.fade(0.16));
             } else if self.hovered(&hit) {
                 c.fill_round(row, 10.0, t.hover);
             }
-            self.badge(c, rect(row.x + 10.0, row.y + (row.h - 36.0) / 2.0, 36.0, 36.0), &e);
-            let tx = row.x + 58.0;
+            self.badge(c, rect(row.x + 10.0, row.y + (row.h - 32.0) / 2.0, 32.0, 32.0), &e);
+            let tx = row.x + 54.0;
             let star = if e.favorite { 22.0 } else { 0.0 };
             let code = if e.totp.is_empty() { None } else { Totp::parse(&e.totp) };
             let code_w = if code.is_some() { 74.0 } else { 0.0 };
             let tw = row.right() - tx - 10.0 - star - code_w;
-            c.text(&e.title, rect(tx, row.y + 8.0, tw, 20.0), Font::BodyBold, t.t1, Align::Left);
+            c.text(&e.title, rect(tx, row.y + 5.0, tw, 20.0), Font::BodyBold, t.t1, Align::Left);
             let sub = match e.kind {
                 Kind::Login if !e.username.is_empty() => e.username.clone(),
                 Kind::Login => crate::csv::host_of(&e.url),
@@ -490,10 +530,10 @@ impl App {
                 Kind::Note => kind_name(Kind::Note).to_string(),
                 Kind::Card => card_masked(&e.card_number),
             };
-            c.text(&sub, rect(tx, row.y + 28.0, tw, 18.0), Font::Small, t.t3, Align::Left);
+            c.text(&sub, rect(tx, row.y + 24.0, tw, 18.0), Font::Small, t.t3, Align::Left);
             if let Some(code) = code {
                 let s = totp::grouped(&code.code_at(now));
-                draw::text(c, &s, rect(row.right() - 10.0 - star - code_w, row.y, code_w, row.h), 14.0, 600, t.accent.mix(t.t1, 0.25), Align::Right, true);
+                draw::text(c, &s, rect(row.right() - 10.0 - star - code_w, row.y, code_w, row.h), 14.0, 600, t.t1, Align::Right, true);
             }
             if e.favorite {
                 c.icon_fill(&icons::STAR, rect(row.right() - 24.0, row.y + (row.h - 14.0) / 2.0, 14.0, 14.0), Color::hex(0xeab308));
@@ -515,10 +555,19 @@ impl App {
             let mut e = e;
             e.wipe();
         } else {
-            let s = 40.0;
-            let cy = r.y + r.h / 2.0 - 40.0;
-            c.icon(&ic::KEY, rect(r.x + (r.w - s) / 2.0, cy - s, s, s), t.t4);
-            c.text(tr("Select an item, or add one with +."), rect(r.x + 20.0, cy + 10.0, r.w - 40.0, 22.0), Font::Body, t.t3, Align::Center);
+            let empty = self.vault.data.entries.is_empty();
+            let (title, line) = if empty {
+                (tr("Your vault is empty"), tr("Add your first login, or import a CSV file in Settings."))
+            } else {
+                (tr("Nothing selected"), tr("Choose an item in the list, or add a new one."))
+            };
+            let cy = r.y + r.h / 2.0 - 70.0;
+            c.icon(&ic::KEY, rect(r.x + (r.w - 40.0) / 2.0, cy, 40.0, 40.0), t.t3);
+            c.text(title, rect(r.x + 24.0, cy + 54.0, r.w - 48.0, 26.0), Font::Large, t.t1, Align::Center);
+            c.text(line, rect(r.x + 24.0, cy + 84.0, r.w - 48.0, 22.0), Font::Body, t.t3, Align::Center);
+            let label = tr("New login");
+            let bw = c.text_width(label, Font::BodyBold) + 52.0;
+            self.icon_pill(c, r.x + (r.w - bw) / 2.0, cy + 122.0, 36.0, &icons::PLUS, label, 1, Hit::NewKind(Kind::Login));
         }
         c.unclip();
     }
@@ -668,7 +717,7 @@ impl App {
                 let now = crate::vault::now();
                 c.text(tr("2FA code"), rect(ix, ry + 10.0, iw, 18.0), Font::Small, t.t3, Align::Left);
                 let s = totp::grouped(&code.code_at(now));
-                draw::text(c, &s, rect(ix, ry + 30.0, iw - 60.0, 34.0), 26.0, 700, t.accent.mix(t.t1, 0.2), Align::Left, true);
+                draw::text(c, &s, rect(ix, ry + 30.0, iw - 60.0, 34.0), 26.0, 700, t.t1, Align::Left, true);
                 let left = code.left(now);
                 let frac = left as f32 / code.period as f32;
                 let bar = rect(ix, ry + 70.0, 160.0, 4.0);
@@ -733,14 +782,11 @@ impl App {
         c.text(title, rect(x, y, w, 30.0), Font::Large, t.t1, Align::Left);
         y += 40.0;
         if new {
-            let mut kx = x;
-            for k in [Kind::Login, Kind::Totp, Kind::Note, Kind::Card] {
-                let label = kind_name(k);
-                let kw = c.text_width(label, Font::BodyBold) + 30.0;
-                self.pill(c, rect(kx, y, kw, 30.0), label, if k == kind { 1 } else { 0 }, Hit::Kind(k));
-                kx += kw + 8.0;
-            }
-            y += 44.0;
+            const KINDS: [Kind; 4] = [Kind::Login, Kind::Totp, Kind::Note, Kind::Card];
+            let labels: Vec<&str> = KINDS.iter().map(|k| kind_name(*k)).collect();
+            let cur = KINDS.iter().position(|k| *k == kind).unwrap_or(0);
+            self.segmented(c, x, y, &labels, cur, Font::Body, |i| Hit::Kind(KINDS[i]));
+            y += 48.0;
         }
         for &f in form_fields(kind) {
             let (label, hint) = match (f, kind) {
@@ -829,9 +875,9 @@ impl App {
             y += 30.0;
         }
         let sw = c.text_width(tr("Save"), Font::BodyBold) + 44.0;
-        self.pill(c, rect(x, y, sw, 38.0), tr("Save"), 1, Hit::Save);
+        self.pill(c, rect(x, y, sw, 36.0), tr("Save"), 1, Hit::Save);
         let cw = c.text_width(tr("Cancel"), Font::BodyBold) + 40.0;
-        self.pill(c, rect(x + sw + 10.0, y, cw, 38.0), tr("Cancel"), 0, Hit::Cancel);
+        self.pill(c, rect(x + sw + 10.0, y, cw, 36.0), tr("Cancel"), 0, Hit::Cancel);
         y += 60.0;
         self.page_h = y + self.page_scroll - r.y;
         self.page_scroll = self.page_scroll.min((self.page_h - r.h).max(0.0));
@@ -847,15 +893,15 @@ impl App {
         let nb = self.new_btn;
         let mw = 200.0;
         let card = rect(nb.right() - mw, nb.bottom() + 6.0, mw, 4.0 * 38.0 + 12.0);
-        c.fill_round(card.offset(0.0, 2.0), 12.0, Color::hex(0).fade(0.18));
-        c.fill_round(card, 12.0, t.solid);
-        c.stroke_round(card, 12.0, t.ring, 1.0);
+        c.fill_round(card.offset(0.0, 2.0), 14.0, Color::hex(0).fade(0.18));
+        c.fill_round(card, 14.0, t.solid);
+        c.stroke_round(card, 14.0, t.ring, 1.0);
         let mut y = card.y + 6.0;
         for (k, icon) in [(Kind::Login, &ic::KEY), (Kind::Totp, &ic::CLOCK), (Kind::Note, &ic::NOTE), (Kind::Card, &ic::CARD)] {
             let r = rect(card.x + 6.0, y, mw - 12.0, 38.0);
             let hit = Hit::NewKind(k);
             if self.hovered(&hit) {
-                c.fill_round(r, 8.0, t.hover);
+                c.fill_round(r, 10.0, t.hover);
             }
             c.icon(icon, rect(r.x + 10.0, r.y + 11.0, 16.0, 16.0), t.t2);
             c.text(kind_name(k), rect(r.x + 36.0, r.y, r.w - 40.0, r.h), Font::Body, t.t1, Align::Left);
@@ -937,8 +983,8 @@ impl App {
         y += 10.0;
         let ow = c.text_width(ok, Font::BodyBold) + 44.0;
         let cw = c.text_width(tr("Cancel"), Font::BodyBold) + 40.0;
-        self.pill(c, rect(card.right() - 28.0 - ow, y, ow, 38.0), ok, if danger { 2 } else { 1 }, Hit::ModalOk);
-        self.pill(c, rect(card.right() - 28.0 - ow - 10.0 - cw, y, cw, 38.0), tr("Cancel"), 0, Hit::ModalCancel);
+        self.pill(c, rect(card.right() - 28.0 - ow, y, ow, 36.0), ok, if danger { 2 } else { 1 }, Hit::ModalOk);
+        self.pill(c, rect(card.right() - 28.0 - ow - 10.0 - cw, y, cw, 36.0), tr("Cancel"), 0, Hit::ModalCancel);
     }
 
     fn paint_toast(&mut self, c: &mut Canvas, w: f32, h: f32) {
@@ -948,13 +994,23 @@ impl App {
         let lines = if c.text_width(&text, Font::Body) + 44.0 > w - 40.0 { 2.0 } else { 1.0 };
         let th = 22.0 * lines + 18.0;
         let r = rect((w - tw) / 2.0, h - th - 24.0, tw, th);
-        c.fill_round(r, 14.0, t.solid2);
-        c.stroke_round(r, 14.0, t.ring, 1.0);
+        let radius = if lines > 1.0 { 18.0 } else { th / 2.0 };
+        c.fill_round(r, radius, t.solid2);
+        c.stroke_round(r, radius, t.ring, 1.0);
         if lines > 1.0 {
             c.text_block(&text, rect(r.x + 20.0, r.y + 9.0, r.w - 40.0, r.h - 18.0), Font::Body, t.t1);
         } else {
             c.text(&text, r.inset_xy(20.0, 0.0), Font::Body, t.t1, Align::Center);
         }
+    }
+}
+
+/// The semibold variant of a font.
+pub fn bold(f: Font) -> Font {
+    match f {
+        Font::Body => Font::BodyBold,
+        Font::Small => Font::SmallBold,
+        f => f,
     }
 }
 

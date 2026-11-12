@@ -7,6 +7,7 @@ const DISCORD: [u32; 3] = [10, 25, 50];
 const AUDIO_FMT: [&str; 5] = ["mp3", "m4a", "wav", "flac", "ogg"];
 const GIF_FPS: [u32; 3] = [10, 15, 24];
 const GIF_W: [u32; 4] = [320, 480, 640, 800];
+const GIF_SECS: [f64; 5] = [0.5, 1.0, 2.0, 3.0, 5.0];
 const IMG_FMT: [&str; 6] = ["webp", "jpeg", "png", "bmp", "tiff", "ico"];
 const IMG_Q: [u32; 5] = [60, 75, 85, 95, 100];
 const IMG_MAX: [u32; 6] = [0, 3840, 2560, 1920, 1280, 640];
@@ -29,6 +30,11 @@ fn pos<T: PartialEq>(list: &[T], v: &T) -> usize {
     list.iter().position(|x| x == v).unwrap_or(0)
 }
 
+/// "0.5 s" in English, "0,5 s" in French.
+fn decimal(s: &str) -> String {
+    if crate::i18n::french() { s.replace('.', ",") } else { s.to_string() }
+}
+
 fn upper(list: &[&str]) -> Vec<String> {
     list.iter().map(|s| s.to_ascii_uppercase()).collect()
 }
@@ -42,6 +48,11 @@ impl App {
             "audio_fmt" => (upper(&AUDIO_FMT), pos(&AUDIO_FMT, &o.audio_fmt.as_str())),
             "gif_fps" => (GIF_FPS.iter().map(|f| format!("{f} fps")).collect(), pos(&GIF_FPS, &o.gif_fps)),
             "gif_width" => (GIF_W.iter().map(|w| format!("{w} px")).collect(), pos(&GIF_W, &o.gif_width)),
+            "gif_secs" => {
+                (GIF_SECS.iter().map(|v| decimal(&format!("{v} s"))).collect(), GIF_SECS.iter().position(|v| (v - o.gif_secs).abs() < 1e-6).unwrap_or(1))
+            }
+            "gif_together" => (vec![tr("One animated GIF").into(), tr("One GIF each").into()], if o.gif_together { 0 } else { 1 }),
+            "gif_loop" => (vec![tr("In a loop").into(), tr("Once").into()], if o.gif_loop { 0 } else { 1 }),
             "img_fmt" => (upper(&IMG_FMT), pos(&IMG_FMT, &o.img_fmt.as_str())),
             "img_quality" => (IMG_Q.iter().map(|q| q.to_string()).collect(), pos(&IMG_Q, &o.img_quality)),
             "img_max" => (IMG_MAX.iter().map(|m| if *m == 0 { tr("Same").to_string() } else { format!("{m} px") }).collect(), pos(&IMG_MAX, &o.img_max)),
@@ -94,6 +105,9 @@ impl App {
             "audio_fmt" => o.audio_fmt = AUDIO_FMT[i.min(4)].into(),
             "gif_fps" => o.gif_fps = GIF_FPS[i.min(2)],
             "gif_width" => o.gif_width = GIF_W[i.min(3)],
+            "gif_secs" => o.gif_secs = GIF_SECS[i.min(4)],
+            "gif_together" => o.gif_together = i == 0,
+            "gif_loop" => o.gif_loop = i == 0,
             "img_fmt" => o.img_fmt = IMG_FMT[i.min(5)].into(),
             "img_quality" => o.img_quality = IMG_Q[i.min(4)],
             "img_max" => o.img_max = IMG_MAX[i.min(5)],

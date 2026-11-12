@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Plume Cut: the Plume feather over a timeline whose clip is cut at the playhead, on magenta. -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff8bd1"/>
+      <stop offset=".5" stop-color="#e0249a"/>
+      <stop offset="1" stop-color="#8e1062"/>
+    </linearGradient>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".28"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#g)"/>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#s)"/>
+  <!-- the feather, above the timeline -->
+  <g transform="translate(32 21) scale(.5) translate(-32 -31.5)">
+    <path fill="#fff" d="M48.5 12.5c-12.6 1.2-23.4 9.6-26.6 22.4l-1.4 6.6 6.4-1.6c4.6-1.2 8.6-3.6 11.6-7.2l-6.2-.6 8.8-3.6c3.8-4.6 7-10 7.4-16z"/>
+    <path fill="none" stroke="#e0249a" stroke-width="2.6" stroke-linecap="round" d="M25 37.5C30 28 36 21 44.5 15.5"/>
+    <path fill="none" stroke="#fff" stroke-width="4.8" stroke-linecap="round" d="M15 50.5 24 40"/>
+  </g>
+  <!-- the timeline: a clip cut in two, and a sound under it -->
+  <rect x="10" y="37" width="19.5" height="8" rx="3" fill="#fff"/>
+  <rect x="34.5" y="37" width="19.5" height="8" rx="3" fill="#fff"/>
+  <rect x="10" y="48" width="30" height="6" rx="3" fill="#fff" opacity=".6"/>
+  <!-- the playhead through the cut -->
+  <path d="M32 33.5v23" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M28.6 31.2h6.8l-3.4 4z" fill="#fff"/>
+</svg>

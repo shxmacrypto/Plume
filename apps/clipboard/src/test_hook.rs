@@ -72,6 +72,20 @@ fn click(h: &mut dyn Handler, rect: Option<plume_ui::Rect>, right: bool, m: Mods
     json!({ "ok": true })
 }
 
+/// Half a click: the button goes down (and stays) or comes back up, to hold the eye of a sensitive item.
+fn press(h: &mut dyn Handler, rect: Option<plume_ui::Rect>, down: bool, cx: &mut Cx) -> Value {
+    let Some(r) = rect else { return json!({ "error": "no such target" }) };
+    let p = pt(r.x + r.w / 2.0, r.y + r.h / 2.0);
+    let m = Mods::default();
+    if down {
+        h.event(Event::MouseMove { p, mods: m }, cx);
+        h.event(Event::MouseDown { p, button: Button::Left, clicks: 1, mods: m }, cx);
+    } else {
+        h.event(Event::MouseUp { p, button: Button::Left, mods: m }, cx);
+    }
+    json!({ "ok": true })
+}
+
 fn run(main: &Sender, panel: &Sender, line: &str) -> String {
     let Ok(cmd) = serde_json::from_str::<Value>(line) else { return json!({ "error": "bad json" }).to_string() };
     let (tx, rx) = mpsc::channel();
@@ -98,7 +112,13 @@ fn panel_cmd(h: &mut dyn Handler, cmd: &Value, cx: &mut Cx) -> Value {
                 .iter()
                 .map(|e| match e {
                     Entry::Item(id) => {
-                        json!({ "item": id, "text": m.store.get(*id).map(|i| i.preview(60)), "pin": m.store.get(*id).is_some_and(|i| i.pin.is_some()) })
+                        json!({
+                            "item": id,
+                            "text": m.store.get(*id).map(|i| i.preview(60)),
+                            "pin": m.store.get(*id).is_some_and(|i| i.pin.is_some()),
+                            "secret": m.store.get(*id).and_then(|i| i.secret).map(|s| format!("{s:?}")),
+                            "shown": p.reveal.shown(*id),
+                        })
                     }
                     Entry::Snippet(id) => json!({ "snippet": id, "trigger": m.store.snippet(*id).map(|s| s.trigger.clone()) }),
                 })
@@ -111,6 +131,7 @@ fn panel_cmd(h: &mut dyn Handler, cmd: &Value, cx: &mut Cx) -> Value {
                 "list": list,
                 "last": p.last,
                 "target": p.target,
+                "notice": p.notice,
                 "hwnd": p.win.hwnd.0 as isize,
             })
         }
@@ -119,6 +140,11 @@ fn panel_cmd(h: &mut dyn Handler, cmd: &Value, cx: &mut Cx) -> Value {
             let want = cmd["id"].as_str().unwrap_or("").to_string();
             let r = p.hits.rect_of(|id| format!("{id:?}") == want);
             click(p, r, cmd["cmd"] == "rclick", mods(cmd), cx)
+        }
+        "press" | "release" => {
+            let want = cmd["id"].as_str().unwrap_or("").to_string();
+            let r = p.hits.rect_of(|id| format!("{id:?}") == want);
+            press(p, r, cmd["cmd"] == "press", cx)
         }
         "type" => {
             for ch in cmd["text"].as_str().unwrap_or("").chars() {
@@ -148,6 +174,19 @@ fn main_cmd(h: &mut dyn Handler, cmd: &Value, cx: &mut Cx) -> Value {
             let want = cmd["id"].as_str().unwrap_or("").to_string();
             let r = app.hits.rect_of(|id| format!("{id:?}") == want);
             click(app, r, cmd["cmd"] == "rclick", mods(cmd), cx)
+        }
+        "press" | "release" => {
+            let want = cmd["id"].as_str().unwrap_or("").to_string();
+            let r = app.hits.rect_of(|id| format!("{id:?}") == want);
+            press(app, r, cmd["cmd"] == "press", cx)
+        }
+        "prune" => {
+            let mut m = app.model.borrow_mut();
+            let gone = m.prune_now();
+            if gone {
+                m.changed();
+            }
+            json!({ "removed": gone })
         }
         "type" => {
             let text = cmd["text"].as_str().unwrap_or("").to_string();
@@ -200,7 +239,7 @@ fn main_cmd(h: &mut dyn Handler, cmd: &Value, cx: &mut Cx) -> Value {
                 _ => {
                     let text = cmd["text"].as_str().unwrap_or("").to_string();
                     let html = cmd["html"].as_str().map(String::from);
-                    Some(m.add_text(text, html, None, &app_name))
+                    m.add_text(text, html, None, &app_name)
                 }
             };
             // backdated (pictures of the window: not everything copied "now")
@@ -331,7 +370,8 @@ fn state(app: &mut App) -> Value {
         "page": format!("{:?}", app.page),
         "query": app.query,
         "rows": app.rows,
-        "items": m.store.items.iter().map(|i| json!({ "id": i.id, "kind": format!("{:?}", i.kind), "text": i.preview(60), "pin": i.pin, "app": i.app, "count": i.count, "html": i.html.is_some() })).collect::<Vec<_>>(),
+        "items": m.store.items.iter().map(|i| json!({ "id": i.id, "kind": format!("{:?}", i.kind), "text": i.preview(60), "pin": i.pin, "app": i.app, "count": i.count, "html": i.html.is_some(), "secret": i.secret.map(|s| format!("{s:?}")), "shown": app.reveal.shown(i.id) })).collect::<Vec<_>>(),
+        "dialog": app.dialog,
         "snippets": m.store.snippets.iter().map(|s| json!({ "id": s.id, "name": s.name, "trigger": s.trigger, "text": s.text })).collect::<Vec<_>>(),
         "settings": serde_json::to_value(&m.set).unwrap_or_default(),
         "autostart": m.autostart,

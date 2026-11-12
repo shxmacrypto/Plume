@@ -1,0 +1,16 @@
+[package]
+name = "plume-defaults"
+version.workspace = true
+edition = "2024"
+description = "Plume apps as Windows default apps: per-user registration (ProgIDs, Capabilities, RegisteredApplications) and the state Windows reports."
+license = "MIT"
+
+[dependencies]
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Imaging",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_Registry",
+    "Win32_UI_Shell",
+] }

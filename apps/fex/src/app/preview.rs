@@ -186,7 +186,7 @@ impl App {
         c.fill(pane, t.bg2);
         c.vline(pane.x, pane.y, pane.h, t.sep);
         let s = self.s;
-        let inner = pane.inset_xy(18.0, 16.0);
+        let inner = pane.inset_xy(20.0, 16.0);
         let Some(path) = self.preview.path.clone() else {
             c.text(s.preview_none, rect(inner.x, inner.y + inner.h / 2.0 - 10.0, inner.w, 20.0), Font::Body, t.t3, Align::Center);
             return;

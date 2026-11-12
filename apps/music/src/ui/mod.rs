@@ -222,51 +222,50 @@ pub enum Dl {
 }
 
 /// Colors of Plume Music (dark like a stage, or light).
+/// The colours of the window: plume-ui's theme (the same as every Plume app) with Plume Music's accent.
 #[derive(Clone)]
 pub struct Pal {
     pub dark: bool,
     pub bg: Color,
     pub side: Color,
     pub card: Color,
+    /// Dialogs, menus, toasts (opaque).
+    pub solid: Color,
+    pub solid2: Color,
+    pub fill: Color,
+    pub fill2: Color,
     pub line: Color,
+    pub ring: Color,
     pub t1: Color,
     pub t2: Color,
     pub t3: Color,
     pub accent: Color,
     pub on_accent: Color,
     pub bar: Color,
+    pub close_hover: Color,
 }
 
 impl Pal {
     pub fn new(dark: bool, accent: Color) -> Pal {
-        if dark {
-            Pal {
-                dark,
-                bg: Color::hex(0x121214),
-                side: Color::hex(0x0a0a0c),
-                card: Color::hex(0x1c1c20),
-                line: Color::hex(0xffffff).fade(0.08),
-                t1: Color::hex(0xffffff),
-                t2: Color::hex(0xb5b5bd),
-                t3: Color::hex(0x7c7c86),
-                accent,
-                on_accent: Color::hex(0xffffff),
-                bar: Color::hex(0x08080a),
-            }
-        } else {
-            Pal {
-                dark,
-                bg: Color::hex(0xf6f6f8),
-                side: Color::hex(0xececf0),
-                card: Color::hex(0xffffff),
-                line: Color::hex(0x000000).fade(0.08),
-                t1: Color::hex(0x111114),
-                t2: Color::hex(0x55555c),
-                t3: Color::hex(0x8a8a92),
-                accent,
-                on_accent: Color::hex(0xffffff),
-                bar: Color::hex(0xffffff),
-            }
+        let t = plume_ui::Theme::new(dark, Some(accent));
+        Pal {
+            dark,
+            bg: t.bg,
+            side: t.bg2,
+            card: t.card,
+            solid: t.solid,
+            solid2: t.solid2,
+            fill: t.fill,
+            fill2: t.fill2,
+            line: t.sep,
+            ring: t.ring,
+            t1: t.t1,
+            t2: t.t2,
+            t3: t.t3,
+            accent,
+            on_accent: Color::hex(0xffffff),
+            bar: if dark { t.bg2 } else { t.solid },
+            close_hover: t.close_hover,
         }
     }
 }

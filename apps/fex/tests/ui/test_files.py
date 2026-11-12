@@ -29,7 +29,7 @@ try:
     check("Explorer menu has the usual commands", all(any(w in l for l in low) for w in ["open", "copy", "delete", "rename", "properties"]), labels)
     print("     menu:", " | ".join(labels[:22]))
     labels = rclick("Row(0)")
-    check("folder menu offers a new tab and pinning", labels[:2] == ["Open in new tab", "Pin to sidebar"] and labels.index("Open") > 1, labels[:6])
+    check("folder menu offers a new tab and pinning", labels[:3] == ["Open in new tab", "Open in a mini panel", "Pin to sidebar"] and labels.index("Open") > 2, labels[:6])
     # copy as path
     rclick("Row(4)", "Copy as path")
     s = x.state()
@@ -92,7 +92,8 @@ try:
     check("close other tabs", len(s["tabs"]) == 1, s["tabs"])
     # pin a folder to the sidebar
     rclick("Row(0)", "Pin to sidebar")
-    s = x.wait(lambda s: "Alpha" in s["nav"], timeout=5, what="pinned")
+    # (Alpha is already in the recent folders, further down: wait for it at the top)
+    s = x.wait(lambda s: "Alpha" in s["nav"] and s["nav"].index("Alpha") < s["nav"].index("This PC"), timeout=5, what="pinned")
     check("pinned folder appears in the sidebar", s["nav"].index("Alpha") < s["nav"].index("This PC"), s["nav"])
     x.shot("files-pinned")
 finally:

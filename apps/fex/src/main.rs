@@ -23,10 +23,16 @@ use windows::Win32::{
     UI::HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext},
 };
 
-/// Les dossiers demandés sur la ligne de commande (chemins absolus).
+/// Les dossiers (ou fichiers, à montrer sélectionnés dans leur dossier) demandés sur la ligne de commande, en
+/// chemins absolus.
 fn start_folders() -> Vec<std::path::PathBuf> {
     let cwd = std::env::current_dir().ok();
-    std::env::args().skip(1).filter(|a| !a.starts_with("--")).filter_map(|a| parse_address(&a, cwd.as_deref())).filter(|p| p.is_dir()).collect()
+    std::env::args()
+        .skip(1)
+        .filter(|a| !a.starts_with("--"))
+        .filter_map(|a| parse_address(&a, cwd.as_deref()))
+        .filter(|p| app::model::open_target(p).is_some())
+        .collect()
 }
 
 /// Nom de cette installation de Plume FEx sur cet ordinateur : un par dossier de données, pour que les essais
@@ -124,7 +130,9 @@ fn main() {
     let folders = start_folders();
     let name = instance_name(&set.dir);
     let Ok(_lock) = hand_off(&name, &folders) else { return };
-    let start = folders.first().cloned().map_or(Location::ThisPc, Location::Path);
+    let first = folders.first().and_then(|p| app::model::open_target(p));
+    let start = first.as_ref().map_or(Location::ThisPc, |(dir, _)| Location::Path(dir.clone()));
+    let select = first.and_then(|(_, name)| name);
     let gfx = Rc::new(ui::Gfx::new().expect("Direct2D"));
     let theme = Theme::new(set.dark(), Some(set.accent_color()));
     shell::menu::set_dark_menus(theme.dark);
@@ -143,7 +151,13 @@ fn main() {
     // les autres dossiers de la ligne de commande : un onglet chacun
     win.with(|h, _| {
         if let Some(app) = h.as_any().downcast_mut::<App>() {
-            folders.iter().skip(1).for_each(|p| app.new_tab(Location::Path(p.clone()), false));
+            // un fichier demandé : son dossier s'ouvre avec le fichier sélectionné
+            if let Some(name) = select.clone() {
+                app.select_when_loaded(name);
+            }
+            folders.iter().skip(1).for_each(|p| {
+                app.open_path_tab(p, false);
+            });
         }
     });
     // la fenêtre reçoit les fichiers qu'on y dépose : l'application dit quel dossier est sous le pointeur

@@ -1,0 +1,53 @@
+[package]
+name = "plume-boost"
+version.workspace = true
+edition = "2024"
+build = "build.rs"
+description = "Plume Boost: Windows performance settings in one place, each one explained, all of them reversible."
+license = "MIT"
+
+[[bin]]
+name = "plume-boost"
+path = "src/main.rs"
+
+[features]
+# Prise d'essai (pilotage de la fenetre par un script, sur 127.0.0.1) : jamais dans une version publiee.
+# Une construction d'essai ne touche jamais le vrai systeme : elle travaille toujours sur le faux (PLUME_BOOST_FAKE).
+test-hook = ["plume-ui/test-hook"]
+
+[dependencies]
+plume-ui = { path = "../../crates/plume-ui" }
+plume-update = { path = "../../crates/plume-update" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+windows-numerics = "0.2"
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Direct3D_Fxc",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Imaging",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_EventLog",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
+    "Win32_System_Performance",
+    "Win32_System_Power",
+    "Win32_System_Registry",
+    "Win32_System_Restore",
+    "Win32_System_Services",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_System_Time",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }

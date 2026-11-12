@@ -1,4 +1,4 @@
-//! Drawing beyond plume-ui's basics: text in any size or font (annotation text is shown in Arial, which has
+//! Drawing beyond plume-ui's basics: wrapped text in any font (annotation text is shown in Arial, which has
 //! Helvetica's widths, so it wraps as it will in the file), soft shadows under the pages, free lines, and
 //! Plume PDF's own icons.
 
@@ -6,10 +6,10 @@ use plume_ui::{Align, Canvas, Color, Rect, icons::Icon, icons::Part, rect};
 use std::{cell::RefCell, collections::HashMap};
 use windows::{
     Win32::Graphics::{
-        Direct2D::{Common::D2D_RECT_F, Common::D2D1_COLOR_F, D2D1_DRAW_TEXT_OPTIONS},
+        Direct2D::{Common::D2D1_COLOR_F, D2D1_DRAW_TEXT_OPTIONS},
         DirectWrite::{
-            DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
-            DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TRIMMING,
+            DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
+            DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TRIMMING,
             DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP, IDWriteInlineObject, IDWriteTextFormat,
         },
     },
@@ -19,9 +19,6 @@ use windows_numerics::Vector2;
 
 fn col(c: Color) -> D2D1_COLOR_F {
     D2D1_COLOR_F { r: c.r, g: c.g, b: c.b, a: c.a }
-}
-fn rf(q: Rect) -> D2D_RECT_F {
-    D2D_RECT_F { left: q.x, top: q.y, right: q.x + q.w, bottom: q.y + q.h }
 }
 
 /// (family, size × 4, weight, alignment, wrapping)
@@ -69,20 +66,6 @@ fn format(c: &Canvas, family: Option<&str>, size: f32, weight: u32, align: Align
     };
     FORMATS.with(|m| m.borrow_mut().insert(key, f.clone()));
     Some(f)
-}
-
-/// One line of text in any size and weight (400 regular, 600 semibold, 700 bold), ending in "…".
-pub fn text(c: &mut Canvas, s: &str, q: Rect, size: f32, weight: u32, color: Color, align: Align) {
-    if s.is_empty() || q.w <= 0.0 || color.a <= 0.0 {
-        return;
-    }
-    let Some(f) = format(c, None, size, weight, align, false) else { return };
-    let rt = c.target();
-    let w: Vec<u16> = s.encode_utf16().collect();
-    unsafe {
-        let Ok(b) = rt.CreateSolidColorBrush(&col(color), None) else { return };
-        rt.DrawText(&w, &f, &rf(q), &b, D2D1_DRAW_TEXT_OPTIONS(2 | 4), DWRITE_MEASURING_MODE_NATURAL);
-    }
 }
 
 /// Text cut into lines at the words, from the top of `q` (its width counts), in `family` (None: the interface's).
@@ -165,6 +148,7 @@ pub mod ic {
         PAGES = [R(2.5, 2.0, 7.5, 9.5, 1.3), P("M6.5 14h5.8a1.2 1.2 0 0 0 1.2-1.2V5.5")];
         OUTLINE = [P("M6 4h7.5M6 8h7.5M8.5 12h5"), C(3.2, 4.0, 0.6), C(3.2, 8.0, 0.6), C(5.7, 12.0, 0.6)];
         UNDO = [P("M5.5 3 2.5 6l3 3"), P("M2.5 6h7a3.8 3.8 0 0 1 0 7.6H7")];
+        LOCK = [R(3.5, 7.0, 9.0, 7.0, 1.6), P("M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7")];
         CHEV_UP = [P("m4 10 4-4 4 4")];
         DOC = [P("M4 1.8h5.2L12.5 5v9.2H4z"), P("M9 1.8V5.2h3.5"), P("M6 8.5h4.5M6 11h3")];
     }

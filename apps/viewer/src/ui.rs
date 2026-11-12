@@ -540,7 +540,7 @@ impl App {
         c.stroke_round(card, 18.0, t.sep, 1.0);
         let qr_size = 204.0;
         let qr = rect(card.right() - 24.0 - qr_size, y + 24.0, qr_size, qr_size);
-        let left = x + 26.0;
+        let left = x + 24.0;
         let text_w = qr.x - left - 20.0;
         // state of the link
         let (state, ink) = if self.gate.locked() {
@@ -562,18 +562,18 @@ impl App {
         let label = if copied(Id::CopyNumber, self) { s.copied } else { s.copy };
         let bw = c.text_width(label, Font::BodyBold) + 28.0;
         if left + iw + 16.0 + bw < qr.x - 10.0 {
-            self.button(c, rect(left + iw + 16.0, y + 84.0, bw, 28.0), label, 0, Id::CopyNumber);
+            self.button(c, rect(left + iw + 16.0, y + 81.0, bw, 32.0), label, 0, Id::CopyNumber);
         }
         // code
         c.text(s.code, rect(left, y + 132.0, text_w, 18.0), Font::Small, t.t3, Align::Left);
         let code_text = spaced(&self.code, 4);
         c.text(&code_text, rect(left, y + 150.0, text_w, 34.0), Font::Hero, t.accent, Align::Left);
         let mut bx = left;
-        let by = y + 200.0;
+        let by = y + 196.0;
         for (label, id) in [(s.new_code, Id::NewCode), (if copied(Id::CopyCode, self) { s.copied } else { s.copy }, Id::CopyCode)] {
-            let bw = c.text_width(label, Font::BodyBold) + 28.0;
-            self.button(c, rect(bx, by, bw, 30.0), label, 0, id);
-            bx += bw + 10.0;
+            let bw = c.text_width(label, Font::BodyBold) + 32.0;
+            self.button(c, rect(bx, by, bw, 32.0), label, 0, id);
+            bx += bw + 8.0;
         }
         self.paint_qr(c, qr);
         c.text(s.scan, rect(qr.x - 20.0, qr.bottom() + 2.0, qr.w + 40.0, 18.0), Font::Small, t.t3, Align::Center);
@@ -587,17 +587,17 @@ impl App {
         let card = rect(x, y, cw, h);
         c.fill_round(card, 18.0, t.card);
         c.stroke_round(card, 18.0, t.sep, 1.0);
-        let left = x + 26.0;
+        let left = x + 24.0;
         let on = self.pw_key.is_some();
         // buttons on the right
-        let mut right = card.right() - 22.0;
+        let mut right = card.right() - 24.0;
         if !self.editing {
             let labels: Vec<(&str, u8, Id)> =
                 if on { vec![(s.change, 0, Id::SetPassword), (s.remove, 0, Id::RemovePassword)] } else { vec![(s.set_password, 1, Id::SetPassword)] };
             for (label, style, id) in labels.into_iter().rev() {
                 let bw = c.text_width(label, Font::BodyBold) + 32.0;
                 self.button(c, rect(right - bw, y + 30.0, bw, 32.0), label, style, id);
-                right -= bw + 10.0;
+                right -= bw + 8.0;
             }
         }
         let tw = right - left - 16.0;
@@ -605,11 +605,11 @@ impl App {
         c.text(if on { s.password_on } else { s.password_sub }, rect(left, y + 46.0, tw, 20.0), Font::Body, if on { t.green } else { t.t2 }, Align::Left);
         if self.editing {
             let row = y + 82.0;
-            let mut r2 = card.right() - 22.0;
+            let mut r2 = card.right() - 24.0;
             for (label, style, id) in [(s.save, 1, Id::SavePassword), (s.cancel, 0, Id::CancelPassword)] {
                 let bw = c.text_width(label, Font::BodyBold) + 32.0;
                 self.button(c, rect(r2 - bw, row, bw, 34.0), label, style, id);
-                r2 -= bw + 10.0;
+                r2 -= bw + 8.0;
             }
             let field = rect(left, row, (r2 - left - 6.0).min(360.0), 34.0);
             c.fill_round(field, 10.0, self.field_bg());
@@ -642,9 +642,9 @@ impl App {
         let card = rect(x, y, cw, h);
         c.fill_round(card, 18.0, t.card);
         c.stroke_round(card, 18.0, t.sep, 1.0);
-        let left = x + 26.0;
+        let left = x + 24.0;
         // start with Windows: a switch
-        let sw = rect(card.right() - 22.0 - 44.0, y + 26.0, 44.0, 24.0);
+        let sw = rect(card.right() - 24.0 - 44.0, y + 26.0, 44.0, 24.0);
         let on = self.autostart;
         c.fill_round(sw, 12.0, if on { t.accent } else { t.fill2 });
         let knob = if on { sw.right() - 21.0 } else { sw.x + 3.0 };
@@ -654,12 +654,12 @@ impl App {
         let tw = sw.x - left - 16.0;
         c.text(s.autostart, rect(left, y + 16.0, tw, 22.0), Font::Title, t.t1, Align::Left);
         c.text(s.autostart_sub, rect(left, y + 40.0, tw, 20.0), Font::Body, t.t2, Align::Left);
-        c.hline(left, y + 82.0, cw - 52.0, t.sep);
+        c.hline(left, y + 82.0, cw - 48.0, t.sep);
         // another PC
         let label = s.open_viewer;
         let bw = c.text_width(label, Font::BodyBold) + 32.0;
-        self.button(c, rect(card.right() - 22.0 - bw, y + 104.0, bw, 32.0), label, 0, Id::OpenViewer);
-        let tw = card.right() - 22.0 - bw - left - 16.0;
+        self.button(c, rect(card.right() - 24.0 - bw, y + 104.0, bw, 32.0), label, 0, Id::OpenViewer);
+        let tw = card.right() - 24.0 - bw - left - 16.0;
         c.text(s.other, rect(left, y + 96.0, tw, 22.0), Font::Title, t.t1, Align::Left);
         c.text(s.other_sub, rect(left, y + 120.0, tw, 20.0), Font::Body, t.t2, Align::Left);
         h
@@ -675,11 +675,11 @@ impl App {
         c.fill_round(card, 16.0, ink.fade(if t.dark { 0.18 } else { 0.1 }));
         c.stroke_round(card, 16.0, ink.fade(0.5), 1.0);
         let bw = c.text_width(s.disconnect, Font::BodyBold) + 36.0;
-        self.button(c, rect(card.right() - 18.0 - bw, y + 15.0, bw, 34.0), s.disconnect, 2, Id::Disconnect);
-        let tw = card.w - bw - 60.0;
-        c.text(&text, rect(x + 22.0, y + 12.0, tw, 22.0), Font::Title, t.t1, Align::Left);
+        self.button(c, rect(card.right() - 24.0 - bw, y + 14.0, bw, 36.0), s.disconnect, 2, Id::Disconnect);
+        let tw = card.w - bw - 64.0;
+        c.text(&text, rect(x + 24.0, y + 12.0, tw, 22.0), Font::Title, t.t1, Align::Left);
         if linked {
-            c.text(&format!("{:02}:{:02}", secs / 60, secs % 60), rect(x + 22.0, y + 34.0, tw, 18.0), Font::Small, t.t2, Align::Left);
+            c.text(&format!("{:02}:{:02}", secs / 60, secs % 60), rect(x + 24.0, y + 34.0, tw, 18.0), Font::Small, t.t2, Align::Left);
         }
         card.h + 16.0
     }
@@ -689,7 +689,7 @@ impl App {
         let t = self.theme.clone();
         let s = self.s;
         let (title, left) = (fill(s.asks, &[("name", &a.name)]), ASK_FOR.saturating_sub(a.since.elapsed()).as_secs());
-        c.fill(rect(0.0, m::TITLE_H, cx.w, cx.h - m::TITLE_H), Color::hex(0).fade(0.45));
+        c.fill(rect(0.0, m::TITLE_H, cx.w, cx.h - m::TITLE_H), Color::hexa(0x000000, if t.dark { 0.5 } else { 0.28 }));
         let w = (cx.w - 80.0).min(480.0);
         let card = rect((cx.w - w) / 2.0, (cx.h - 230.0) / 2.0 + 10.0, w, 230.0);
         c.fill_round(card, 20.0, t.solid2);
@@ -700,9 +700,9 @@ impl App {
         let sub_h = c.text_height(s.asks_sub, w - 64.0, Font::Body);
         c.text_block(s.asks_sub, rect(card.x + 32.0, card.y + 116.0, w - 64.0, sub_h), Font::Body, t.t2);
         let bw = (w - 48.0 - 12.0) / 2.0;
-        let by = card.bottom() - 58.0;
-        self.button(c, rect(card.x + 24.0, by, bw, 38.0), &format!("{} ({left})", s.refuse), 0, Id::Refuse);
-        self.button(c, rect(card.x + 24.0 + bw + 12.0, by, bw, 38.0), s.allow, 1, Id::Allow);
+        let by = card.bottom() - 60.0;
+        self.button(c, rect(card.x + 24.0, by, bw, 36.0), &format!("{} ({left})", s.refuse), 0, Id::Refuse);
+        self.button(c, rect(card.x + 24.0 + bw + 12.0, by, bw, 36.0), s.allow, 1, Id::Allow);
     }
 
     fn paint_toast(&mut self, c: &mut Canvas, cx: &PaintCx) {

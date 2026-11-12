@@ -28,11 +28,20 @@ pub struct Settings {
     pub paste: bool,
     /// Nothing new is kept for now.
     pub paused: bool,
+    /// Sensitive copies shown masked and kept sealed: passwords, IP addresses, keys and tokens.
+    pub hide_passwords: bool,
+    pub hide_ips: bool,
+    pub hide_keys: bool,
+    /// How long a sensitive copy is kept, in minutes (unless pinned).
+    pub secret_minutes: u32,
+    /// Sensitive copies are not kept at all (like private content).
+    pub never_keep_secrets: bool,
 }
 
 pub const MAX_ITEMS: [u32; 4] = [100, 500, 1000, 5000];
 pub const DAYS: [u32; 5] = [1, 7, 30, 365, 0];
 pub const IMAGE_MB: [u32; 4] = [2, 10, 25, 50];
+pub const SECRET_MINUTES: [u32; 5] = [5, 15, 60, 480, 1440];
 
 impl Default for Settings {
     fn default() -> Self {
@@ -50,6 +59,11 @@ impl Default for Settings {
             ignored: vec!["keepass.exe".into(), "keepassxc.exe".into(), "1password.exe".into(), "bitwarden.exe".into(), "plume-passwords.exe".into()],
             paste: true,
             paused: false,
+            hide_passwords: true,
+            hide_ips: true,
+            hide_keys: true,
+            secret_minutes: 60,
+            never_keep_secrets: false,
         }
     }
 }
@@ -76,6 +90,15 @@ impl Settings {
         {
             let _ = std::fs::rename(&tmp, dir.join("settings.json"));
         }
+    }
+
+    /// The kinds of sensitive copies looked for.
+    pub fn wanted(&self) -> crate::detect::Wanted {
+        crate::detect::Wanted { passwords: self.hide_passwords, ips: self.hide_ips, keys: self.hide_keys }
+    }
+
+    pub fn secret_secs(&self) -> u64 {
+        self.secret_minutes.max(1) as u64 * 60
     }
 
     pub fn ignores(&self, app: &str) -> bool {

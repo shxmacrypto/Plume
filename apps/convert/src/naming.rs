@@ -57,6 +57,36 @@ fn same(a: &Path, b: &Path) -> bool {
     a.to_string_lossy().eq_ignore_ascii_case(&b.to_string_lossy())
 }
 
+/// File names in the order a person reads them: "photo 2" before "photo 10", "B" next to "b".
+pub fn by_name(a: &Path, b: &Path) -> std::cmp::Ordering {
+    fn parts(p: &Path) -> Vec<(bool, String)> {
+        let name = p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+        let mut out: Vec<(bool, String)> = Vec::new();
+        for ch in name.chars() {
+            let digit = ch.is_ascii_digit();
+            match out.last_mut() {
+                Some((d, s)) if *d == digit => s.push(ch),
+                _ => out.push((digit, ch.to_string())),
+            }
+        }
+        out
+    }
+    let (pa, pb) = (parts(a), parts(b));
+    for (x, y) in pa.iter().zip(&pb) {
+        let o = match (x, y) {
+            ((true, n), (true, m)) => {
+                let (n, m) = (n.trim_start_matches('0'), m.trim_start_matches('0'));
+                n.len().cmp(&m.len()).then_with(|| n.cmp(m))
+            }
+            _ => x.1.cmp(&y.1),
+        };
+        if o.is_ne() {
+            return o;
+        }
+    }
+    pa.len().cmp(&pb.len())
+}
+
 /// "3.4 MB", "820 KB".
 pub fn size_text(bytes: u64) -> String {
     let b = bytes as f64;
@@ -111,6 +141,14 @@ mod tests {
         let f2 = reserve_folder(&src, &d, "frames").unwrap();
         assert!(f1.is_dir() && f2.is_dir() && f1 != f2);
         let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn name_order() {
+        let mut v: Vec<PathBuf> = ["IMG 10.jpg", "img 2.jpg", "b.png", "IMG 1.jpg", "a.png", "img 02b.jpg"].iter().map(PathBuf::from).collect();
+        v.sort_by(|a, b| by_name(a, b));
+        let names: Vec<String> = v.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+        assert_eq!(names, ["a.png", "b.png", "IMG 1.jpg", "img 2.jpg", "img 02b.jpg", "IMG 10.jpg"]);
     }
 
     #[test]
