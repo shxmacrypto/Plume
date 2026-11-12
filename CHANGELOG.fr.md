@@ -2,7 +2,7 @@
 
 Toutes les nouveautés de Plume, version après version (en anglais : [CHANGELOG.md](CHANGELOG.md)). Le site les affiche sur sa page « Notes de version ».
 
-## 1.2.0
+## 1.2.0 - 2026-11-12
 
 Quatre nouvelles applications rejoignent Plume Suite : **Plume Notepad** remplace le Bloc-notes de Windows et ajoute des pense-bêtes, **Plume Cut** monte vos vidéos, **Plume Create** retouche vos photos et crée vos visuels, et **Plume Boost** applique des réglages de performance mesurés et annulables. Plume FEx gagne les dossiers récents, les catégories et les mini-panneaux, Plume Media les dossiers épinglés et une frise, et Plume Suite peut faire des applis Plume vos applications par défaut de Windows. Win+E ouvre de nouveau Plume FEx sur le dernier Windows 11, et Plume Viewer fonctionne depuis un iPhone.
 

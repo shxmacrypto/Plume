@@ -2,7 +2,7 @@
 
 All notable changes to Plume. Each `## x.y.z` section becomes the release notes when you run `.\release.ps1 x.y.z`.
 
-## 1.2.0
+## 1.2.0 - 2026-11-12
 
 Four new apps join Plume Suite: **Plume Notepad** replaces Windows Notepad and adds sticky pads, **Plume Cut** edits your videos, **Plume Create** retouches photos and designs posts, and **Plume Boost** applies measured performance tweaks you can undo. Plume FEx gets recent folders, categories and mini panels, Plume Media gets pinned folders and a timeline, and Plume Suite can make Plume apps your Windows default apps. Win+E opens Plume FEx again on the latest Windows 11, and Plume Viewer works from an iPhone.
 
